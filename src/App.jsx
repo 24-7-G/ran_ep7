@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+} from "firebase/firestore";
+
+import { db } from "./firebase";
+
 const PH_TIMEZONE = "Asia/Manila";
+
+/*
+============================================================
+TIMEZONES
+============================================================
+*/
 
 const TIMEZONES = [
   ["America/Los_Angeles", "Seattle / Los Angeles", "🇺🇸"],
@@ -26,6 +41,12 @@ const TIMEZONES = [
   ["Europe/Paris", "Paris", "🇫🇷"],
   ["Europe/Berlin", "Berlin", "🇩🇪"],
 ];
+
+/*
+============================================================
+DEFAULT RAID DATA
+============================================================
+*/
 
 const DEFAULT_RAIDS = [
   {
@@ -66,6 +87,12 @@ const DEFAULT_RAIDS = [
   },
 ];
 
+/*
+============================================================
+TIMEZONE HELPERS
+============================================================
+*/
+
 function getLocalTimezone() {
   return (
     Intl.DateTimeFormat().resolvedOptions().timeZone ||
@@ -89,39 +116,39 @@ function getTimezoneFlag(timezone) {
   return found ? found[2] : "🌎";
 }
 
-function loadStorage(key, fallback) {
-  try {
-    const saved = localStorage.getItem(key);
-
-    if (!saved) {
-      return fallback;
-    }
-
-    return JSON.parse(saved);
-  } catch {
-    return fallback;
-  }
-}
+/*
+============================================================
+TIME HELPERS
+============================================================
+*/
 
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
 function get12Hour(hour) {
+  hour = Number(hour);
+
   if (hour === 0) return 12;
   if (hour > 12) return hour - 12;
+
   return hour;
 }
 
 function getPeriod(hour) {
-  return hour >= 12 ? "PM" : "AM";
+  return Number(hour) >= 12
+    ? "PM"
+    : "AM";
 }
 
 function to24Hour(hour, period) {
   let h = Number(hour);
 
-  if (h < 1) h = 1;
-  if (h > 12) h = 12;
+  if (!Number.isFinite(h)) {
+    h = 12;
+  }
+
+  h = Math.max(1, Math.min(12, h));
 
   if (period === "AM") {
     return h === 12 ? 0 : h;
@@ -131,52 +158,62 @@ function to24Hour(hour, period) {
 }
 
 /*
-  Returns the UTC offset in minutes for a timezone
-  at a particular moment.
-
-  This automatically handles daylight saving time.
+============================================================
+GET TODAY IN PHILIPPINES
+============================================================
 */
-function getTimezoneOffset(timezone, date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
 
-  const values = {};
+function getTodayPhilippines() {
+  const now = new Date();
+
+  const parts = new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: PH_TIMEZONE,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    }
+  ).formatToParts(now);
+
+  const result = {};
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      values[part.type] = Number(part.value);
+      result[part.type] = Number(
+        part.value
+      );
     }
   });
 
-  const asUTC = Date.UTC(
-    values.year,
-    values.month - 1,
-    values.day,
-    values.hour,
-    values.minute,
-    values.second
-  );
-
-  return Math.round(
-    (asUTC - date.getTime()) / 60000
-  );
+  return {
+    year: result.year,
+    month: result.month,
+    day: result.day,
+  };
 }
 
 /*
-  Creates a Date representing a fixed Philippines
-  local date/time.
+============================================================
+PHILIPPINES LOCAL TIME → UTC
 
-  This does NOT run like a clock.
-  It is only used to perform the timezone conversion.
+IMPORTANT:
+
+Philippines is ALWAYS UTC+8.
+
+There is NO daylight saving time.
+
+Therefore:
+
+PH 9:00 PM
+=
+UTC 1:00 PM
+
+This is much more reliable than trying
+to calculate the Philippines offset dynamically.
+============================================================
 */
+
 function philippinesDateToUTC(
   year,
   month,
@@ -184,67 +221,43 @@ function philippinesDateToUTC(
   hour,
   minute
 ) {
-  let guess = new Date(
+  return new Date(
     Date.UTC(
       year,
       month - 1,
       day,
-      hour,
-      minute,
+      Number(hour) - 8,
+      Number(minute),
+      0,
       0
     )
   );
-
-  for (let i = 0; i < 4; i++) {
-    const offset = getTimezoneOffset(
-      PH_TIMEZONE,
-      guess
-    );
-
-    guess = new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day,
-        hour,
-        minute,
-        0
-      ) -
-        offset * 60 * 1000
-    );
-  }
-
-  return guess;
 }
 
-function getTodayPhilippines() {
-  const now = new Date();
+/*
+============================================================
+GET NEXT RAID OCCURRENCE
 
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: PH_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
+The date is based on PHILIPPINES date.
 
-  const result = {};
-
-  parts.forEach((part) => {
-    if (part.type !== "literal") {
-      result[part.type] = Number(part.value);
-    }
-  });
-
-  return result;
-}
+The resulting Date represents the exact
+instant of the raid worldwide.
+============================================================
+*/
 
 function getNextOccurrence(raid) {
-  const today = getTodayPhilippines();
+  const today =
+    getTodayPhilippines();
 
-  let year = today.year;
-  let month = today.month;
-  let day = today.day;
+  let {
+    year,
+    month,
+    day,
+  } = today;
 
+  /*
+    DAILY RAID
+  */
   if (raid.day === null) {
     return philippinesDateToUTC(
       year,
@@ -255,99 +268,192 @@ function getNextOccurrence(raid) {
     );
   }
 
-  const todayUTC = new Date(
-    Date.UTC(year, month - 1, day)
-  );
+  /*
+    WEEKLY RAID
+  */
 
-  const currentDay = todayUTC.getUTCDay();
+  /*
+    JS:
+    Sunday = 0
+    Monday = 1
+    Tuesday = 2
+    Wednesday = 3
+    Thursday = 4
+    Friday = 5
+    Saturday = 6
+  */
 
-  let daysUntil = raid.day - currentDay;
+  const currentDay = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day
+    )
+  ).getUTCDay();
+
+  let daysUntil =
+    raid.day - currentDay;
 
   if (daysUntil < 0) {
     daysUntil += 7;
   }
 
+  /*
+    If today is the raid day but the raid
+    time has already passed, move to next week.
+
+    This prevents Wednesday's Sonya from
+    incorrectly showing the old occurrence.
+  */
+
+  if (daysUntil === 0) {
+    const currentUTC =
+      new Date();
+
+    const raidUTC =
+      philippinesDateToUTC(
+        year,
+        month,
+        day,
+        raid.hour,
+        raid.minute
+      );
+
+    if (
+      currentUTC.getTime() >
+      raidUTC.getTime()
+    ) {
+      daysUntil = 7;
+    }
+  }
+
+  const targetDate =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day + daysUntil
+      )
+    );
+
+  year =
+    targetDate.getUTCFullYear();
+
+  month =
+    targetDate.getUTCMonth() + 1;
+
+  day =
+    targetDate.getUTCDate();
+
   return philippinesDateToUTC(
     year,
     month,
-    day + daysUntil,
+    day,
     raid.hour,
     raid.minute
   );
 }
 
 /*
-  Convert the fixed Philippines raid time
-  into the target timezone.
+============================================================
+CONVERT RAID TO TARGET TIMEZONE
 
-  The returned object contains the target
-  date/time only. It does not continuously update.
+The Date object represents one exact
+worldwide instant.
+
+Intl then converts that instant into
+the requested timezone.
+
+DST is automatically handled by the browser.
+============================================================
 */
-function convertRaidTime(raid, timezone) {
-  const utcDate = getNextOccurrence(raid);
 
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(utcDate);
+function convertRaidTime(
+  raid,
+  timezone
+) {
+  const utcDate =
+    getNextOccurrence(raid);
 
-  const result = {};
+  const dateFormatter =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: timezone,
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }
+    );
 
-  parts.forEach((part) => {
-    if (part.type !== "literal") {
-      result[part.type] = part.value;
-    }
-  });
+  const timeFormatter =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: timezone,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }
+    );
 
-  const dateString = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone: timezone,
-      weekday: "long",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }
-  ).format(utcDate);
-
-  const timeString = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone: timezone,
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }
-  ).format(utcDate);
+  const weekdayFormatter =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: timezone,
+        weekday: "long",
+      }
+    );
 
   return {
-    date: dateString,
-    time: timeString,
-    day: result.weekday,
+    date: dateFormatter.format(
+      utcDate
+    ),
+
+    time: timeFormatter.format(
+      utcDate
+    ),
+
+    day: weekdayFormatter.format(
+      utcDate
+    ),
   };
 }
 
-function getPhilippinesDisplay(raid) {
-  const hour = get12Hour(raid.hour);
-  const period = getPeriod(raid.hour);
+/*
+============================================================
+PHILIPPINES DISPLAY
+============================================================
+*/
 
-  return `${hour}:${pad(raid.minute)} ${period}`;
+function getPhilippinesDisplay(
+  raid
+) {
+  const hour = get12Hour(
+    raid.hour
+  );
+
+  const period =
+    getPeriod(raid.hour);
+
+  return `${hour}:${pad(
+    raid.minute
+  )} ${period}`;
 }
 
-/* ============================================================
-   RAID CARD
-   ============================================================ */
+/*
+============================================================
+RAID CARD
+============================================================
+*/
 
 function RaidCard({
   raid,
   targetTimezone,
   onUpdate,
+  onSave,
 }) {
   const converted = useMemo(
     () =>
@@ -358,76 +464,341 @@ function RaidCard({
     [raid, targetTimezone]
   );
 
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] =
+    useState(false);
 
-  const hour12 = get12Hour(
-    Number(raid.hour)
-  );
+  const [saved, setSaved] =
+    useState(false);
 
-  const period = getPeriod(
-    Number(raid.hour)
-  );
+  /*
+    String values allow manual editing.
+  */
 
-  function changeHour(value) {
-    const hour = to24Hour(
-      value,
-      period
+  const [hourInput, setHourInput] =
+    useState(
+      String(
+        get12Hour(
+          Number(raid.hour)
+        )
+      ).padStart(2, "0")
     );
 
-    onUpdate(raid.id, {
-      hour,
-    });
+  const [minuteInput, setMinuteInput] =
+    useState(
+      String(
+        Number(raid.minute)
+      ).padStart(2, "0")
+    );
+
+  const hour12 =
+    get12Hour(
+      Number(raid.hour)
+    );
+
+  const period =
+    getPeriod(
+      Number(raid.hour)
+    );
+
+  /*
+    Sync fields when Firestore sends
+    a new value from another user.
+  */
+
+  useEffect(() => {
+    setHourInput(
+      String(
+        get12Hour(
+          Number(raid.hour)
+        )
+      ).padStart(2, "0")
+    );
+
+    setMinuteInput(
+      String(
+        Number(raid.minute)
+      ).padStart(2, "0")
+    );
+  }, [
+    raid.hour,
+    raid.minute,
+  ]);
+
+  /*
+    HOUR INPUT
+  */
+
+  function changeHourInput(
+    value
+  ) {
+    if (!/^\d*$/.test(value)) {
+      return;
+    }
+
+    if (value.length > 2) {
+      return;
+    }
+
+    setHourInput(value);
+
+    if (value === "") {
+      return;
+    }
+
+    const number =
+      Number(value);
+
+    if (
+      number >= 1 &&
+      number <= 12
+    ) {
+      onUpdate(
+        raid.id,
+        {
+          hour: to24Hour(
+            number,
+            period
+          ),
+        }
+      );
+
+      setSaved(false);
+    }
+  }
+
+  function finishHourInput() {
+    let value =
+      Number(hourInput);
+
+    if (
+      !value ||
+      value < 1
+    ) {
+      value = 1;
+    }
+
+    if (value > 12) {
+      value = 12;
+    }
+
+    setHourInput(
+      String(value).padStart(
+        2,
+        "0"
+      )
+    );
+
+    onUpdate(
+      raid.id,
+      {
+        hour: to24Hour(
+          value,
+          period
+        ),
+      }
+    );
+  }
+
+  /*
+    MINUTE INPUT
+  */
+
+  function changeMinuteInput(
+    value
+  ) {
+    if (!/^\d*$/.test(value)) {
+      return;
+    }
+
+    if (value.length > 2) {
+      return;
+    }
+
+    setMinuteInput(value);
+
+    if (value === "") {
+      return;
+    }
+
+    let minute =
+      Number(value);
+
+    if (minute > 59) {
+      minute = 59;
+    }
+
+    onUpdate(
+      raid.id,
+      {
+        minute,
+      }
+    );
 
     setSaved(false);
   }
 
-  function changeMinute(value) {
-    let minute = Number(value);
+  function finishMinuteInput() {
+    let minute =
+      Number(minuteInput);
 
-    if (Number.isNaN(minute)) {
+    if (
+      Number.isNaN(minute)
+    ) {
       minute = 0;
     }
 
     minute = Math.max(
       0,
-      Math.min(59, minute)
-    );
-
-    onUpdate(raid.id, {
-      minute,
-    });
-
-    setSaved(false);
-  }
-
-  function changePeriod(value) {
-    onUpdate(raid.id, {
-      hour: to24Hour(
-        hour12,
-        value
-      ),
-    });
-
-    setSaved(false);
-  }
-
-  function save() {
-    localStorage.setItem(
-      "ran-bh-raids",
-      JSON.stringify(
-        window.__RAN_RAIDS__
+      Math.min(
+        59,
+        minute
       )
     );
 
-    setSaved(true);
+    setMinuteInput(
+      String(minute).padStart(
+        2,
+        "0"
+      )
+    );
 
-    setTimeout(() => {
-      setSaved(false);
-    }, 1500);
+    onUpdate(
+      raid.id,
+      {
+        minute,
+      }
+    );
+  }
+
+  /*
+    AM / PM
+  */
+
+  function changePeriod(
+    value
+  ) {
+    onUpdate(
+      raid.id,
+      {
+        hour: to24Hour(
+          hour12,
+          value
+        ),
+      }
+    );
+
+    setSaved(false);
+  }
+
+  /*
+    SAVE
+  */
+
+  async function save() {
+    try {
+      let finalHour =
+        Number(hourInput);
+
+      if (
+        !finalHour ||
+        finalHour < 1
+      ) {
+        finalHour = 1;
+      }
+
+      if (finalHour > 12) {
+        finalHour = 12;
+      }
+
+      let finalMinute =
+        Number(minuteInput);
+
+      if (
+        Number.isNaN(
+          finalMinute
+        )
+      ) {
+        finalMinute = 0;
+      }
+
+      finalMinute =
+        Math.max(
+          0,
+          Math.min(
+            59,
+            finalMinute
+          )
+        );
+
+      const final24Hour =
+        to24Hour(
+          finalHour,
+          period
+        );
+
+      onUpdate(
+        raid.id,
+        {
+          hour:
+            final24Hour,
+          minute:
+            finalMinute,
+        }
+      );
+
+      const updatedRaid = {
+        ...raid,
+        hour:
+          final24Hour,
+        minute:
+          finalMinute,
+      };
+
+      setSaving(true);
+
+      await onSave(
+        updatedRaid
+      );
+
+      setHourInput(
+        String(finalHour).padStart(
+          2,
+          "0"
+        )
+      );
+
+      setMinuteInput(
+        String(finalMinute).padStart(
+          2,
+          "0"
+        )
+      );
+
+      setSaved(true);
+
+      setTimeout(
+        () => {
+          setSaved(false);
+        },
+        1500
+      );
+    } catch (error) {
+      console.error(
+        "Save error:",
+        error
+      );
+
+      alert(
+        "Unable to save the raid time."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <article className="raid-card">
+
       <div className="boss-art">
         <div className="tbd">
           TBD
@@ -439,23 +810,35 @@ function RaidCard({
       </div>
 
       <div className="raid-main">
+
         <div className="raid-title-row">
           <div>
+
             <div className="raid-type">
               {raid.type}
             </div>
 
-            <h2>{raid.name}</h2>
+            <h2>
+              {raid.name}
+            </h2>
 
             <div className="raid-frequency">
               {raid.schedule}
             </div>
+
           </div>
         </div>
 
+        {/* ==================================================
+            TIME CONVERSION
+        ================================================== */}
+
         <div className="conversion-grid">
+
           {/* PHILIPPINES */}
+
           <div className="time-panel philippines">
+
             <div className="panel-label">
               <span>
                 🇵🇭 PHILIPPINES
@@ -475,15 +858,19 @@ function RaidCard({
             <div className="time-sub">
               Asia / Manila
             </div>
+
           </div>
 
           {/* LOCAL */}
+
           <div className="time-panel local">
+
             <div className="panel-label">
               <span>
                 {getTimezoneFlag(
                   targetTimezone
-                )} YOUR LOCAL TIME
+                )}{" "}
+                YOUR LOCAL TIME
               </span>
 
               <small>
@@ -502,47 +889,75 @@ function RaidCard({
               {" • "}
               {converted.day}
             </div>
+
           </div>
+
         </div>
 
-        {/* EDIT */}
+        {/* ==================================================
+            EDIT
+        ================================================== */}
+
         <div className="edit-area">
+
           <div className="edit-label">
             EDIT PHILIPPINES RAID TIME
           </div>
 
           <div className="edit-controls">
+
             <div className="number-control">
+
               <input
-                type="number"
-                min="1"
-                max="12"
-                value={hour12}
+                type="text"
+                inputMode="numeric"
+                maxLength="2"
+                value={
+                  hourInput
+                }
                 onChange={(e) =>
-                  changeHour(
+                  changeHourInput(
                     e.target.value
                   )
                 }
+                onBlur={
+                  finishHourInput
+                }
+                onFocus={(e) =>
+                  e.target.select()
+                }
+                aria-label="Hour"
               />
 
-              <span>:</span>
+              <span>
+                :
+              </span>
 
               <input
-                type="number"
-                min="0"
-                max="59"
-                value={pad(
-                  raid.minute
-                )}
+                type="text"
+                inputMode="numeric"
+                maxLength="2"
+                value={
+                  minuteInput
+                }
                 onChange={(e) =>
-                  changeMinute(
+                  changeMinuteInput(
                     e.target.value
                   )
                 }
+                onBlur={
+                  finishMinuteInput
+                }
+                onFocus={(e) =>
+                  e.target.select()
+                }
+                aria-label="Minute"
               />
 
               <select
-                value={period}
+                value={
+                  period
+                }
                 onChange={(e) =>
                   changePeriod(
                     e.target.value
@@ -557,24 +972,36 @@ function RaidCard({
                   PM
                 </option>
               </select>
+
             </div>
 
             <button
               className="save-button"
               onClick={save}
+              disabled={saving}
             >
-              {saved ? "SAVED" : "SAVE"}
+              {saving
+                ? "SAVING..."
+                : saved
+                ? "SAVED"
+                : "SAVE"}
             </button>
+
           </div>
+
         </div>
+
       </div>
+
     </article>
   );
 }
 
-/* ============================================================
-   CUSTOM LOCATIONS
-   ============================================================ */
+/*
+============================================================
+CUSTOM LOCATIONS
+============================================================
+*/
 
 function CustomLocations({
   customLocations,
@@ -584,10 +1011,14 @@ function CustomLocations({
     useState("");
 
   function addLocation() {
-    if (!selected) return;
+    if (!selected) {
+      return;
+    }
 
     if (
-      customLocations.includes(selected)
+      customLocations.includes(
+        selected
+      )
     ) {
       return;
     }
@@ -600,18 +1031,24 @@ function CustomLocations({
     setSelected("");
   }
 
-  function removeLocation(zone) {
+  function removeLocation(
+    zone
+  ) {
     setCustomLocations(
       customLocations.filter(
-        (item) => item !== zone
+        (item) =>
+          item !== zone
       )
     );
   }
 
   return (
     <section className="custom-section">
+
       <div className="custom-header">
+
         <div>
+
           <div className="section-label">
             OPTIONAL
           </div>
@@ -624,9 +1061,11 @@ function CustomLocations({
             Add locations to see the boss
             schedule in their timezone.
           </p>
+
         </div>
 
         <div className="location-add">
+
           <select
             value={selected}
             onChange={(e) =>
@@ -635,12 +1074,17 @@ function CustomLocations({
               )
             }
           >
+
             <option value="">
               Select location
             </option>
 
             {TIMEZONES.map(
-              ([zone, name, flag]) => (
+              ([
+                zone,
+                name,
+                flag,
+              ]) => (
                 <option
                   key={zone}
                   value={zone}
@@ -649,28 +1093,38 @@ function CustomLocations({
                 </option>
               )
             )}
+
           </select>
 
           <button
-            onClick={addLocation}
+            onClick={
+              addLocation
+            }
           >
             + ADD LOCATION
           </button>
+
         </div>
+
       </div>
 
       <div className="location-list">
+
         {customLocations.map(
           (zone) => (
             <div
               className="location-chip"
               key={zone}
             >
+
               <span>
-                {getTimezoneFlag(zone)}
+                {getTimezoneFlag(
+                  zone
+                )}
               </span>
 
               <div>
+
                 <strong>
                   {getTimezoneLabel(
                     zone
@@ -680,15 +1134,19 @@ function CustomLocations({
                 <small>
                   {zone}
                 </small>
+
               </div>
 
               <button
                 onClick={() =>
-                  removeLocation(zone)
+                  removeLocation(
+                    zone
+                  )
                 }
               >
                 ×
               </button>
+
             </div>
           )
         )}
@@ -699,111 +1157,286 @@ function CustomLocations({
             No custom locations added.
           </div>
         )}
+
       </div>
+
     </section>
   );
 }
 
-/* ============================================================
-   APP
-   ============================================================ */
+/*
+============================================================
+APP
+============================================================
+*/
 
 export default function App() {
+
   const localTimezone =
     getLocalTimezone();
 
-  const [raids, setRaids] = useState(() =>
-    loadStorage(
-      "ran-bh-raids",
+  const [raids, setRaids] =
+    useState(
       DEFAULT_RAIDS
-    )
-  );
-
-  const [customLocations, setCustomLocations] =
-    useState(() =>
-      loadStorage(
-        "ran-bh-locations",
-        []
-      )
     );
+
+  const [
+    customLocations,
+    setCustomLocations,
+  ] = useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  /*
+  ============================================================
+  FIRESTORE REAL-TIME LISTENER
+  ============================================================
+  */
 
   useEffect(() => {
-    localStorage.setItem(
-      "ran-bh-raids",
-      JSON.stringify(raids)
-    );
 
-    /*
-      Allows the Save button in a child card
-      to save the latest state.
-    */
-    window.__RAN_RAIDS__ = raids;
-  }, [raids]);
+    const raidsRef =
+      collection(
+        db,
+        "raids"
+      );
 
-  useEffect(() => {
-    localStorage.setItem(
-      "ran-bh-locations",
-      JSON.stringify(
-        customLocations
-      )
-    );
-  }, [customLocations]);
+    const unsubscribe =
+      onSnapshot(
+        raidsRef,
+        (snapshot) => {
 
-  function updateRaid(id, changes) {
-    setRaids((current) =>
-      current.map((raid) =>
-        raid.id === id
-          ? {
-              ...raid,
-              ...changes,
-            }
-          : raid
-      )
+          if (
+            snapshot.empty
+          ) {
+
+            setRaids(
+              DEFAULT_RAIDS
+            );
+
+            setLoading(false);
+
+            return;
+          }
+
+          const firebaseRaids =
+            snapshot.docs.map(
+              (item) => ({
+                ...item.data(),
+                id: item.id,
+              })
+            );
+
+          const orderedRaids =
+            DEFAULT_RAIDS.map(
+              (defaultRaid) => {
+
+                const firebaseRaid =
+                  firebaseRaids.find(
+                    (raid) =>
+                      raid.id ===
+                      defaultRaid.id
+                  );
+
+                return (
+                  firebaseRaid ||
+                  defaultRaid
+                );
+              }
+            );
+
+          setRaids(
+            orderedRaids
+          );
+
+          setLoading(false);
+        },
+        (error) => {
+
+          console.error(
+            "Firestore error:",
+            error
+          );
+
+          setRaids(
+            DEFAULT_RAIDS
+          );
+
+          setLoading(false);
+        }
+      );
+
+    return () =>
+      unsubscribe();
+
+  }, []);
+
+  /*
+  ============================================================
+  SAVE RAID
+  ============================================================
+  */
+
+  async function saveRaid(
+    raid
+  ) {
+
+    const raidRef =
+      doc(
+        db,
+        "raids",
+        raid.id
+      );
+
+    await setDoc(
+      raidRef,
+      {
+        id:
+          raid.id,
+
+        name:
+          raid.name,
+
+        type:
+          raid.type,
+
+        schedule:
+          raid.schedule,
+
+        day:
+          raid.day,
+
+        hour:
+          Number(
+            raid.hour
+          ),
+
+        minute:
+          Number(
+            raid.minute
+          ),
+      },
+      {
+        merge: true,
+      }
     );
   }
 
-  function resetAll() {
-    const answer = window.confirm(
-      "Reset all boss times and custom locations?"
-    );
+  /*
+  ============================================================
+  UPDATE LOCAL STATE
+  ============================================================
+  */
 
-    if (!answer) return;
+  function updateRaid(
+    id,
+    changes
+  ) {
 
-    setRaids(DEFAULT_RAIDS);
-    setCustomLocations([]);
-
-    localStorage.setItem(
-      "ran-bh-raids",
-      JSON.stringify(DEFAULT_RAIDS)
-    );
-
-    localStorage.setItem(
-      "ran-bh-locations",
-      JSON.stringify([])
+    setRaids(
+      (current) =>
+        current.map(
+          (raid) =>
+            raid.id === id
+              ? {
+                  ...raid,
+                  ...changes,
+                }
+              : raid
+        )
     );
   }
+
+  /*
+  ============================================================
+  RESET
+  ============================================================
+  */
+
+  async function resetAll() {
+
+    const answer =
+      window.confirm(
+        "Reset all boss times?"
+      );
+
+    if (!answer) {
+      return;
+    }
+
+    try {
+
+      await Promise.all(
+        DEFAULT_RAIDS.map(
+          (raid) =>
+            setDoc(
+              doc(
+                db,
+                "raids",
+                raid.id
+              ),
+              raid,
+              {
+                merge: true,
+              }
+            )
+        )
+      );
+
+      setRaids(
+        DEFAULT_RAIDS
+      );
+
+    } catch (error) {
+
+      console.error(
+        "Reset failed:",
+        error
+      );
+
+      alert(
+        "Unable to reset the schedule."
+      );
+    }
+  }
+
+  /*
+  ============================================================
+  PAGE
+  ============================================================
+  */
 
   return (
     <div className="app">
+
       {/* HEADER */}
+
       <header className="site-header">
+
         <div>
+
           <div className="eyebrow">
             RAN ONLINE EP7
           </div>
 
           <h1>
             BH RAID
-            <span> SCHEDULE</span>
+            <span>
+              {" "}
+              SCHEDULE
+            </span>
           </h1>
 
           <p>
             Philippines raid schedule
             converted to your timezone
           </p>
+
         </div>
 
         <div className="local-info">
+
           <span>
             YOUR LOCAL TIMEZONE
           </span>
@@ -818,37 +1451,47 @@ export default function App() {
           </strong>
 
           <small>
-            Raid times below are converted
-            from Philippines time.
+            Raid times are fixed to
+            Philippines time.
           </small>
+
         </div>
+
       </header>
 
-      {/* IMPORTANT NOTICE */}
+      {/* NOTICE */}
+
       <div className="notice">
+
         <div className="notice-icon">
           🇵🇭
         </div>
 
         <div>
+
           <strong>
             All raid schedules use
             Philippines time.
           </strong>
 
           <span>
-            Your local raid time is a
-            conversion of that fixed
-            schedule. It does not act as a
-            running clock.
+            The converted time automatically
+            accounts for the destination
+            timezone and daylight saving time.
           </span>
+
         </div>
+
       </div>
 
-      {/* BOSS SCHEDULE */}
+      {/* MAIN */}
+
       <main>
+
         <div className="section-heading">
+
           <div>
+
             <div className="section-label">
               BOSS HUNT
             </div>
@@ -856,30 +1499,60 @@ export default function App() {
             <h2>
               Raid Schedule
             </h2>
+
           </div>
 
           <button
             className="reset-button"
-            onClick={resetAll}
+            onClick={
+              resetAll
+            }
           >
             RESET
           </button>
+
         </div>
 
-        <div className="raid-list">
-          {raids.map((raid) => (
-            <RaidCard
-              key={raid.id}
-              raid={raid}
-              targetTimezone={
-                localTimezone
-              }
-              onUpdate={updateRaid}
-            />
-          ))}
-        </div>
+        {loading ? (
 
-        {/* CUSTOM */}
+          <div className="loading-message">
+            Loading shared raid schedule...
+          </div>
+
+        ) : (
+
+          <div className="raid-list">
+
+            {raids.map(
+              (raid) => (
+
+                <RaidCard
+                  key={
+                    raid.id
+                  }
+                  raid={
+                    raid
+                  }
+                  targetTimezone={
+                    localTimezone
+                  }
+                  onUpdate={
+                    updateRaid
+                  }
+                  onSave={
+                    saveRaid
+                  }
+                />
+
+              )
+            )}
+
+          </div>
+
+        )}
+
+        {/* CUSTOM LOCATIONS */}
+
         <CustomLocations
           customLocations={
             customLocations
@@ -889,10 +1562,13 @@ export default function App() {
           }
         />
 
-        {/* CUSTOM CONVERSION TABLE */}
+        {/* CUSTOM TABLE */}
+
         {customLocations.length >
           0 && (
+
           <section className="conversion-section">
+
             <div className="section-label">
               CUSTOM VIEW
             </div>
@@ -907,9 +1583,13 @@ export default function App() {
             </p>
 
             <div className="table-wrapper">
+
               <table>
+
                 <thead>
+
                   <tr>
+
                     <th>
                       BOSS
                     </th>
@@ -920,7 +1600,12 @@ export default function App() {
 
                     {customLocations.map(
                       (zone) => (
-                        <th key={zone}>
+
+                        <th
+                          key={
+                            zone
+                          }
+                        >
                           {
                             getTimezoneFlag(
                               zone
@@ -932,75 +1617,108 @@ export default function App() {
                             )
                           }
                         </th>
+
                       )
                     )}
+
                   </tr>
+
                 </thead>
 
                 <tbody>
-                  {raids.map((raid) => (
-                    <tr key={raid.id}>
-                      <td>
-                        <strong>
-                          {raid.name}
-                        </strong>
 
-                        <small>
-                          {
-                            raid.schedule
-                          }
-                        </small>
-                      </td>
+                  {raids.map(
+                    (raid) => (
 
-                      <td>
-                        <strong>
-                          {
-                            getPhilippinesDisplay(
-                              raid
-                            )
-                          }
-                        </strong>
-                      </td>
-
-                      {customLocations.map(
-                        (zone) => {
-                          const converted =
-                            convertRaidTime(
-                              raid,
-                              zone
-                            );
-
-                          return (
-                            <td
-                              key={zone}
-                            >
-                              <strong>
-                                {
-                                  converted.time
-                                }
-                              </strong>
-
-                              <small>
-                                {
-                                  converted.day
-                                }
-                              </small>
-                            </td>
-                          );
+                      <tr
+                        key={
+                          raid.id
                         }
-                      )}
-                    </tr>
-                  ))}
+                      >
+
+                        <td>
+
+                          <strong>
+                            {
+                              raid.name
+                            }
+                          </strong>
+
+                          <small>
+                            {
+                              raid.schedule
+                            }
+                          </small>
+
+                        </td>
+
+                        <td>
+
+                          <strong>
+                            {getPhilippinesDisplay(
+                              raid
+                            )}
+                          </strong>
+
+                        </td>
+
+                        {customLocations.map(
+                          (zone) => {
+
+                            const converted =
+                              convertRaidTime(
+                                raid,
+                                zone
+                              );
+
+                            return (
+
+                              <td
+                                key={
+                                  zone
+                                }
+                              >
+
+                                <strong>
+                                  {
+                                    converted.time
+                                  }
+                                </strong>
+
+                                <small>
+                                  {
+                                    converted.day
+                                  }
+                                </small>
+
+                              </td>
+
+                            );
+                          }
+                        )}
+
+                      </tr>
+
+                    )
+                  )}
+
                 </tbody>
+
               </table>
+
             </div>
+
           </section>
+
         )}
+
       </main>
 
       <footer>
         RAN ONLINE EP7 • BH RAID SCHEDULE
       </footer>
+
     </div>
   );
 }
+
