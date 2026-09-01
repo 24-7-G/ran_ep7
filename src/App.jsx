@@ -1,22 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
-import "./App.css";
+
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   collection,
+  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
   setDoc,
+  addDoc,
+  updateDoc,
 } from "firebase/firestore";
 
-import { db } from "./firebase";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+
+import * as XLSX from "xlsx";
+
+import {
+  auth,
+  db,
+} from "./firebase";
+
+/* ============================================================
+   CONSTANTS
+============================================================ */
 
 const PH_TIMEZONE = "Asia/Manila";
-
-/*
-============================================================
-TIMEZONES
-============================================================
-*/
 
 const TIMEZONES = [
   ["America/Los_Angeles", "Seattle / Los Angeles", "🇺🇸"],
@@ -42,11 +62,14 @@ const TIMEZONES = [
   ["Europe/Berlin", "Berlin", "🇩🇪"],
 ];
 
-/*
-============================================================
-DEFAULT RAID DATA
-============================================================
-*/
+const CLASSES = [
+  "Swordman",
+  "Archer",
+  "Gunner",
+  "Shaman",
+  "Extreme",
+  "Brawler",
+];
 
 const DEFAULT_RAIDS = [
   {
@@ -68,15 +91,6 @@ const DEFAULT_RAIDS = [
     minute: 0,
   },
   {
-    id: "giant-hawk",
-    name: "Giant Hawk",
-    type: "MINI BOSS",
-    schedule: "Every Day",
-    day: null,
-    hour: 12,
-    minute: 0,
-  },
-  {
     id: "reflector",
     name: "Reflector",
     type: "MINI BOSS",
@@ -85,17 +99,32 @@ const DEFAULT_RAIDS = [
     hour: 12,
     minute: 0,
   },
+  {
+    id: "giant-hawk",
+    name: "Giant Hawk",
+    type: "MINI BOSS",
+    schedule: "Every Day",
+    day: null,
+    hour: 12,
+    minute: 0,
+  },
 ];
 
-/*
-============================================================
-TIMEZONE HELPERS
-============================================================
-*/
+const DEFAULT_SETTINGS = {
+  sonyaPoints: 1,
+  miniBossPoints: 0.2,
+  eligibilityScore: 6,
+};
+
+/* ============================================================
+   TIME HELPERS
+============================================================ */
 
 function getLocalTimezone() {
   return (
-    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    Intl.DateTimeFormat()
+      .resolvedOptions()
+      .timeZone ||
     "America/Los_Angeles"
   );
 }
@@ -116,29 +145,18 @@ function getTimezoneFlag(timezone) {
   return found ? found[2] : "🌎";
 }
 
-/*
-============================================================
-TIME HELPERS
-============================================================
-*/
-
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
 function get12Hour(hour) {
-  hour = Number(hour);
-
   if (hour === 0) return 12;
   if (hour > 12) return hour - 12;
-
   return hour;
 }
 
 function getPeriod(hour) {
-  return Number(hour) >= 12
-    ? "PM"
-    : "AM";
+  return hour >= 12 ? "PM" : "AM";
 }
 
 function to24Hour(hour, period) {
@@ -148,7 +166,10 @@ function to24Hour(hour, period) {
     h = 12;
   }
 
-  h = Math.max(1, Math.min(12, h));
+  h = Math.max(
+    1,
+    Math.min(12, Math.trunc(h))
+  );
 
   if (period === "AM") {
     return h === 12 ? 0 : h;
@@ -157,62 +178,44 @@ function to24Hour(hour, period) {
   return h === 12 ? 12 : h + 12;
 }
 
-/*
-============================================================
-GET TODAY IN PHILIPPINES
-============================================================
-*/
+function getTimezoneOffset(timezone, date) {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }
+    ).formatToParts(date);
 
-function getTodayPhilippines() {
-  const now = new Date();
-
-  const parts = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone: PH_TIMEZONE,
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-    }
-  ).formatToParts(now);
-
-  const result = {};
+  const values = {};
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      result[part.type] = Number(
-        part.value
-      );
+      values[part.type] =
+        Number(part.value);
     }
   });
 
-  return {
-    year: result.year,
-    month: result.month,
-    day: result.day,
-  };
+  const asUTC = Date.UTC(
+    values.year,
+    values.month - 1,
+    values.day,
+    values.hour,
+    values.minute,
+    values.second
+  );
+
+  return Math.round(
+    (asUTC - date.getTime()) / 60000
+  );
 }
-
-/*
-============================================================
-PHILIPPINES LOCAL TIME → UTC
-
-IMPORTANT:
-
-Philippines is ALWAYS UTC+8.
-
-There is NO daylight saving time.
-
-Therefore:
-
-PH 9:00 PM
-=
-UTC 1:00 PM
-
-This is much more reliable than trying
-to calculate the Philippines offset dynamically.
-============================================================
-*/
 
 function philippinesDateToUTC(
   year,
@@ -221,29 +224,63 @@ function philippinesDateToUTC(
   hour,
   minute
 ) {
-  return new Date(
+  let guess = new Date(
     Date.UTC(
       year,
       month - 1,
       day,
-      Number(hour) - 8,
-      Number(minute),
-      0,
+      hour,
+      minute,
       0
     )
   );
+
+  for (let i = 0; i < 4; i++) {
+    const offset =
+      getTimezoneOffset(
+        PH_TIMEZONE,
+        guess
+      );
+
+    guess = new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        hour,
+        minute,
+        0
+      ) -
+        offset * 60000
+    );
+  }
+
+  return guess;
 }
 
-/*
-============================================================
-GET NEXT RAID OCCURRENCE
+function getTodayPhilippines() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: PH_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(new Date());
 
-The date is based on PHILIPPINES date.
+  const result = {};
 
-The resulting Date represents the exact
-instant of the raid worldwide.
-============================================================
-*/
+  parts.forEach((part) => {
+    if (part.type !== "literal") {
+      result[part.type] =
+        Number(part.value);
+    }
+  });
+
+  return result;
+}
 
 function getNextOccurrence(raid) {
   const today =
@@ -255,118 +292,78 @@ function getNextOccurrence(raid) {
     day,
   } = today;
 
-  /*
-    DAILY RAID
-  */
   if (raid.day === null) {
+    const todayOccurrence =
+      philippinesDateToUTC(
+        year,
+        month,
+        day,
+        Number(raid.hour),
+        Number(raid.minute)
+      );
+
+    if (
+      todayOccurrence.getTime() >=
+      Date.now()
+    ) {
+      return todayOccurrence;
+    }
+
     return philippinesDateToUTC(
       year,
       month,
-      day,
-      raid.hour,
-      raid.minute
+      day + 1,
+      Number(raid.hour),
+      Number(raid.minute)
     );
   }
 
-  /*
-    WEEKLY RAID
-  */
-
-  /*
-    JS:
-    Sunday = 0
-    Monday = 1
-    Tuesday = 2
-    Wednesday = 3
-    Thursday = 4
-    Friday = 5
-    Saturday = 6
-  */
-
-  const currentDay = new Date(
+  const todayUTC = new Date(
     Date.UTC(
       year,
       month - 1,
       day
     )
-  ).getUTCDay();
+  );
+
+  const currentDay =
+    todayUTC.getUTCDay();
 
   let daysUntil =
-    raid.day - currentDay;
+    Number(raid.day) -
+    currentDay;
 
   if (daysUntil < 0) {
     daysUntil += 7;
   }
 
-  /*
-    If today is the raid day but the raid
-    time has already passed, move to next week.
+  let occurrence =
+    philippinesDateToUTC(
+      year,
+      month,
+      day + daysUntil,
+      Number(raid.hour),
+      Number(raid.minute)
+    );
 
-    This prevents Wednesday's Sonya from
-    incorrectly showing the old occurrence.
-  */
-
-  if (daysUntil === 0) {
-    const currentUTC =
-      new Date();
-
-    const raidUTC =
+  if (
+    occurrence.getTime() <
+    Date.now()
+  ) {
+    occurrence =
       philippinesDateToUTC(
         year,
         month,
-        day,
-        raid.hour,
-        raid.minute
+        day +
+          daysUntil +
+          7,
+        Number(raid.hour),
+        Number(raid.minute)
       );
-
-    if (
-      currentUTC.getTime() >
-      raidUTC.getTime()
-    ) {
-      daysUntil = 7;
-    }
   }
 
-  const targetDate =
-    new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day + daysUntil
-      )
-    );
-
-  year =
-    targetDate.getUTCFullYear();
-
-  month =
-    targetDate.getUTCMonth() + 1;
-
-  day =
-    targetDate.getUTCDate();
-
-  return philippinesDateToUTC(
-    year,
-    month,
-    day,
-    raid.hour,
-    raid.minute
-  );
+  return occurrence;
 }
-
-/*
-============================================================
-CONVERT RAID TO TARGET TIMEZONE
-
-The Date object represents one exact
-worldwide instant.
-
-Intl then converts that instant into
-the requested timezone.
-
-DST is automatically handled by the browser.
-============================================================
-*/
 
 function convertRaidTime(
   raid,
@@ -375,7 +372,7 @@ function convertRaidTime(
   const utcDate =
     getNextOccurrence(raid);
 
-  const dateFormatter =
+  const dateString =
     new Intl.DateTimeFormat(
       "en-US",
       {
@@ -385,9 +382,9 @@ function convertRaidTime(
         day: "numeric",
         year: "numeric",
       }
-    );
+    ).format(utcDate);
 
-  const timeFormatter =
+  const timeString =
     new Intl.DateTimeFormat(
       "en-US",
       {
@@ -396,64 +393,285 @@ function convertRaidTime(
         minute: "2-digit",
         hour12: true,
       }
-    );
+    ).format(utcDate);
 
-  const weekdayFormatter =
+  const day =
     new Intl.DateTimeFormat(
       "en-US",
       {
         timeZone: timezone,
         weekday: "long",
       }
-    );
+    ).format(utcDate);
 
   return {
-    date: dateFormatter.format(
-      utcDate
-    ),
-
-    time: timeFormatter.format(
-      utcDate
-    ),
-
-    day: weekdayFormatter.format(
-      utcDate
-    ),
+    date: dateString,
+    time: timeString,
+    day,
   };
 }
 
-/*
-============================================================
-PHILIPPINES DISPLAY
-============================================================
-*/
-
-function getPhilippinesDisplay(
-  raid
-) {
-  const hour = get12Hour(
-    raid.hour
-  );
-
-  const period =
-    getPeriod(raid.hour);
-
-  return `${hour}:${pad(
-    raid.minute
-  )} ${period}`;
+function getPhilippinesDisplay(raid) {
+  return `${get12Hour(
+    Number(raid.hour)
+  )}:${pad(
+    Number(raid.minute)
+  )} ${getPeriod(
+    Number(raid.hour)
+  )}`;
 }
 
+function formatTimestamp(value) {
+  if (!value) return "—";
+
+  let date;
+
+  if (
+    typeof value?.toDate ===
+    "function"
+  ) {
+    date = value.toDate();
+  } else {
+    date = new Date(value);
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString();
+}
+
+function getDateKey() {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone: PH_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(new Date());
+
+  const values = {};
+
+  parts.forEach((part) => {
+    if (part.type !== "literal") {
+      values[part.type] =
+        part.value;
+    }
+  });
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+/* ============================================================
+   SCORE CALCULATION
+============================================================ */
+
 /*
-============================================================
-RAID CARD
-============================================================
+  IMPORTANT:
+
+  totalScore is NOT trusted anymore.
+
+  Firebase attendanceHistory is the source of truth.
+
+  Every history document contains:
+
+  playerId
+  ign
+  bosses
+  points
+
+  Score is calculated by adding history.points.
 */
+
+function calculatePlayerScore(
+  playerId,
+  history
+) {
+  return history
+    .filter(
+      (item) =>
+        item.playerId === playerId
+    )
+    .reduce(
+      (total, item) =>
+        total +
+        Number(item.points || 0),
+      0
+    );
+}
+
+function calculateAllScores(
+  players,
+  history
+) {
+  return players.map(
+    (player) => ({
+      ...player,
+      calculatedScore:
+        calculatePlayerScore(
+          player.id,
+          history
+        ),
+    })
+  );
+}
+
+/* ============================================================
+   LOGIN MODAL
+============================================================ */
+
+function LoginModal({
+  onClose,
+}) {
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const credential =
+        await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password
+        );
+
+      const adminDoc =
+        await getDoc(
+          doc(
+            db,
+            "admins",
+            credential.user.uid
+          )
+        );
+
+      if (
+        !adminDoc.exists() ||
+        adminDoc.data()
+          ?.active !== true
+      ) {
+        await signOut(auth);
+
+        setError(
+          `Login succeeded, but this Firebase account is NOT registered as an admin. UID: ${credential.user.uid}`
+        );
+
+        return;
+      }
+
+      onClose();
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err.code ===
+          "auth/invalid-credential"
+          ? "Invalid email or password."
+          : err.message ||
+              "Unable to login."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+    >
+      <form
+        className="modal-card"
+        onSubmit={submit}
+        onClick={(e) =>
+          e.stopPropagation()
+        }
+      >
+        <div className="section-label">
+          ADMIN ACCESS
+        </div>
+
+        <h2>
+          Attendance Admin
+        </h2>
+
+        <input
+          type="email"
+          placeholder="Admin email"
+          value={email}
+          onChange={(e) =>
+            setEmail(e.target.value)
+          }
+          required
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) =>
+            setPassword(
+              e.target.value
+            )
+          }
+          required
+        />
+
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+          >
+            CANCEL
+          </button>
+
+          <button
+            className="primary-button"
+            disabled={loading}
+          >
+            {loading
+              ? "LOGIN..."
+              : "LOGIN"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ============================================================
+   RAID CARD
+============================================================ */
 
 function RaidCard({
   raid,
   targetTimezone,
+  admin,
   onUpdate,
-  onSave,
 }) {
   const converted = useMemo(
     () =>
@@ -464,46 +682,30 @@ function RaidCard({
     [raid, targetTimezone]
   );
 
-  const [saving, setSaving] =
-    useState(false);
+  const [
+    hourInput,
+    setHourInput,
+  ] = useState(
+    String(
+      get12Hour(
+        Number(raid.hour)
+      )
+    ).padStart(2, "0")
+  );
 
-  const [saved, setSaved] =
-    useState(false);
-
-  /*
-    String values allow manual editing.
-  */
-
-  const [hourInput, setHourInput] =
-    useState(
-      String(
-        get12Hour(
-          Number(raid.hour)
-        )
-      ).padStart(2, "0")
-    );
-
-  const [minuteInput, setMinuteInput] =
-    useState(
-      String(
-        Number(raid.minute)
-      ).padStart(2, "0")
-    );
-
-  const hour12 =
-    get12Hour(
-      Number(raid.hour)
-    );
+  const [
+    minuteInput,
+    setMinuteInput,
+  ] = useState(
+    String(
+      Number(raid.minute)
+    ).padStart(2, "0")
+  );
 
   const period =
     getPeriod(
       Number(raid.hour)
     );
-
-  /*
-    Sync fields when Firestore sends
-    a new value from another user.
-  */
 
   useEffect(() => {
     setHourInput(
@@ -524,281 +726,41 @@ function RaidCard({
     raid.minute,
   ]);
 
-  /*
-    HOUR INPUT
-  */
-
-  function changeHourInput(
-    value
-  ) {
-    if (!/^\d*$/.test(value)) {
-      return;
-    }
-
-    if (value.length > 2) {
-      return;
-    }
-
-    setHourInput(value);
-
-    if (value === "") {
-      return;
-    }
-
-    const number =
-      Number(value);
-
-    if (
-      number >= 1 &&
-      number <= 12
-    ) {
-      onUpdate(
-        raid.id,
-        {
-          hour: to24Hour(
-            number,
-            period
-          ),
-        }
-      );
-
-      setSaved(false);
-    }
-  }
-
-  function finishHourInput() {
-    let value =
-      Number(hourInput);
-
-    if (
-      !value ||
-      value < 1
-    ) {
-      value = 1;
-    }
-
-    if (value > 12) {
-      value = 12;
-    }
-
-    setHourInput(
-      String(value).padStart(
-        2,
-        "0"
-      )
-    );
-
-    onUpdate(
-      raid.id,
-      {
-        hour: to24Hour(
-          value,
-          period
-        ),
-      }
-    );
-  }
-
-  /*
-    MINUTE INPUT
-  */
-
-  function changeMinuteInput(
-    value
-  ) {
-    if (!/^\d*$/.test(value)) {
-      return;
-    }
-
-    if (value.length > 2) {
-      return;
-    }
-
-    setMinuteInput(value);
-
-    if (value === "") {
-      return;
-    }
-
-    let minute =
-      Number(value);
-
-    if (minute > 59) {
-      minute = 59;
-    }
-
-    onUpdate(
-      raid.id,
-      {
-        minute,
-      }
-    );
-
-    setSaved(false);
-  }
-
-  function finishMinuteInput() {
-    let minute =
-      Number(minuteInput);
-
-    if (
-      Number.isNaN(minute)
-    ) {
-      minute = 0;
-    }
-
-    minute = Math.max(
-      0,
-      Math.min(
-        59,
-        minute
-      )
-    );
-
-    setMinuteInput(
-      String(minute).padStart(
-        2,
-        "0"
-      )
-    );
-
-    onUpdate(
-      raid.id,
-      {
-        minute,
-      }
-    );
-  }
-
-  /*
-    AM / PM
-  */
-
-  function changePeriod(
-    value
-  ) {
-    onUpdate(
-      raid.id,
-      {
-        hour: to24Hour(
-          hour12,
-          value
-        ),
-      }
-    );
-
-    setSaved(false);
-  }
-
-  /*
-    SAVE
-  */
-
   async function save() {
-    try {
-      let finalHour =
-        Number(hourInput);
+    let h = Number(hourInput);
+    let m = Number(minuteInput);
 
-      if (
-        !finalHour ||
-        finalHour < 1
-      ) {
-        finalHour = 1;
-      }
+    if (!Number.isFinite(h))
+      h = 12;
 
-      if (finalHour > 12) {
-        finalHour = 12;
-      }
+    if (!Number.isFinite(m))
+      m = 0;
 
-      let finalMinute =
-        Number(minuteInput);
+    h = Math.max(
+      1,
+      Math.min(12, Math.trunc(h))
+    );
 
-      if (
-        Number.isNaN(
-          finalMinute
-        )
-      ) {
-        finalMinute = 0;
-      }
+    m = Math.max(
+      0,
+      Math.min(59, Math.trunc(m))
+    );
 
-      finalMinute =
-        Math.max(
-          0,
-          Math.min(
-            59,
-            finalMinute
-          )
-        );
-
-      const final24Hour =
-        to24Hour(
-          finalHour,
-          period
-        );
-
-      onUpdate(
-        raid.id,
-        {
-          hour:
-            final24Hour,
-          minute:
-            finalMinute,
-        }
-      );
-
-      const updatedRaid = {
+    await onUpdate(
+      raid.id,
+      {
         ...raid,
-        hour:
-          final24Hour,
-        minute:
-          finalMinute,
-      };
-
-      setSaving(true);
-
-      await onSave(
-        updatedRaid
-      );
-
-      setHourInput(
-        String(finalHour).padStart(
-          2,
-          "0"
-        )
-      );
-
-      setMinuteInput(
-        String(finalMinute).padStart(
-          2,
-          "0"
-        )
-      );
-
-      setSaved(true);
-
-      setTimeout(
-        () => {
-          setSaved(false);
-        },
-        1500
-      );
-    } catch (error) {
-      console.error(
-        "Save error:",
-        error
-      );
-
-      alert(
-        "Unable to save the raid time."
-      );
-    } finally {
-      setSaving(false);
-    }
+        hour: to24Hour(
+          h,
+          period
+        ),
+        minute: m,
+      }
+    );
   }
 
   return (
     <article className="raid-card">
-
       <div className="boss-art">
         <div className="tbd">
           TBD
@@ -810,40 +772,20 @@ function RaidCard({
       </div>
 
       <div className="raid-main">
-
-        <div className="raid-title-row">
-          <div>
-
-            <div className="raid-type">
-              {raid.type}
-            </div>
-
-            <h2>
-              {raid.name}
-            </h2>
-
-            <div className="raid-frequency">
-              {raid.schedule}
-            </div>
-
-          </div>
+        <div className="raid-type">
+          {raid.type}
         </div>
 
-        {/* ==================================================
-            TIME CONVERSION
-        ================================================== */}
+        <h2>{raid.name}</h2>
+
+        <div className="raid-frequency">
+          {raid.schedule}
+        </div>
 
         <div className="conversion-grid">
-
-          {/* PHILIPPINES */}
-
-          <div className="time-panel philippines">
-
+          <div className="time-panel">
             <div className="panel-label">
-              <span>
-                🇵🇭 PHILIPPINES
-              </span>
-
+              🇵🇭 PHILIPPINES
               <small>
                 RAID TIME
               </small>
@@ -858,21 +800,14 @@ function RaidCard({
             <div className="time-sub">
               Asia / Manila
             </div>
-
           </div>
 
-          {/* LOCAL */}
-
           <div className="time-panel local">
-
             <div className="panel-label">
-              <span>
-                {getTimezoneFlag(
-                  targetTimezone
-                )}{" "}
-                YOUR LOCAL TIME
-              </span>
-
+              {getTimezoneFlag(
+                targetTimezone
+              )}{" "}
+              YOUR LOCAL TIME
               <small>
                 CONVERTED
               </small>
@@ -885,437 +820,2879 @@ function RaidCard({
             <div className="time-sub">
               {getTimezoneLabel(
                 targetTimezone
-              )}
-              {" • "}
+              )}{" "}
+              •{" "}
               {converted.day}
             </div>
-
           </div>
-
         </div>
 
-        {/* ==================================================
-            EDIT
-        ================================================== */}
+        <div className="raid-updated">
+          <span>
+            RAID SCHEDULE STATUS
+          </span>
 
-        <div className="edit-area">
+          <strong>
+            {formatTimestamp(
+              raid.updatedAt
+            )}
+          </strong>
+        </div>
 
-          <div className="edit-label">
-            EDIT PHILIPPINES RAID TIME
-          </div>
-
-          <div className="edit-controls">
-
-            <div className="number-control">
-
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength="2"
-                value={
-                  hourInput
-                }
-                onChange={(e) =>
-                  changeHourInput(
-                    e.target.value
-                  )
-                }
-                onBlur={
-                  finishHourInput
-                }
-                onFocus={(e) =>
-                  e.target.select()
-                }
-                aria-label="Hour"
-              />
-
-              <span>
-                :
-              </span>
-
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength="2"
-                value={
-                  minuteInput
-                }
-                onChange={(e) =>
-                  changeMinuteInput(
-                    e.target.value
-                  )
-                }
-                onBlur={
-                  finishMinuteInput
-                }
-                onFocus={(e) =>
-                  e.target.select()
-                }
-                aria-label="Minute"
-              />
-
-              <select
-                value={
-                  period
-                }
-                onChange={(e) =>
-                  changePeriod(
-                    e.target.value
-                  )
-                }
-              >
-                <option value="AM">
-                  AM
-                </option>
-
-                <option value="PM">
-                  PM
-                </option>
-              </select>
-
+        {admin && (
+          <div className="edit-area">
+            <div className="edit-label">
+              EDIT PHILIPPINES RAID TIME
             </div>
 
-            <button
-              className="save-button"
-              onClick={save}
-              disabled={saving}
-            >
-              {saving
-                ? "SAVING..."
-                : saved
-                ? "SAVED"
-                : "SAVE"}
-            </button>
+            <div className="edit-controls">
+              <div className="number-control">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={hourInput}
+                  onChange={(e) => {
+                    const value =
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      );
 
+                    if (
+                      value.length <= 2
+                    ) {
+                      setHourInput(
+                        value
+                      );
+                    }
+                  }}
+                />
+
+                <span>:</span>
+
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={minuteInput}
+                  onChange={(e) => {
+                    const value =
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      );
+
+                    if (
+                      value.length <= 2
+                    ) {
+                      setMinuteInput(
+                        value
+                      );
+                    }
+                  }}
+                />
+
+                <select
+                  value={period}
+                  onChange={async (
+                    e
+                  ) => {
+                    let h =
+                      Number(
+                        hourInput
+                      );
+
+                    if (
+                      !Number.isFinite(
+                        h
+                      )
+                    )
+                      h = 12;
+
+                    await onUpdate(
+                      raid.id,
+                      {
+                        ...raid,
+                        hour:
+                          to24Hour(
+                            h,
+                            e.target
+                              .value
+                          ),
+                      }
+                    );
+                  }}
+                >
+                  <option value="AM">
+                    AM
+                  </option>
+
+                  <option value="PM">
+                    PM
+                  </option>
+                </select>
+              </div>
+
+              <button
+                className="primary-button"
+                onClick={save}
+              >
+                SAVE
+              </button>
+            </div>
           </div>
-
-        </div>
-
+        )}
       </div>
-
     </article>
   );
 }
 
-/*
-============================================================
-CUSTOM LOCATIONS
-============================================================
-*/
+/* ============================================================
+   RAID PAGE
+============================================================ */
 
-function CustomLocations({
-  customLocations,
-  setCustomLocations,
+function RaidPage({
+  raids,
+  admin,
+  onUpdateRaid,
+  lastUpdated,
 }) {
-  const [selected, setSelected] =
-    useState("");
+  const localTimezone =
+    getLocalTimezone();
+
+  const [
+    customLocations,
+    setCustomLocations,
+  ] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem(
+          "ran-bh-locations"
+        ) || "[]"
+      );
+    } catch {
+      return [];
+    }
+  });
+
+  const [
+    selectedLocation,
+    setSelectedLocation,
+  ] = useState("");
 
   function addLocation() {
-    if (!selected) {
-      return;
-    }
-
     if (
+      !selectedLocation ||
       customLocations.includes(
-        selected
+        selectedLocation
       )
     ) {
       return;
     }
 
-    setCustomLocations([
+    const next = [
       ...customLocations,
-      selected,
-    ]);
+      selectedLocation,
+    ];
 
-    setSelected("");
+    setCustomLocations(next);
+
+    localStorage.setItem(
+      "ran-bh-locations",
+      JSON.stringify(next)
+    );
+
+    setSelectedLocation("");
   }
 
-  function removeLocation(
-    zone
-  ) {
-    setCustomLocations(
+  function removeLocation(zone) {
+    const next =
       customLocations.filter(
-        (item) =>
-          item !== zone
-      )
+        (x) => x !== zone
+      );
+
+    setCustomLocations(next);
+
+    localStorage.setItem(
+      "ran-bh-locations",
+      JSON.stringify(next)
     );
   }
 
   return (
-    <section className="custom-section">
-
-      <div className="custom-header">
+    <main className="page">
+      <div className="notice">
+        <div className="notice-icon">
+          🇵🇭
+        </div>
 
         <div>
+          <strong>
+            All raid schedules use
+            Philippines time.
+          </strong>
 
+          <span>
+            Local times are converted
+            automatically.
+          </span>
+        </div>
+      </div>
+
+      <div className="section-heading">
+        <div>
           <div className="section-label">
-            OPTIONAL
+            BOSS HUNT
           </div>
 
           <h2>
-            Custom Raid Locations
+            Raid Schedule
           </h2>
 
-          <p>
-            Add locations to see the boss
-            schedule in their timezone.
+          <p className="subtext">
+            Overall schedule last
+            updated:{" "}
+            {formatTimestamp(
+              lastUpdated
+            )}
           </p>
+        </div>
+      </div>
 
+      <div className="raid-list">
+        {raids.map((raid) => (
+          <RaidCard
+            key={raid.id}
+            raid={raid}
+            targetTimezone={
+              localTimezone
+            }
+            admin={admin}
+            onUpdate={
+              onUpdateRaid
+            }
+          />
+        ))}
+      </div>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">
+              OPTIONAL
+            </div>
+
+            <h2>
+              Custom Raid Locations
+            </h2>
+
+            <p>
+              Add additional locations
+              to compare raid times.
+            </p>
+          </div>
+
+          <div className="location-add">
+            <select
+              value={
+                selectedLocation
+              }
+              onChange={(e) =>
+                setSelectedLocation(
+                  e.target.value
+                )
+              }
+            >
+              <option value="">
+                Select location
+              </option>
+
+              {TIMEZONES.map(
+                ([
+                  zone,
+                  name,
+                  flag,
+                ]) => (
+                  <option
+                    key={zone}
+                    value={zone}
+                  >
+                    {flag} {name}
+                  </option>
+                )
+              )}
+            </select>
+
+            <button
+              className="secondary-button"
+              onClick={
+                addLocation
+              }
+            >
+              + ADD
+            </button>
+          </div>
         </div>
 
-        <div className="location-add">
+        <div className="location-list">
+          {customLocations.map(
+            (zone) => (
+              <div
+                className="location-chip"
+                key={zone}
+              >
+                <span>
+                  {getTimezoneFlag(
+                    zone
+                  )}
+                </span>
 
-          <select
-            value={selected}
+                <div>
+                  <strong>
+                    {getTimezoneLabel(
+                      zone
+                    )}
+                  </strong>
+
+                  <small>
+                    {zone}
+                  </small>
+                </div>
+
+                <button
+                  onClick={() =>
+                    removeLocation(
+                      zone
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </section>
+
+      {customLocations.length >
+        0 && (
+        <section className="panel">
+          <div className="section-label">
+            CUSTOM VIEW
+          </div>
+
+          <h2>
+            Raid Times by Location
+          </h2>
+
+          <div className="table-scroll">
+            <table className="schedule-table">
+              <thead>
+                <tr>
+                  <th>BOSS</th>
+                  <th>
+                    🇵🇭 PHILIPPINES
+                  </th>
+
+                  {customLocations.map(
+                    (zone) => (
+                      <th key={zone}>
+                        {
+                          getTimezoneFlag(
+                            zone
+                          )
+                        }{" "}
+                        {
+                          getTimezoneLabel(
+                            zone
+                          )
+                        }
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+
+              <tbody>
+                {raids.map(
+                  (raid) => (
+                    <tr
+                      key={
+                        raid.id
+                      }
+                    >
+                      <td>
+                        <strong>
+                          {
+                            raid.name
+                          }
+                        </strong>
+
+                        <small>
+                          {
+                            raid.schedule
+                          }
+                        </small>
+                      </td>
+
+                      <td>
+                        <strong>
+                          {getPhilippinesDisplay(
+                            raid
+                          )}
+                        </strong>
+                      </td>
+
+                      {customLocations.map(
+                        (zone) => {
+                          const converted =
+                            convertRaidTime(
+                              raid,
+                              zone
+                            );
+
+                          return (
+                            <td
+                              key={
+                                zone
+                              }
+                            >
+                              <strong>
+                                {
+                                  converted.time
+                                }
+                              </strong>
+
+                              <small>
+                                {
+                                  converted.day
+                                }
+                              </small>
+                            </td>
+                          );
+                        }
+                      )}
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+/* ============================================================
+   ATTENDANCE PLAYER ROW
+============================================================ */
+
+function AttendancePlayerRow({
+  player,
+  score,
+  eligible,
+  admin,
+  onSelect,
+  onUpdate,
+  onDelete,
+  weaponOptions,
+}) {
+  const [ign, setIgn] =
+    useState(player.ign);
+
+  const [className, setClassName] =
+    useState(
+      player.className || "Swordman"
+    );
+
+  const [weapon, setWeapon] =
+    useState(player.weapon || "");
+
+  useEffect(() => {
+    setIgn(player.ign);
+    setClassName(
+      player.className ||
+        "Swordman"
+    );
+    setWeapon(
+      player.weapon || ""
+    );
+  }, [
+    player.ign,
+    player.className,
+    player.weapon,
+  ]);
+
+  async function save() {
+    const cleanIGN =
+      ign.trim();
+
+    if (!cleanIGN) return;
+
+    await onUpdate(
+      player.id,
+      {
+        ign: cleanIGN,
+        className,
+        weapon:
+          weapon.trim(),
+      }
+    );
+  }
+
+  return (
+    <tr>
+      <td>
+        {admin ? (
+          <input
+            className="table-input ign-input"
+            value={ign}
             onChange={(e) =>
-              setSelected(
+              setIgn(
+                e.target.value
+              )
+            }
+          />
+        ) : (
+          <button
+            className="ign-link"
+            onClick={() =>
+              onSelect(player)
+            }
+          >
+            {player.ign}
+          </button>
+        )}
+      </td>
+
+      <td>
+        {admin ? (
+          <select
+            className="table-select"
+            value={className}
+            onChange={(e) =>
+              setClassName(
                 e.target.value
               )
             }
           >
-
-            <option value="">
-              Select location
-            </option>
-
-            {TIMEZONES.map(
-              ([
-                zone,
-                name,
-                flag,
-              ]) => (
+            {CLASSES.map(
+              (item) => (
                 <option
-                  key={zone}
-                  value={zone}
+                  key={item}
+                  value={item}
                 >
-                  {flag} {name}
+                  {item}
                 </option>
               )
             )}
-
           </select>
+        ) : (
+          player.className ||
+          "—"
+        )}
+      </td>
 
-          <button
-            onClick={
-              addLocation
-            }
-          >
-            + ADD LOCATION
-          </button>
+      <td>
+        {admin ? (
+          <div className="weapon-editor">
+            <input
+              className="table-input"
+              list={`weapon-list-${player.id}`}
+              value={weapon}
+              placeholder="Type or select"
+              onChange={(e) =>
+                setWeapon(
+                  e.target.value
+                )
+              }
+            />
 
-        </div>
-
-      </div>
-
-      <div className="location-list">
-
-        {customLocations.map(
-          (zone) => (
-            <div
-              className="location-chip"
-              key={zone}
+            <datalist
+              id={`weapon-list-${player.id}`}
             >
-
-              <span>
-                {getTimezoneFlag(
-                  zone
-                )}
-              </span>
-
-              <div>
-
-                <strong>
-                  {getTimezoneLabel(
-                    zone
-                  )}
-                </strong>
-
-                <small>
-                  {zone}
-                </small>
-
-              </div>
-
-              <button
-                onClick={() =>
-                  removeLocation(
-                    zone
-                  )
-                }
-              >
-                ×
-              </button>
-
-            </div>
-          )
-        )}
-
-        {customLocations.length ===
-          0 && (
-          <div className="empty-location">
-            No custom locations added.
+              {weaponOptions.map(
+                (item) => (
+                  <option
+                    key={item}
+                    value={item}
+                  />
+                )
+              )}
+            </datalist>
           </div>
+        ) : (
+          player.weapon ||
+          "—"
         )}
+      </td>
 
-      </div>
+      <td>
+        <strong className="score-value">
+          {Number(score).toFixed(2)}
+        </strong>
+      </td>
 
-    </section>
+      <td>
+        {eligible ? (
+          <span className="eligible-badge small">
+            ✓ ELIGIBLE
+          </span>
+        ) : (
+          <span className="not-eligible">
+            NOT YET
+          </span>
+        )}
+      </td>
+
+      <td className="updated-cell">
+        {formatTimestamp(
+          player.updatedAt
+        )}
+      </td>
+
+      {admin && (
+        <td>
+          <div className="row-actions">
+            <button
+              className="mini-button"
+              onClick={save}
+            >
+              SAVE
+            </button>
+
+            <button
+              className="mini-button"
+              onClick={() =>
+                onSelect(player)
+              }
+            >
+              HISTORY
+            </button>
+
+            <button
+              className="danger-button"
+              onClick={() =>
+                onDelete(
+                  player.id
+                )
+              }
+            >
+              DELETE
+            </button>
+          </div>
+        </td>
+      )}
+    </tr>
   );
 }
 
-/*
-============================================================
-APP
-============================================================
-*/
+/* ============================================================
+   ATTENDANCE PAGE
+============================================================ */
 
-export default function App() {
+function AttendancePage({
+  players,
+  history,
+  settings,
+  admin,
+  onAddPlayer,
+  onUpdatePlayer,
+  onDeletePlayer,
+  onAddAttendance,
+  onDeleteHistory,
+}) {
+  const [search, setSearch] =
+    useState("");
 
-  const localTimezone =
-    getLocalTimezone();
+  const [classFilter, setClassFilter] =
+    useState("");
 
-  const [raids, setRaids] =
-    useState(
-      DEFAULT_RAIDS
-    );
+  const [weaponFilter, setWeaponFilter] =
+    useState("");
+
+  const [claimFilter, setClaimFilter] =
+    useState("");
+
+  const [selectedPlayer, setSelectedPlayer] =
+    useState(null);
+
+  const [selectedBosses, setSelectedBosses] =
+    useState([]);
+
+  const [showLogin, setShowLogin] =
+    useState(false);
+
+  const [newIGN, setNewIGN] =
+    useState("");
+
+  const [newClass, setNewClass] =
+    useState("Swordman");
+
+  const [newWeapon, setNewWeapon] =
+    useState("");
 
   const [
-    customLocations,
-    setCustomLocations,
-  ] = useState([]);
+    sonyaPoints,
+    setSonyaPoints,
+  ] = useState(
+    String(
+      settings.sonyaPoints
+    )
+  );
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    miniPoints,
+    setMiniPoints,
+  ] = useState(
+    String(
+      settings.miniBossPoints
+    )
+  );
 
-  /*
-  ============================================================
-  FIRESTORE REAL-TIME LISTENER
-  ============================================================
-  */
+  const [
+    eligibility,
+    setEligibility,
+  ] = useState(
+    String(
+      settings.eligibilityScore
+    )
+  );
 
-  useEffect(() => {
+  const [message, setMessage] =
+    useState("");
 
-    const raidsRef =
-      collection(
-        db,
-        "raids"
-      );
+  /* ----------------------------------------------------------
+     CALCULATE SCORES FROM HISTORY
+  ---------------------------------------------------------- */
 
-    const unsubscribe =
-      onSnapshot(
-        raidsRef,
-        (snapshot) => {
+  const scoredPlayers =
+    useMemo(
+      () =>
+        calculateAllScores(
+          players,
+          history
+        ),
+      [players, history]
+    );
 
+  /* ----------------------------------------------------------
+     WEAPON OPTIONS
+  ---------------------------------------------------------- */
+
+  const weaponOptions =
+    useMemo(() => {
+      const values =
+        players
+          .map(
+            (player) =>
+              player.weapon
+          )
+          .filter(
+            (weapon) =>
+              String(
+                weapon || ""
+              ).trim()
+          );
+
+      return [
+        ...new Set(
+          values.map(
+            (x) =>
+              String(x).trim()
+          )
+        ),
+      ].sort();
+    }, [players]);
+
+  /* ----------------------------------------------------------
+     FILTER PLAYERS
+  ---------------------------------------------------------- */
+
+  const filteredPlayers =
+    useMemo(() => {
+      const term =
+        search
+          .trim()
+          .toLowerCase();
+
+      return scoredPlayers.filter(
+        (player) => {
           if (
-            snapshot.empty
+            term &&
+            !String(
+              player.ign || ""
+            )
+              .toLowerCase()
+              .includes(term)
           ) {
-
-            setRaids(
-              DEFAULT_RAIDS
-            );
-
-            setLoading(false);
-
-            return;
+            return false;
           }
 
-          const firebaseRaids =
-            snapshot.docs.map(
-              (item) => ({
-                ...item.data(),
-                id: item.id,
-              })
+          if (
+            classFilter &&
+            player.className !==
+              classFilter
+          ) {
+            return false;
+          }
+
+          if (
+            weaponFilter &&
+            player.weapon !==
+              weaponFilter
+          ) {
+            return false;
+          }
+
+          const eligible =
+            Number(
+              player.calculatedScore
+            ) >=
+            Number(
+              settings.eligibilityScore
             );
 
-          const orderedRaids =
-            DEFAULT_RAIDS.map(
-              (defaultRaid) => {
+          if (
+            claimFilter ===
+              "eligible" &&
+            !eligible
+          ) {
+            return false;
+          }
 
-                const firebaseRaid =
-                  firebaseRaids.find(
-                    (raid) =>
-                      raid.id ===
-                      defaultRaid.id
-                  );
+          if (
+            claimFilter ===
+              "not-eligible" &&
+            eligible
+          ) {
+            return false;
+          }
 
-                return (
-                  firebaseRaid ||
-                  defaultRaid
+          return true;
+        }
+      );
+    }, [
+      scoredPlayers,
+      search,
+      classFilter,
+      weaponFilter,
+      claimFilter,
+      settings.eligibilityScore,
+    ]);
+
+  /* ----------------------------------------------------------
+     SETTINGS
+  ---------------------------------------------------------- */
+
+  useEffect(() => {
+    setSonyaPoints(
+      String(
+        settings.sonyaPoints
+      )
+    );
+
+    setMiniPoints(
+      String(
+        settings.miniBossPoints
+      )
+    );
+
+    setEligibility(
+      String(
+        settings.eligibilityScore
+      )
+    );
+  }, [settings]);
+
+  /* ----------------------------------------------------------
+     SELECT PLAYER
+  ---------------------------------------------------------- */
+
+  function selectPlayer(player) {
+    const latest =
+      scoredPlayers.find(
+        (item) =>
+          item.id === player.id
+      );
+
+    setSelectedPlayer(
+      latest || player
+    );
+
+    setSelectedBosses([]);
+  }
+
+  /* ----------------------------------------------------------
+     BOSS TOGGLE
+  ---------------------------------------------------------- */
+
+  function toggleBoss(id) {
+    if (!admin) return;
+
+    setSelectedBosses(
+      (current) =>
+        current.includes(id)
+          ? current.filter(
+              (x) => x !== id
+            )
+          : [
+              ...current,
+              id,
+            ]
+    );
+  }
+
+  /* ----------------------------------------------------------
+     SAVE ATTENDANCE
+  ---------------------------------------------------------- */
+
+  async function saveAttendance() {
+    if (
+      !admin ||
+      !selectedPlayer ||
+      selectedBosses.length ===
+        0
+    ) {
+      return;
+    }
+
+    const bosses =
+      selectedBosses.map(
+        (id) => {
+          const boss =
+            DEFAULT_RAIDS.find(
+              (x) =>
+                x.id === id
+            );
+
+          const points =
+            id === "sonya"
+              ? Number(
+                  settings.sonyaPoints
+                )
+              : Number(
+                  settings.miniBossPoints
                 );
-              }
-            );
 
-          setRaids(
-            orderedRaids
-          );
-
-          setLoading(false);
-        },
-        (error) => {
-
-          console.error(
-            "Firestore error:",
-            error
-          );
-
-          setRaids(
-            DEFAULT_RAIDS
-          );
-
-          setLoading(false);
+          return {
+            id,
+            name:
+              boss?.name || id,
+            points,
+          };
         }
       );
 
-    return () =>
-      unsubscribe();
+    const points =
+      bosses.reduce(
+        (sum, boss) =>
+          sum +
+          Number(
+            boss.points || 0
+          ),
+        0
+      );
 
-  }, []);
+    await onAddAttendance(
+      selectedPlayer,
+      bosses,
+      points
+    );
 
-  /*
-  ============================================================
-  SAVE RAID
-  ============================================================
-  */
+    setSelectedBosses([]);
 
-  async function saveRaid(
-    raid
-  ) {
+    setMessage(
+      `${selectedPlayer.ign} attendance saved. +${points.toFixed(
+        2
+      )} points.`
+    );
 
-    const raidRef =
+    setTimeout(
+      () => setMessage(""),
+      3000
+    );
+  }
+
+  /* ----------------------------------------------------------
+     ADD PLAYER
+  ---------------------------------------------------------- */
+
+  async function addPlayer() {
+    if (!admin) return;
+
+    const ign =
+      newIGN.trim();
+
+    if (!ign) return;
+
+    await onAddPlayer({
+      ign,
+      className: newClass,
+      weapon:
+        newWeapon.trim(),
+    });
+
+    setNewIGN("");
+    setNewWeapon("");
+
+    setMessage(
+      `${ign} added successfully.`
+    );
+
+    setTimeout(
+      () => setMessage(""),
+      3000
+    );
+  }
+
+  /* ----------------------------------------------------------
+     SETTINGS
+  ---------------------------------------------------------- */
+
+  async function saveSettings() {
+    if (!admin) return;
+
+    const values = {
+      sonyaPoints:
+        Number(sonyaPoints),
+      miniBossPoints:
+        Number(miniPoints),
+      eligibilityScore:
+        Number(eligibility),
+    };
+
+    if (
+      !Number.isFinite(
+        values.sonyaPoints
+      ) ||
+      !Number.isFinite(
+        values.miniBossPoints
+      ) ||
+      !Number.isFinite(
+        values.eligibilityScore
+      )
+    ) {
+      setMessage(
+        "Invalid settings."
+      );
+
+      return;
+    }
+
+    await setDoc(
       doc(
         db,
-        "raids",
-        raid.id
+        "settings",
+        "attendance"
+      ),
+      {
+        ...values,
+        updatedAt:
+          serverTimestamp(),
+      },
+      {
+        merge: true,
+      }
+    );
+
+    setMessage(
+      "Attendance settings saved."
+    );
+
+    setTimeout(
+      () => setMessage(""),
+      3000
+    );
+  }
+
+  /* ----------------------------------------------------------
+     EXPORT
+  ---------------------------------------------------------- */
+
+  function exportXLSX() {
+    const playerRows =
+      scoredPlayers.map(
+        (player) => ({
+          IGN: player.ign,
+          Class:
+            player.className,
+          "Preferred Weapon":
+            player.weapon || "",
+          Score: Number(
+            player.calculatedScore ||
+              0
+          ),
+          Eligible:
+            Number(
+              player.calculatedScore ||
+                0
+            ) >=
+            Number(
+              settings.eligibilityScore
+            )
+              ? "YES"
+              : "NO",
+          "Last Updated":
+            formatTimestamp(
+              player.updatedAt
+            ),
+        })
+      );
+
+    const historyRows =
+      history.map(
+        (item) => ({
+          HistoryID: item.id,
+          PlayerID:
+            item.playerId,
+          IGN: item.ign,
+          Date:
+            item.dateKey,
+          Bosses:
+            item.bosses
+              ?.map(
+                (b) =>
+                  b.name
+              )
+              .join(", ") ||
+            "",
+          Points: Number(
+            item.points || 0
+          ),
+          "Recorded At":
+            formatTimestamp(
+              item.createdAt
+            ),
+          "Created By":
+            item.createdBy ||
+            "",
+        })
+      );
+
+    const wb =
+      XLSX.utils.book_new();
+
+    const playersSheet =
+      XLSX.utils.json_to_sheet(
+        playerRows
+      );
+
+    const historySheet =
+      XLSX.utils.json_to_sheet(
+        historyRows
+      );
+
+    XLSX.utils.book_append_sheet(
+      wb,
+      playersSheet,
+      "Attendance"
+    );
+
+    XLSX.utils.book_append_sheet(
+      wb,
+      historySheet,
+      "History"
+    );
+
+    XLSX.writeFile(
+      wb,
+      `RAN_EP7_Attendance_Backup_${getDateKey()}.xlsx`
+    );
+
+    setMessage(
+      "Attendance backup exported."
+    );
+
+    setTimeout(
+      () => setMessage(""),
+      3000
+    );
+  }
+
+  /* ----------------------------------------------------------
+     IMPORT
+  ---------------------------------------------------------- */
+
+  async function importXLSX(event) {
+    if (!admin) return;
+
+    const file =
+      event.target.files?.[0];
+
+    if (!file) return;
+
+    try {
+      const buffer =
+        await file.arrayBuffer();
+
+      const workbook =
+        XLSX.read(buffer, {
+          type: "array",
+        });
+
+      /*
+        IMPORT PLAYERS
+      */
+
+      const attendanceSheet =
+        workbook.Sheets[
+          "Attendance"
+        ];
+
+      if (attendanceSheet) {
+        const rows =
+          XLSX.utils.sheet_to_json(
+            attendanceSheet
+          );
+
+        for (const row of rows) {
+          const ign =
+            String(
+              row.IGN || ""
+            ).trim();
+
+          if (!ign) continue;
+
+          const existing =
+            players.find(
+              (p) =>
+                String(
+                  p.ign || ""
+                ).toLowerCase() ===
+                ign.toLowerCase()
+            );
+
+          const playerData = {
+            ign,
+            className:
+              String(
+                row.Class ||
+                  "Swordman"
+              ),
+            weapon:
+              String(
+                row[
+                  "Preferred Weapon"
+                ] || ""
+              ),
+            updatedAt:
+              serverTimestamp(),
+          };
+
+          if (existing) {
+            await updateDoc(
+              doc(
+                db,
+                "attendancePlayers",
+                existing.id
+              ),
+              playerData
+            );
+          } else {
+            await addDoc(
+              collection(
+                db,
+                "attendancePlayers"
+              ),
+              {
+                ...playerData,
+                createdAt:
+                  serverTimestamp(),
+              }
+            );
+          }
+        }
+      }
+
+      /*
+        IMPORT HISTORY
+
+        If History sheet exists, restore
+        each history record.
+
+        IMPORTANT:
+        We DO NOT import a manually
+        calculated score into players.
+
+        The score is reconstructed
+        from history.
+      */
+
+      const historySheet =
+        workbook.Sheets[
+          "History"
+        ];
+
+      if (historySheet) {
+        const rows =
+          XLSX.utils.sheet_to_json(
+            historySheet
+          );
+
+        for (const row of rows) {
+          const ign =
+            String(
+              row.IGN || ""
+            ).trim();
+
+          if (!ign) continue;
+
+          let player =
+            players.find(
+              (p) =>
+                String(
+                  p.ign || ""
+                ).toLowerCase() ===
+                ign.toLowerCase()
+            );
+
+          /*
+            The player may have been
+            created moments ago and not
+            yet appeared in the realtime
+            snapshot.
+
+            Find by IGN again.
+          */
+
+          if (!player) {
+            continue;
+          }
+
+          const bossText =
+            String(
+              row.Bosses || ""
+            );
+
+          const bossNames =
+            bossText
+              .split(",")
+              .map(
+                (x) =>
+                  x.trim()
+              )
+              .filter(Boolean);
+
+          const bosses =
+            bossNames.map(
+              (name) => {
+                const boss =
+                  DEFAULT_RAIDS.find(
+                    (x) =>
+                      x.name.toLowerCase() ===
+                      name.toLowerCase()
+                  );
+
+                const points =
+                  boss?.id ===
+                  "sonya"
+                    ? Number(
+                        settings.sonyaPoints
+                      )
+                    : Number(
+                        settings.miniBossPoints
+                      );
+
+                return {
+                  id:
+                    boss?.id ||
+                    name
+                      .toLowerCase()
+                      .replace(
+                        /\s+/g,
+                        "-"
+                      ),
+                  name,
+                  points,
+                };
+              }
+            );
+
+          const pointsFromBosses =
+            bosses.reduce(
+              (
+                total,
+                boss
+              ) =>
+                total +
+                Number(
+                  boss.points ||
+                    0
+                ),
+              0
+            );
+
+          const points =
+            Number.isFinite(
+              Number(row.Points)
+            )
+              ? Number(
+                  row.Points
+                )
+              : pointsFromBosses;
+
+          await addDoc(
+            collection(
+              db,
+              "attendanceHistory"
+            ),
+            {
+              playerId:
+                player.id,
+              ign,
+              dateKey:
+                String(
+                  row.Date ||
+                    getDateKey()
+                ),
+              bosses,
+              points,
+              createdAt:
+                serverTimestamp(),
+              createdBy:
+                userEmail(),
+            }
+          );
+        }
+      }
+
+      event.target.value = "";
+
+      setMessage(
+        "XLSX backup imported successfully."
+      );
+    } catch (error) {
+      console.error(
+        "Import failed:",
+        error
+      );
+
+      setMessage(
+        "Import failed. Check the XLSX format."
+      );
+    }
+
+    setTimeout(
+      () => setMessage(""),
+      4000
+    );
+  }
+
+  function userEmail() {
+    return (
+      auth.currentUser?.email ||
+      ""
+    );
+  }
+
+  /*
+    Selected player's history
+  */
+
+  const selectedHistory =
+    selectedPlayer
+      ? history
+          .filter(
+            (item) =>
+              item.playerId ===
+              selectedPlayer.id
+          )
+          .sort(
+            (a, b) => {
+              const aTime =
+                a.createdAt
+                  ?.toDate?.()
+                  ?.getTime?.() ||
+                0;
+
+              const bTime =
+                b.createdAt
+                  ?.toDate?.()
+                  ?.getTime?.() ||
+                0;
+
+              return (
+                bTime - aTime
+              );
+            }
+          )
+      : [];
+
+  const selectedScore =
+    selectedPlayer
+      ? calculatePlayerScore(
+          selectedPlayer.id,
+          history
+        )
+      : 0;
+
+  const selectedEligible =
+    selectedScore >=
+    Number(
+      settings.eligibilityScore
+    );
+
+  return (
+    <main className="page attendance-page">
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
+      <div className="page-title-row">
+        <div>
+          <div className="section-label">
+            BH ATTENDANCE
+          </div>
+
+          <h2>
+            Attendance Sheet
+          </h2>
+
+          <p>
+            {admin
+              ? "Administrator mode • attendance changes are protected by Firebase."
+              : "View-only mode • only administrators can modify attendance."}
+          </p>
+        </div>
+
+        <div className="admin-actions">
+          {admin ? (
+            <>
+              <span className="admin-badge">
+                🔐 ADMIN
+              </span>
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  signOut(auth)
+                }
+              >
+                LOGOUT
+              </button>
+            </>
+          ) : (
+            <button
+              className="primary-button"
+              onClick={() =>
+                setShowLogin(true)
+              }
+            >
+              ADMIN LOGIN
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ======================================================
+          SUMMARY
+      ====================================================== */}
+
+      <div className="score-summary">
+        <div>
+          <span>PLAYERS</span>
+          <strong>
+            {players.length}
+          </strong>
+        </div>
+
+        <div>
+          <span>ELIGIBLE</span>
+          <strong>
+            {
+              scoredPlayers.filter(
+                (p) =>
+                  Number(
+                    p.calculatedScore
+                  ) >=
+                  Number(
+                    settings.eligibilityScore
+                  )
+              ).length
+            }
+          </strong>
+        </div>
+
+        <div>
+          <span>SONYA</span>
+          <strong>
+            {Number(
+              settings.sonyaPoints
+            ).toFixed(2)}
+          </strong>
+        </div>
+
+        <div>
+          <span>MINI BOSS</span>
+          <strong>
+            {Number(
+              settings.miniBossPoints
+            ).toFixed(2)}
+          </strong>
+        </div>
+
+        <div>
+          <span>REQUIRED</span>
+          <strong>
+            {Number(
+              settings.eligibilityScore
+            ).toFixed(2)}
+          </strong>
+        </div>
+      </div>
+
+      {/* ======================================================
+          ADD IGN
+      ====================================================== */}
+
+      {admin && (
+        <section className="panel attendance-form">
+          <div className="panel-heading">
+            <div>
+              <div className="section-label">
+                ADMIN
+              </div>
+
+              <h3>
+                Add IGN
+              </h3>
+
+              <p>
+                Add a player to the
+                attendance database.
+              </p>
+            </div>
+          </div>
+
+          <div className="form-grid compact">
+            <label>
+              IGN
+
+              <input
+                value={newIGN}
+                onChange={(e) =>
+                  setNewIGN(
+                    e.target.value
+                  )
+                }
+                placeholder="Player IGN"
+              />
+            </label>
+
+            <label>
+              CLASS
+
+              <select
+                value={newClass}
+                onChange={(e) =>
+                  setNewClass(
+                    e.target.value
+                  )
+                }
+              >
+                {CLASSES.map(
+                  (item) => (
+                    <option
+                      key={item}
+                    >
+                      {item}
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
+
+            <label>
+              PREFERRED WEAPON
+
+              <input
+                list="new-weapon-list"
+                value={newWeapon}
+                onChange={(e) =>
+                  setNewWeapon(
+                    e.target.value
+                  )
+                }
+                placeholder="Type or select"
+              />
+
+              <datalist id="new-weapon-list">
+                {weaponOptions.map(
+                  (weapon) => (
+                    <option
+                      key={weapon}
+                      value={weapon}
+                    />
+                  )
+                )}
+              </datalist>
+            </label>
+
+            <button
+              className="primary-button"
+              onClick={
+                addPlayer
+              }
+            >
+              + ADD IGN
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ======================================================
+          SETTINGS
+      ====================================================== */}
+
+      {admin && (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <div className="section-label">
+                SETTINGS
+              </div>
+
+              <h3>
+                Attendance Points
+              </h3>
+            </div>
+          </div>
+
+          <div className="settings-grid">
+            <label>
+              SONYA POINTS
+
+              <input
+                type="number"
+                step="0.1"
+                value={
+                  sonyaPoints
+                }
+                onChange={(e) =>
+                  setSonyaPoints(
+                    e.target.value
+                  )
+                }
+              />
+            </label>
+
+            <label>
+              MINI BOSS POINTS
+
+              <input
+                type="number"
+                step="0.1"
+                value={
+                  miniPoints
+                }
+                onChange={(e) =>
+                  setMiniPoints(
+                    e.target.value
+                  )
+                }
+              />
+            </label>
+
+            <label>
+              ELIGIBILITY SCORE
+
+              <input
+                type="number"
+                step="0.1"
+                value={
+                  eligibility
+                }
+                onChange={(e) =>
+                  setEligibility(
+                    e.target.value
+                  )
+                }
+              />
+            </label>
+
+            <button
+              className="primary-button"
+              onClick={
+                saveSettings
+              }
+            >
+              SAVE SETTINGS
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ======================================================
+          RECORD ATTENDANCE / FIND PLAYER
+      ====================================================== */}
+
+      <section className="attendance-entry panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">
+              RECORD ATTENDANCE
+            </div>
+
+            <h3>
+              Find Player
+            </h3>
+
+            <p>
+              Search the table and select
+              an IGN to record attendance.
+            </p>
+          </div>
+        </div>
+
+        {/* FILTERS */}
+
+        <div className="filter-grid">
+          <input
+            value={search}
+            onChange={(e) =>
+              setSearch(
+                e.target.value
+              )
+            }
+            placeholder="Search IGN..."
+          />
+
+          <select
+            value={classFilter}
+            onChange={(e) =>
+              setClassFilter(
+                e.target.value
+              )
+            }
+          >
+            <option value="">
+              All Classes
+            </option>
+
+            {CLASSES.map(
+              (item) => (
+                <option
+                  key={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={weaponFilter}
+            onChange={(e) =>
+              setWeaponFilter(
+                e.target.value
+              )
+            }
+          >
+            <option value="">
+              All Weapons
+            </option>
+
+            {weaponOptions.map(
+              (weapon) => (
+                <option
+                  key={weapon}
+                  value={weapon}
+                >
+                  {weapon}
+                </option>
+              )
+            )}
+          </select>
+
+          <select
+            value={claimFilter}
+            onChange={(e) =>
+              setClaimFilter(
+                e.target.value
+              )
+            }
+          >
+            <option value="">
+              All Eligibility
+            </option>
+
+            <option value="eligible">
+              Eligible
+            </option>
+
+            <option value="not-eligible">
+              Not Eligible
+            </option>
+          </select>
+        </div>
+
+        {/* ====================================================
+            PLAYER TABLE
+        ==================================================== */}
+
+        <div className="table-scroll">
+          <table className="attendance-table">
+            <thead>
+              <tr>
+                <th>
+                  IGN
+                </th>
+
+                <th>
+                  CLASS
+                </th>
+
+                <th>
+                  PREFERRED WEAPON
+                </th>
+
+                <th>
+                  CURRENT SCORE
+                </th>
+
+                <th>
+                  CLAIM
+                </th>
+
+                <th>
+                  LAST UPDATED
+                </th>
+
+                {admin && (
+                  <th>
+                    ACTIONS
+                  </th>
+                )}
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredPlayers.map(
+                (player) => {
+                  const score =
+                    Number(
+                      player.calculatedScore ||
+                        0
+                    );
+
+                  const eligible =
+                    score >=
+                    Number(
+                      settings.eligibilityScore
+                    );
+
+                  return (
+                    <AttendancePlayerRow
+                      key={
+                        player.id
+                      }
+                      player={
+                        player
+                      }
+                      score={
+                        score
+                      }
+                      eligible={
+                        eligible
+                      }
+                      admin={
+                        admin
+                      }
+                      onSelect={
+                        selectPlayer
+                      }
+                      onUpdate={
+                        onUpdatePlayer
+                      }
+                      onDelete={
+                        onDeletePlayer
+                      }
+                      weaponOptions={
+                        weaponOptions
+                      }
+                    />
+                  );
+                }
+              )}
+
+              {filteredPlayers.length ===
+                0 && (
+                <tr>
+                  <td
+                    colSpan={
+                      admin
+                        ? 7
+                        : 6
+                    }
+                    className="empty-table"
+                  >
+                    No players
+                    found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ==================================================
+            SELECTED PLAYER
+        ================================================== */}
+
+        {selectedPlayer && (
+          <div className="attendance-selector">
+            <div className="selected-player">
+              <div>
+                <span>
+                  SELECTED IGN
+                </span>
+
+                <strong>
+                  {
+                    selectedPlayer.ign
+                  }
+                </strong>
+
+                <small>
+                  {
+                    selectedPlayer.className
+                  }{" "}
+                  •{" "}
+                  {
+                    selectedPlayer.weapon ||
+                    "No weapon"
+                  }
+                </small>
+              </div>
+
+              <div
+                className={
+                  selectedEligible
+                    ? "eligible-badge"
+                    : "score-large"
+                }
+              >
+                {Number(
+                  selectedScore
+                ).toFixed(2)}
+
+                {selectedEligible && (
+                  <small>
+                    SONYA WEAPON
+                    ELIGIBLE
+                  </small>
+                )}
+              </div>
+            </div>
+
+            {/* BOSS TABLE */}
+
+            <div className="table-scroll">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>
+                      BOSS
+                    </th>
+
+                    <th>
+                      TYPE
+                    </th>
+
+                    <th>
+                      POINTS
+                    </th>
+
+                    <th>
+                      ATTENDANCE
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {DEFAULT_RAIDS.map(
+                    (boss) => {
+                      const checked =
+                        selectedBosses.includes(
+                          boss.id
+                        );
+
+                      const points =
+                        boss.id ===
+                        "sonya"
+                          ? Number(
+                              settings.sonyaPoints
+                            )
+                          : Number(
+                              settings.miniBossPoints
+                            );
+
+                      return (
+                        <tr
+                          key={
+                            boss.id
+                          }
+                        >
+                          <td>
+                            <strong>
+                              {
+                                boss.name
+                              }
+                            </strong>
+                          </td>
+
+                          <td>
+                            {
+                              boss.type
+                            }
+                          </td>
+
+                          <td>
+                            +
+                            {points.toFixed(
+                              2
+                            )}
+                          </td>
+
+                          <td>
+                            <label className="boss-check">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  checked
+                                }
+                                disabled={
+                                  !admin
+                                }
+                                onChange={() =>
+                                  toggleBoss(
+                                    boss.id
+                                  )
+                                }
+                              />
+
+                              <span className="check-box">
+                                {checked
+                                  ? "✓"
+                                  : ""}
+                              </span>
+
+                              <span>
+                                {checked
+                                  ? "SELECTED"
+                                  : "MARK ATTENDANCE"}
+                              </span>
+                            </label>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="save-attendance-row">
+              <div>
+                <span>
+                  THIS SAVE
+                </span>
+
+                <strong>
+                  +
+                  {selectedBosses
+                    .reduce(
+                      (
+                        total,
+                        id
+                      ) =>
+                        total +
+                        (id ===
+                        "sonya"
+                          ? Number(
+                              settings.sonyaPoints
+                            )
+                          : Number(
+                              settings.miniBossPoints
+                            )),
+                      0
+                    )
+                    .toFixed(2)}
+                </strong>
+              </div>
+
+              {admin && (
+                <button
+                  className="primary-button"
+                  disabled={
+                    selectedBosses.length ===
+                    0
+                  }
+                  onClick={
+                    saveAttendance
+                  }
+                >
+                  SAVE ATTENDANCE
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ======================================================
+          PLAYER HISTORY
+      ====================================================== */}
+
+      {selectedPlayer && (
+        <section className="panel history-panel">
+          <div className="panel-heading">
+            <div>
+              <div className="section-label">
+                PLAYER HISTORY
+              </div>
+
+              <h3>
+                {
+                  selectedPlayer.ign
+                }
+              </h3>
+
+              <p>
+                Attendance history is the
+                source of truth for the
+                player's score.
+              </p>
+            </div>
+
+            <div>
+              <strong>
+                TOTAL:{" "}
+                {Number(
+                  selectedScore
+                ).toFixed(2)}
+              </strong>
+            </div>
+          </div>
+
+          <div className="table-scroll">
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>
+                    DATE
+                  </th>
+
+                  <th>
+                    BOSSES
+                  </th>
+
+                  <th>
+                    POINTS
+                  </th>
+
+                  <th>
+                    RECORDED
+                  </th>
+
+                  {admin && (
+                    <th>
+                      ACTION
+                    </th>
+                  )}
+                </tr>
+              </thead>
+
+              <tbody>
+                {selectedHistory.length ===
+                0 ? (
+                  <tr>
+                    <td
+                      colSpan={
+                        admin
+                          ? 5
+                          : 4
+                      }
+                      className="empty-table"
+                    >
+                      No attendance
+                      history yet.
+                    </td>
+                  </tr>
+                ) : (
+                  selectedHistory.map(
+                    (item) => (
+                      <tr
+                        key={
+                          item.id
+                        }
+                      >
+                        <td>
+                          {
+                            item.dateKey
+                          }
+                        </td>
+
+                        <td>
+                          {item.bosses
+                            ?.map(
+                              (
+                                b
+                              ) =>
+                                b.name
+                            )
+                            .join(
+                              ", "
+                            )}
+                        </td>
+
+                        <td className="points-cell">
+                          +
+                          {Number(
+                            item.points ||
+                              0
+                          ).toFixed(
+                            2
+                          )}
+                        </td>
+
+                        <td>
+                          {formatTimestamp(
+                            item.createdAt
+                          )}
+                        </td>
+
+                        {admin && (
+                          <td>
+                            <button
+                              className="danger-button"
+                              onClick={() =>
+                                onDeleteHistory(
+                                  item.id
+                                )
+                              }
+                            >
+                              DELETE
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ======================================================
+          DATABASE
+      ====================================================== */}
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">
+              ATTENDANCE DATABASE
+            </div>
+
+            <h3>
+              Current Scores
+            </h3>
+
+            <p>
+              Scores are calculated from
+              Firebase attendance history.
+            </p>
+          </div>
+
+          <div className="backup-actions">
+            {admin && (
+              <>
+                <button
+                  className="secondary-button"
+                  onClick={
+                    exportXLSX
+                  }
+                >
+                  EXPORT XLSX
+                </button>
+
+                <label className="secondary-button file-button">
+                  IMPORT XLSX
+
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={
+                      importXLSX
+                    }
+                    hidden
+                  />
+                </label>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="table-scroll">
+          <table className="attendance-table">
+            <thead>
+              <tr>
+                <th>
+                  IGN
+                </th>
+
+                <th>
+                  CLASS
+                </th>
+
+                <th>
+                  WEAPON
+                </th>
+
+                <th>
+                  SCORE
+                </th>
+
+                <th>
+                  CLAIM
+                </th>
+
+                <th>
+                  LAST UPDATED
+                </th>
+
+                {admin && (
+                  <th>
+                    ACTIONS
+                  </th>
+                )}
+              </tr>
+            </thead>
+
+            <tbody>
+              {scoredPlayers.map(
+                (player) => {
+                  const score =
+                    Number(
+                      player.calculatedScore ||
+                        0
+                    );
+
+                  const eligible =
+                    score >=
+                    Number(
+                      settings.eligibilityScore
+                    );
+
+                  return (
+                    <tr
+                      key={
+                        player.id
+                      }
+                    >
+                      <td>
+                        <button
+                          className="ign-link"
+                          onClick={() =>
+                            selectPlayer(
+                              player
+                            )
+                          }
+                        >
+                          {
+                            player.ign
+                          }
+                        </button>
+                      </td>
+
+                      <td>
+                        {
+                          player.className
+                        }
+                      </td>
+
+                      <td>
+                        {
+                          player.weapon ||
+                          "—"
+                        }
+                      </td>
+
+                      <td>
+                        <strong className="score-value">
+                          {score.toFixed(
+                            2
+                          )}
+                        </strong>
+                      </td>
+
+                      <td>
+                        {eligible ? (
+                          <span className="eligible-badge small">
+                            ✓ ELIGIBLE
+                          </span>
+                        ) : (
+                          <span className="not-eligible">
+                            NOT YET
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        {formatTimestamp(
+                          player.updatedAt
+                        )}
+                      </td>
+
+                      {admin && (
+                        <td>
+                          <button
+                            className="mini-button"
+                            onClick={() =>
+                              selectPlayer(
+                                player
+                              )
+                            }
+                          >
+                            HISTORY
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                }
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* MESSAGE */}
+
+      {message && (
+        <div className="success-message">
+          ✓ {message}
+        </div>
+      )}
+
+      {/* LOGIN */}
+
+      {showLogin && (
+        <LoginModal
+          onClose={() =>
+            setShowLogin(false)
+          }
+        />
+      )}
+    </main>
+  );
+}
+
+/* ============================================================
+   APP
+============================================================ */
+
+export default function App() {
+  const [page, setPage] =
+    useState("raid");
+
+  const [user, setUser] =
+    useState(null);
+
+  const [isAdmin, setIsAdmin] =
+    useState(false);
+
+  const [authLoading, setAuthLoading] =
+    useState(true);
+
+  const [raids, setRaids] =
+    useState(DEFAULT_RAIDS);
+
+  const [raidUpdated, setRaidUpdated] =
+    useState(null);
+
+  const [players, setPlayers] =
+    useState([]);
+
+  const [history, setHistory] =
+    useState([]);
+
+  const [settings, setSettings] =
+    useState(
+      DEFAULT_SETTINGS
+    );
+
+  /* ==========================================================
+     AUTH
+  ========================================================== */
+
+  useEffect(() => {
+    return onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+        setUser(
+          currentUser
+        );
+
+        if (!currentUser) {
+          setIsAdmin(false);
+          setAuthLoading(false);
+          return;
+        }
+
+        try {
+          const adminDoc =
+            await getDoc(
+              doc(
+                db,
+                "admins",
+                currentUser.uid
+              )
+            );
+
+          setIsAdmin(
+            adminDoc.exists() &&
+              adminDoc.data()
+                ?.active === true
+          );
+        } catch (error) {
+          console.error(
+            "Admin lookup failed:",
+            error
+          );
+
+          setIsAdmin(false);
+        }
+
+        setAuthLoading(false);
+      }
+    );
+  }, []);
+
+  /* ==========================================================
+     RAID SCHEDULE
+  ========================================================== */
+
+  useEffect(() => {
+    return onSnapshot(
+      doc(
+        db,
+        "settings",
+        "raidSchedule"
+      ),
+      (snapshot) => {
+        if (
+          snapshot.exists()
+        ) {
+          const data =
+            snapshot.data();
+
+          const firebaseRaids =
+            data.raids;
+
+          if (
+            Array.isArray(
+              firebaseRaids
+            ) &&
+            firebaseRaids.length
+          ) {
+            setRaids(
+              firebaseRaids
+            );
+          } else {
+            setRaids(
+              DEFAULT_RAIDS
+            );
+          }
+
+          setRaidUpdated(
+            data.updatedAt
+          );
+        } else {
+          setRaids(
+            DEFAULT_RAIDS
+          );
+        }
+      },
+      (error) => {
+        console.error(
+          "Raid schedule:",
+          error
+        );
+
+        setRaids(
+          DEFAULT_RAIDS
+        );
+      }
+    );
+  }, []);
+
+  /* ==========================================================
+     ATTENDANCE SETTINGS
+  ========================================================== */
+
+  useEffect(() => {
+    return onSnapshot(
+      doc(
+        db,
+        "settings",
+        "attendance"
+      ),
+      (snapshot) => {
+        if (
+          snapshot.exists()
+        ) {
+          setSettings({
+            ...DEFAULT_SETTINGS,
+            ...snapshot.data(),
+          });
+        } else {
+          setSettings(
+            DEFAULT_SETTINGS
+          );
+        }
+      },
+      (error) => {
+        console.error(
+          "Attendance settings:",
+          error
+        );
+      }
+    );
+  }, []);
+
+  /* ==========================================================
+     PLAYERS
+  ========================================================== */
+
+  useEffect(() => {
+    return onSnapshot(
+      query(
+        collection(
+          db,
+          "attendancePlayers"
+        ),
+        orderBy(
+          "ign",
+          "asc"
+        )
+      ),
+      (snapshot) => {
+        setPlayers(
+          snapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          )
+        );
+      },
+      (error) => {
+        console.error(
+          "Attendance players:",
+          error
+        );
+      }
+    );
+  }, []);
+
+  /* ==========================================================
+     HISTORY
+  ========================================================== */
+
+  useEffect(() => {
+    return onSnapshot(
+      query(
+        collection(
+          db,
+          "attendanceHistory"
+        ),
+        orderBy(
+          "createdAt",
+          "desc"
+        )
+      ),
+      (snapshot) => {
+        setHistory(
+          snapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          )
+        );
+      },
+      (error) => {
+        console.error(
+          "Attendance history:",
+          error
+        );
+      }
+    );
+  }, []);
+
+  /* ==========================================================
+     UPDATE RAID
+  ========================================================== */
+
+  async function updateRaid(
+    id,
+    updatedRaid
+  ) {
+    /*
+      Raid editing is intentionally
+      allowed according to Firestore
+      rules.
+
+      If your rules require admin,
+      this function requires the
+      logged-in admin.
+    */
+
+    if (
+      !isAdmin
+    ) {
+      alert(
+        "Admin login required to change raid schedules."
+      );
+
+      return;
+    }
+
+    const now =
+      new Date();
+
+    const updatedWithTime = {
+      ...updatedRaid,
+      updatedAt:
+        now.toISOString(),
+      updatedBy:
+        user?.email || "",
+    };
+
+    const next =
+      raids.map((raid) =>
+        raid.id === id
+          ? updatedWithTime
+          : raid
       );
 
     await setDoc(
-      raidRef,
+      doc(
+        db,
+        "settings",
+        "raidSchedule"
+      ),
       {
-        id:
-          raid.id,
-
-        name:
-          raid.name,
-
-        type:
-          raid.type,
-
-        schedule:
-          raid.schedule,
-
-        day:
-          raid.day,
-
-        hour:
-          Number(
-            raid.hour
-          ),
-
-        minute:
-          Number(
-            raid.minute
-          ),
+        raids: next,
+        updatedAt:
+          serverTimestamp(),
+        updatedBy:
+          user?.email || "",
       },
       {
         merge: true,
@@ -1323,99 +3700,346 @@ export default function App() {
     );
   }
 
-  /*
-  ============================================================
-  UPDATE LOCAL STATE
-  ============================================================
-  */
+  /* ==========================================================
+     ADD PLAYER
+  ========================================================== */
 
-  function updateRaid(
-    id,
-    changes
+  async function addPlayer(
+    player
   ) {
+    if (!isAdmin) return;
 
-    setRaids(
-      (current) =>
-        current.map(
-          (raid) =>
-            raid.id === id
-              ? {
-                  ...raid,
-                  ...changes,
-                }
-              : raid
-        )
-    );
-  }
+    const cleanIGN =
+      player.ign.trim();
 
-  /*
-  ============================================================
-  RESET
-  ============================================================
-  */
+    if (!cleanIGN) return;
 
-  async function resetAll() {
+    /*
+      Prevent duplicate IGN.
+    */
 
-    const answer =
-      window.confirm(
-        "Reset all boss times?"
+    const duplicate =
+      players.some(
+        (existing) =>
+          String(
+            existing.ign || ""
+          ).toLowerCase() ===
+          cleanIGN.toLowerCase()
       );
 
-    if (!answer) {
+    if (duplicate) {
+      alert(
+        "That IGN already exists."
+      );
+
       return;
     }
 
-    try {
+    await addDoc(
+      collection(
+        db,
+        "attendancePlayers"
+      ),
+      {
+        ign: cleanIGN,
+        className:
+          player.className,
+        weapon:
+          player.weapon || "",
+        createdAt:
+          serverTimestamp(),
+        updatedAt:
+          serverTimestamp(),
+      }
+    );
+  }
 
-      await Promise.all(
-        DEFAULT_RAIDS.map(
-          (raid) =>
-            setDoc(
-              doc(
-                db,
-                "raids",
-                raid.id
-              ),
-              raid,
-              {
-                merge: true,
-              }
-            )
-        )
-      );
+  /* ==========================================================
+     UPDATE PLAYER
+  ========================================================== */
 
-      setRaids(
-        DEFAULT_RAIDS
-      );
+  async function updatePlayer(
+    id,
+    changes
+  ) {
+    if (!isAdmin) return;
 
-    } catch (error) {
+    const cleanIGN =
+      String(
+        changes.ign || ""
+      ).trim();
 
-      console.error(
-        "Reset failed:",
-        error
-      );
-
+    if (!cleanIGN) {
       alert(
-        "Unable to reset the schedule."
+        "IGN cannot be empty."
+      );
+
+      return;
+    }
+
+    const duplicate =
+      players.some(
+        (player) =>
+          player.id !== id &&
+          String(
+            player.ign || ""
+          ).toLowerCase() ===
+            cleanIGN.toLowerCase()
+      );
+
+    if (duplicate) {
+      alert(
+        "Another player already uses this IGN."
+      );
+
+      return;
+    }
+
+    /*
+      IMPORTANT:
+
+      We deliberately DO NOT save
+      totalScore here.
+
+      Score is calculated from
+      attendanceHistory.
+    */
+
+    await updateDoc(
+      doc(
+        db,
+        "attendancePlayers",
+        id
+      ),
+      {
+        ign: cleanIGN,
+        className:
+          changes.className ||
+          "Swordman",
+        weapon:
+          changes.weapon || "",
+        updatedAt:
+          serverTimestamp(),
+      }
+    );
+
+    /*
+      Keep history IGN synchronized
+      when an admin changes an IGN.
+    */
+
+    const relatedHistory =
+      history.filter(
+        (item) =>
+          item.playerId === id
+      );
+
+    for (const item of relatedHistory) {
+      await updateDoc(
+        doc(
+          db,
+          "attendanceHistory",
+          item.id
+        ),
+        {
+          ign: cleanIGN,
+        }
       );
     }
   }
 
-  /*
-  ============================================================
-  PAGE
-  ============================================================
-  */
+  /* ==========================================================
+     DELETE PLAYER
+  ========================================================== */
+
+  async function deletePlayer(
+    id
+  ) {
+    if (!isAdmin) return;
+
+    const player =
+      players.find(
+        (p) =>
+          p.id === id
+      );
+
+    const answer =
+      window.confirm(
+        `Delete ${player?.ign || "this player"}?\n\nThe attendance history will NOT be deleted.`
+      );
+
+    if (!answer) return;
+
+    await deleteDoc(
+      doc(
+        db,
+        "attendancePlayers",
+        id
+      )
+    );
+  }
+
+  /* ==========================================================
+     ADD ATTENDANCE
+  ========================================================== */
+
+  async function addAttendance(
+    player,
+    bosses,
+    points
+  ) {
+    if (!isAdmin) return;
+
+    /*
+      ONLY create the history record.
+
+      DO NOT manually increment
+      player.totalScore.
+
+      This prevents score drift.
+    */
+
+    await addDoc(
+      collection(
+        db,
+        "attendanceHistory"
+      ),
+      {
+        playerId:
+          player.id,
+        ign:
+          player.ign,
+        dateKey:
+          getDateKey(),
+        bosses,
+        points:
+          Number(points || 0),
+        createdAt:
+          serverTimestamp(),
+        createdBy:
+          user?.email || "",
+      }
+    );
+
+    /*
+      Update player timestamp only.
+      Score remains derived from history.
+    */
+
+    await updateDoc(
+      doc(
+        db,
+        "attendancePlayers",
+        player.id
+      ),
+      {
+        updatedAt:
+          serverTimestamp(),
+      }
+    );
+  }
+
+  /* ==========================================================
+     DELETE HISTORY
+  ========================================================== */
+
+  async function deleteHistory(
+    historyId
+  ) {
+    if (!isAdmin) return;
+
+    const item =
+      history.find(
+        (x) =>
+          x.id ===
+          historyId
+      );
+
+    if (!item) return;
+
+    const answer =
+      window.confirm(
+        `Delete this attendance record?\n\n${item.ign || ""}\n${item.bosses
+          ?.map(
+            (b) =>
+              b.name
+          )
+          .join(", ")}\n+${Number(
+          item.points || 0
+        ).toFixed(2)} points`
+      );
+
+    if (!answer) return;
+
+    await deleteDoc(
+      doc(
+        db,
+        "attendanceHistory",
+        historyId
+      )
+    );
+
+    /*
+      IMPORTANT:
+
+      We do NOT subtract points from
+      the player.
+
+      The score will automatically
+      recalculate from the remaining
+      history records.
+    */
+
+    if (item.playerId) {
+      try {
+        await updateDoc(
+          doc(
+            db,
+            "attendancePlayers",
+            item.playerId
+          ),
+          {
+            updatedAt:
+              serverTimestamp(),
+          }
+        );
+      } catch (error) {
+        console.error(
+          "Player timestamp update failed:",
+          error
+        );
+      }
+    }
+  }
+
+  /* ==========================================================
+     LOADING
+  ========================================================== */
+
+  if (authLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-box">
+          <div className="eyebrow">
+            RAN ONLINE EP7
+          </div>
+
+          <strong>
+            Loading...
+          </strong>
+        </div>
+      </div>
+    );
+  }
+
+  /* ==========================================================
+     APP
+  ========================================================== */
 
   return (
     <div className="app">
-
-      {/* HEADER */}
-
       <header className="site-header">
-
-        <div>
-
+        <div className="brand-area">
           <div className="eyebrow">
             RAN ONLINE EP7
           </div>
@@ -1432,292 +4056,100 @@ export default function App() {
             Philippines raid schedule
             converted to your timezone
           </p>
-
         </div>
 
         <div className="local-info">
-
           <span>
             YOUR LOCAL TIMEZONE
           </span>
 
           <strong>
             {getTimezoneFlag(
-              localTimezone
+              getLocalTimezone()
             )}{" "}
             {getTimezoneLabel(
-              localTimezone
+              getLocalTimezone()
             )}
           </strong>
 
           <small>
-            Raid times are fixed to
-            Philippines time.
+            Fixed Philippines raid
+            times are converted
+            automatically.
           </small>
-
         </div>
-
       </header>
 
-      {/* NOTICE */}
-
-      <div className="notice">
-
-        <div className="notice-icon">
-          🇵🇭
-        </div>
-
-        <div>
-
-          <strong>
-            All raid schedules use
-            Philippines time.
-          </strong>
-
-          <span>
-            The converted time automatically
-            accounts for the destination
-            timezone and daylight saving time.
-          </span>
-
-        </div>
-
-      </div>
-
-      {/* MAIN */}
-
-      <main>
-
-        <div className="section-heading">
-
-          <div>
-
-            <div className="section-label">
-              BOSS HUNT
-            </div>
-
-            <h2>
-              Raid Schedule
-            </h2>
-
-          </div>
-
-          <button
-            className="reset-button"
-            onClick={
-              resetAll
-            }
-          >
-            RESET
-          </button>
-
-        </div>
-
-        {loading ? (
-
-          <div className="loading-message">
-            Loading shared raid schedule...
-          </div>
-
-        ) : (
-
-          <div className="raid-list">
-
-            {raids.map(
-              (raid) => (
-
-                <RaidCard
-                  key={
-                    raid.id
-                  }
-                  raid={
-                    raid
-                  }
-                  targetTimezone={
-                    localTimezone
-                  }
-                  onUpdate={
-                    updateRaid
-                  }
-                  onSave={
-                    saveRaid
-                  }
-                />
-
-              )
-            )}
-
-          </div>
-
-        )}
-
-        {/* CUSTOM LOCATIONS */}
-
-        <CustomLocations
-          customLocations={
-            customLocations
+      <nav className="main-nav">
+        <button
+          className={
+            page === "raid"
+              ? "active"
+              : ""
           }
-          setCustomLocations={
-            setCustomLocations
+          onClick={() =>
+            setPage("raid")
+          }
+        >
+          RAID SCHEDULE
+        </button>
+
+        <button
+          className={
+            page ===
+            "attendance"
+              ? "active"
+              : ""
+          }
+          onClick={() =>
+            setPage(
+              "attendance"
+            )
+          }
+        >
+          ATTENDANCE
+        </button>
+      </nav>
+
+      {page === "raid" ? (
+        <RaidPage
+          raids={raids}
+          admin={isAdmin}
+          onUpdateRaid={
+            updateRaid
+          }
+          lastUpdated={
+            raidUpdated
           }
         />
-
-        {/* CUSTOM TABLE */}
-
-        {customLocations.length >
-          0 && (
-
-          <section className="conversion-section">
-
-            <div className="section-label">
-              CUSTOM VIEW
-            </div>
-
-            <h2>
-              Raid Times by Location
-            </h2>
-
-            <p>
-              Fixed conversions from
-              Philippines raid time.
-            </p>
-
-            <div className="table-wrapper">
-
-              <table>
-
-                <thead>
-
-                  <tr>
-
-                    <th>
-                      BOSS
-                    </th>
-
-                    <th>
-                      🇵🇭 PHILIPPINES
-                    </th>
-
-                    {customLocations.map(
-                      (zone) => (
-
-                        <th
-                          key={
-                            zone
-                          }
-                        >
-                          {
-                            getTimezoneFlag(
-                              zone
-                            )
-                          }{" "}
-                          {
-                            getTimezoneLabel(
-                              zone
-                            )
-                          }
-                        </th>
-
-                      )
-                    )}
-
-                  </tr>
-
-                </thead>
-
-                <tbody>
-
-                  {raids.map(
-                    (raid) => (
-
-                      <tr
-                        key={
-                          raid.id
-                        }
-                      >
-
-                        <td>
-
-                          <strong>
-                            {
-                              raid.name
-                            }
-                          </strong>
-
-                          <small>
-                            {
-                              raid.schedule
-                            }
-                          </small>
-
-                        </td>
-
-                        <td>
-
-                          <strong>
-                            {getPhilippinesDisplay(
-                              raid
-                            )}
-                          </strong>
-
-                        </td>
-
-                        {customLocations.map(
-                          (zone) => {
-
-                            const converted =
-                              convertRaidTime(
-                                raid,
-                                zone
-                              );
-
-                            return (
-
-                              <td
-                                key={
-                                  zone
-                                }
-                              >
-
-                                <strong>
-                                  {
-                                    converted.time
-                                  }
-                                </strong>
-
-                                <small>
-                                  {
-                                    converted.day
-                                  }
-                                </small>
-
-                              </td>
-
-                            );
-                          }
-                        )}
-
-                      </tr>
-
-                    )
-                  )}
-
-                </tbody>
-
-              </table>
-
-            </div>
-
-          </section>
-
-        )}
-
-      </main>
+      ) : (
+        <AttendancePage
+          players={players}
+          history={history}
+          settings={settings}
+          admin={isAdmin}
+          onAddPlayer={
+            addPlayer
+          }
+          onUpdatePlayer={
+            updatePlayer
+          }
+          onDeletePlayer={
+            deletePlayer
+          }
+          onAddAttendance={
+            addAttendance
+          }
+          onDeleteHistory={
+            deleteHistory
+          }
+        />
+      )}
 
       <footer>
-        RAN ONLINE EP7 • BH RAID SCHEDULE
+        RAN ONLINE EP7 • BH RAID
+        SCHEDULE • ATTENDANCE
       </footer>
-
     </div>
   );
 }
