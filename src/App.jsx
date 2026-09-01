@@ -1,5 +1,5 @@
 
-import React, {
+import {
   useEffect,
   useMemo,
   useState,
@@ -15,8 +15,8 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  addDoc,
   updateDoc,
+  addDoc,
 } from "firebase/firestore";
 
 import {
@@ -80,6 +80,7 @@ const DEFAULT_RAIDS = [
     day: 3,
     hour: 21,
     minute: 0,
+    updatedAt: null,
   },
   {
     id: "geomancer",
@@ -89,6 +90,7 @@ const DEFAULT_RAIDS = [
     day: null,
     hour: 12,
     minute: 0,
+    updatedAt: null,
   },
   {
     id: "reflector",
@@ -98,6 +100,7 @@ const DEFAULT_RAIDS = [
     day: null,
     hour: 12,
     minute: 0,
+    updatedAt: null,
   },
   {
     id: "giant-hawk",
@@ -107,6 +110,7 @@ const DEFAULT_RAIDS = [
     day: null,
     hour: 12,
     minute: 0,
+    updatedAt: null,
   },
 ];
 
@@ -122,9 +126,7 @@ const DEFAULT_SETTINGS = {
 
 function getLocalTimezone() {
   return (
-    Intl.DateTimeFormat()
-      .resolvedOptions()
-      .timeZone ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
     "America/Los_Angeles"
   );
 }
@@ -198,8 +200,7 @@ function getTimezoneOffset(timezone, date) {
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      values[part.type] =
-        Number(part.value);
+      values[part.type] = Number(part.value);
     }
   });
 
@@ -274,8 +275,7 @@ function getTodayPhilippines() {
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      result[part.type] =
-        Number(part.value);
+      result[part.type] = Number(part.value);
     }
   });
 
@@ -283,8 +283,7 @@ function getTodayPhilippines() {
 }
 
 function getNextOccurrence(raid) {
-  const today =
-    getTodayPhilippines();
+  const today = getTodayPhilippines();
 
   let {
     year,
@@ -330,8 +329,7 @@ function getNextOccurrence(raid) {
     todayUTC.getUTCDay();
 
   let daysUntil =
-    Number(raid.day) -
-    currentDay;
+    Number(raid.day) - currentDay;
 
   if (daysUntil < 0) {
     daysUntil += 7;
@@ -354,9 +352,7 @@ function getNextOccurrence(raid) {
       philippinesDateToUTC(
         year,
         month,
-        day +
-          daysUntil +
-          7,
+        day + daysUntil + 7,
         Number(raid.hour),
         Number(raid.minute)
       );
@@ -458,8 +454,7 @@ function getDateKey() {
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      values[part.type] =
-        part.value;
+      values[part.type] = part.value;
     }
   });
 
@@ -467,172 +462,108 @@ function getDateKey() {
 }
 
 /* ============================================================
-   SCORE CALCULATION
+   LOGIN
 ============================================================ */
 
-/*
-  IMPORTANT:
+function AdminLogin() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  totalScore is NOT trusted anymore.
-
-  Firebase attendanceHistory is the source of truth.
-
-  Every history document contains:
-
-  playerId
-  ign
-  bosses
-  points
-
-  Score is calculated by adding history.points.
-*/
-
-function calculatePlayerScore(
-  playerId,
-  history
-) {
-  return history
-    .filter(
-      (item) =>
-        item.playerId === playerId
-    )
-    .reduce(
-      (total, item) =>
-        total +
-        Number(item.points || 0),
-      0
-    );
-}
-
-function calculateAllScores(
-  players,
-  history
-) {
-  return players.map(
-    (player) => ({
-      ...player,
-      calculatedScore:
-        calculatePlayerScore(
-          player.id,
-          history
-        ),
-    })
-  );
-}
-
-/* ============================================================
-   LOGIN MODAL
-============================================================ */
-
-function LoginModal({
-  onClose,
-}) {
-  const [email, setEmail] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(false);
-
-  async function submit(event) {
+  async function login(event) {
     event.preventDefault();
 
     setError("");
     setLoading(true);
 
     try {
-      const credential =
-        await signInWithEmailAndPassword(
-          auth,
-          email.trim(),
-          password
-        );
-
-      const adminDoc =
-        await getDoc(
-          doc(
-            db,
-            "admins",
-            credential.user.uid
-          )
-        );
-
-      if (
-        !adminDoc.exists() ||
-        adminDoc.data()
-          ?.active !== true
-      ) {
-        await signOut(auth);
-
-        setError(
-          `Login succeeded, but this Firebase account is NOT registered as an admin. UID: ${credential.user.uid}`
-        );
-
-        return;
-      }
-
-      onClose();
+      await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
     } catch (err) {
       console.error(err);
 
-      setError(
+      let message =
+        "Invalid admin login.";
+
+      if (
         err.code ===
-          "auth/invalid-credential"
-          ? "Invalid email or password."
-          : err.message ||
-              "Unable to login."
-      );
+        "auth/invalid-credential"
+      ) {
+        message =
+          "Invalid email or password.";
+      }
+
+      if (
+        err.code ===
+        "auth/user-not-found"
+      ) {
+        message =
+          "Admin account does not exist.";
+      }
+
+      if (
+        err.code ===
+        "auth/wrong-password"
+      ) {
+        message =
+          "Incorrect password.";
+      }
+
+      setError(message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div
-      className="modal-backdrop"
-      onClick={onClose}
-    >
+    <div className="login-screen">
       <form
-        className="modal-card"
-        onSubmit={submit}
-        onClick={(e) =>
-          e.stopPropagation()
-        }
+        className="login-card"
+        onSubmit={login}
       >
-        <div className="section-label">
-          ADMIN ACCESS
+        <div className="eyebrow">
+          RAN ONLINE EP7
         </div>
 
-        <h2>
-          Attendance Admin
-        </h2>
+        <h1>
+          Attendance
+          <span> Admin</span>
+        </h1>
 
-        <input
-          type="email"
-          placeholder="Admin email"
-          value={email}
-          onChange={(e) =>
-            setEmail(e.target.value)
-          }
-          required
-        />
+        <p>
+          Administrator access is required
+          to modify attendance records.
+        </p>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) =>
-            setPassword(
-              e.target.value
-            )
-          }
-          required
-        />
+        <label>
+          EMAIL
+          <input
+            type="email"
+            value={email}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+            autoComplete="username"
+            required
+          />
+        </label>
+
+        <label>
+          PASSWORD
+          <input
+            type="password"
+            value={password}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
+            autoComplete="current-password"
+            required
+          />
+        </label>
 
         {error && (
           <div className="error-message">
@@ -640,23 +571,17 @@ function LoginModal({
           </div>
         )}
 
-        <div className="modal-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onClose}
-          >
-            CANCEL
-          </button>
+        <button
+          className="primary-button full"
+          disabled={loading}
+        >
+          {loading
+            ? "SIGNING IN..."
+            : "ADMIN LOGIN"}
+        </button>
 
-          <button
-            className="primary-button"
-            disabled={loading}
-          >
-            {loading
-              ? "LOGIN..."
-              : "LOGIN"}
-          </button>
+        <div className="login-note">
+          Firebase admin authentication.
         </div>
       </form>
     </div>
@@ -665,12 +590,12 @@ function LoginModal({
 
 /* ============================================================
    RAID CARD
+   PUBLIC EDITING
 ============================================================ */
 
 function RaidCard({
   raid,
   targetTimezone,
-  admin,
   onUpdate,
 }) {
   const converted = useMemo(
@@ -702,10 +627,20 @@ function RaidCard({
     ).padStart(2, "0")
   );
 
-  const period =
+  const [
+    period,
+    setPeriod,
+  ] = useState(
     getPeriod(
       Number(raid.hour)
-    );
+    )
+  );
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
 
   useEffect(() => {
     setHourInput(
@@ -721,6 +656,12 @@ function RaidCard({
         Number(raid.minute)
       ).padStart(2, "0")
     );
+
+    setPeriod(
+      getPeriod(
+        Number(raid.hour)
+      )
+    );
   }, [
     raid.hour,
     raid.minute,
@@ -730,11 +671,8 @@ function RaidCard({
     let h = Number(hourInput);
     let m = Number(minuteInput);
 
-    if (!Number.isFinite(h))
-      h = 12;
-
-    if (!Number.isFinite(m))
-      m = 0;
+    if (!Number.isFinite(h)) h = 12;
+    if (!Number.isFinite(m)) m = 0;
 
     h = Math.max(
       1,
@@ -746,24 +684,50 @@ function RaidCard({
       Math.min(59, Math.trunc(m))
     );
 
-    await onUpdate(
-      raid.id,
-      {
-        ...raid,
-        hour: to24Hour(
-          h,
-          period
-        ),
-        minute: m,
-      }
-    );
+    const updatedRaid = {
+      ...raid,
+      hour: to24Hour(
+        h,
+        period
+      ),
+      minute: m,
+      updatedAt:
+        new Date().toISOString(),
+    };
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      await onUpdate(
+        raid.id,
+        updatedRaid
+      );
+
+      setMessage(
+        "Raid time saved."
+      );
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        "Unable to save raid time. Check your Firebase Firestore rules."
+      );
+    } finally {
+      setSaving(false);
+
+      setTimeout(
+        () => setMessage(""),
+        3000
+      );
+    }
   }
 
   return (
     <article className="raid-card">
       <div className="boss-art">
         <div className="tbd">
-          TBD
+          {raid.name}
         </div>
 
         <div className="boss-art-bottom">
@@ -786,9 +750,7 @@ function RaidCard({
           <div className="time-panel">
             <div className="panel-label">
               🇵🇭 PHILIPPINES
-              <small>
-                RAID TIME
-              </small>
+              <small>RAID TIME</small>
             </div>
 
             <div className="big-time">
@@ -808,9 +770,7 @@ function RaidCard({
                 targetTimezone
               )}{" "}
               YOUR LOCAL TIME
-              <small>
-                CONVERTED
-              </small>
+              <small>CONVERTED</small>
             </div>
 
             <div className="big-time">
@@ -827,120 +787,107 @@ function RaidCard({
           </div>
         </div>
 
-        <div className="raid-updated">
-          <span>
-            RAID SCHEDULE STATUS
-          </span>
-
-          <strong>
-            {formatTimestamp(
-              raid.updatedAt
-            )}
-          </strong>
-        </div>
-
-        {admin && (
-          <div className="edit-area">
-            <div className="edit-label">
-              EDIT PHILIPPINES RAID TIME
-            </div>
-
-            <div className="edit-controls">
-              <div className="number-control">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={hourInput}
-                  onChange={(e) => {
-                    const value =
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      );
-
-                    if (
-                      value.length <= 2
-                    ) {
-                      setHourInput(
-                        value
-                      );
-                    }
-                  }}
-                />
-
-                <span>:</span>
-
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={minuteInput}
-                  onChange={(e) => {
-                    const value =
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      );
-
-                    if (
-                      value.length <= 2
-                    ) {
-                      setMinuteInput(
-                        value
-                      );
-                    }
-                  }}
-                />
-
-                <select
-                  value={period}
-                  onChange={async (
-                    e
-                  ) => {
-                    let h =
-                      Number(
-                        hourInput
-                      );
-
-                    if (
-                      !Number.isFinite(
-                        h
-                      )
-                    )
-                      h = 12;
-
-                    await onUpdate(
-                      raid.id,
-                      {
-                        ...raid,
-                        hour:
-                          to24Hour(
-                            h,
-                            e.target
-                              .value
-                          ),
-                      }
-                    );
-                  }}
-                >
-                  <option value="AM">
-                    AM
-                  </option>
-
-                  <option value="PM">
-                    PM
-                  </option>
-                </select>
-              </div>
-
-              <button
-                className="primary-button"
-                onClick={save}
-              >
-                SAVE
-              </button>
-            </div>
+        <div className="edit-area">
+          <div className="edit-label">
+            EDIT PHILIPPINES RAID TIME
+            <small>
+              No login required
+            </small>
           </div>
-        )}
+
+          <div className="edit-controls">
+            <div className="number-control">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={hourInput}
+                onChange={(e) => {
+                  const value =
+                    e.target.value.replace(
+                      /\D/g,
+                      ""
+                    );
+
+                  if (
+                    value.length <= 2
+                  ) {
+                    setHourInput(
+                      value
+                    );
+                  }
+                }}
+              />
+
+              <span>:</span>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                value={minuteInput}
+                onChange={(e) => {
+                  const value =
+                    e.target.value.replace(
+                      /\D/g,
+                      ""
+                    );
+
+                  if (
+                    value.length <= 2
+                  ) {
+                    setMinuteInput(
+                      value
+                    );
+                  }
+                }}
+              />
+
+              <select
+                value={period}
+                onChange={(e) =>
+                  setPeriod(
+                    e.target.value
+                  )
+                }
+              >
+                <option value="AM">
+                  AM
+                </option>
+
+                <option value="PM">
+                  PM
+                </option>
+              </select>
+            </div>
+
+            <button
+              className="primary-button"
+              onClick={save}
+              disabled={saving}
+            >
+              {saving
+                ? "SAVING..."
+                : "SAVE"}
+            </button>
+          </div>
+
+          {message && (
+            <div className="raid-save-message">
+              {message}
+            </div>
+          )}
+
+          <div className="raid-updated">
+            <strong>
+              LAST UPDATED
+            </strong>
+
+            <span>
+              {formatTimestamp(
+                raid.updatedAt
+              )}
+            </span>
+          </div>
+        </div>
       </div>
     </article>
   );
@@ -952,9 +899,7 @@ function RaidCard({
 
 function RaidPage({
   raids,
-  admin,
   onUpdateRaid,
-  lastUpdated,
 }) {
   const localTimezone =
     getLocalTimezone();
@@ -1032,8 +977,8 @@ function RaidPage({
           </strong>
 
           <span>
-            Local times are converted
-            automatically.
+            Anyone can update the raid
+            schedule. No login required.
           </span>
         </div>
       </div>
@@ -1049,11 +994,8 @@ function RaidPage({
           </h2>
 
           <p className="subtext">
-            Overall schedule last
-            updated:{" "}
-            {formatTimestamp(
-              lastUpdated
-            )}
+            Each boss has its own last
+            updated timestamp.
           </p>
         </div>
       </div>
@@ -1066,7 +1008,6 @@ function RaidPage({
             targetTimezone={
               localTimezone
             }
-            admin={admin}
             onUpdate={
               onUpdateRaid
             }
@@ -1086,8 +1027,8 @@ function RaidPage({
             </h2>
 
             <p>
-              Add additional locations
-              to compare raid times.
+              Add additional locations to
+              compare the raid schedule.
             </p>
           </div>
 
@@ -1284,211 +1225,7 @@ function RaidPage({
 }
 
 /* ============================================================
-   ATTENDANCE PLAYER ROW
-============================================================ */
-
-function AttendancePlayerRow({
-  player,
-  score,
-  eligible,
-  admin,
-  onSelect,
-  onUpdate,
-  onDelete,
-  weaponOptions,
-}) {
-  const [ign, setIgn] =
-    useState(player.ign);
-
-  const [className, setClassName] =
-    useState(
-      player.className || "Swordman"
-    );
-
-  const [weapon, setWeapon] =
-    useState(player.weapon || "");
-
-  useEffect(() => {
-    setIgn(player.ign);
-    setClassName(
-      player.className ||
-        "Swordman"
-    );
-    setWeapon(
-      player.weapon || ""
-    );
-  }, [
-    player.ign,
-    player.className,
-    player.weapon,
-  ]);
-
-  async function save() {
-    const cleanIGN =
-      ign.trim();
-
-    if (!cleanIGN) return;
-
-    await onUpdate(
-      player.id,
-      {
-        ign: cleanIGN,
-        className,
-        weapon:
-          weapon.trim(),
-      }
-    );
-  }
-
-  return (
-    <tr>
-      <td>
-        {admin ? (
-          <input
-            className="table-input ign-input"
-            value={ign}
-            onChange={(e) =>
-              setIgn(
-                e.target.value
-              )
-            }
-          />
-        ) : (
-          <button
-            className="ign-link"
-            onClick={() =>
-              onSelect(player)
-            }
-          >
-            {player.ign}
-          </button>
-        )}
-      </td>
-
-      <td>
-        {admin ? (
-          <select
-            className="table-select"
-            value={className}
-            onChange={(e) =>
-              setClassName(
-                e.target.value
-              )
-            }
-          >
-            {CLASSES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-        ) : (
-          player.className ||
-          "—"
-        )}
-      </td>
-
-      <td>
-        {admin ? (
-          <div className="weapon-editor">
-            <input
-              className="table-input"
-              list={`weapon-list-${player.id}`}
-              value={weapon}
-              placeholder="Type or select"
-              onChange={(e) =>
-                setWeapon(
-                  e.target.value
-                )
-              }
-            />
-
-            <datalist
-              id={`weapon-list-${player.id}`}
-            >
-              {weaponOptions.map(
-                (item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  />
-                )
-              )}
-            </datalist>
-          </div>
-        ) : (
-          player.weapon ||
-          "—"
-        )}
-      </td>
-
-      <td>
-        <strong className="score-value">
-          {Number(score).toFixed(2)}
-        </strong>
-      </td>
-
-      <td>
-        {eligible ? (
-          <span className="eligible-badge small">
-            ✓ ELIGIBLE
-          </span>
-        ) : (
-          <span className="not-eligible">
-            NOT YET
-          </span>
-        )}
-      </td>
-
-      <td className="updated-cell">
-        {formatTimestamp(
-          player.updatedAt
-        )}
-      </td>
-
-      {admin && (
-        <td>
-          <div className="row-actions">
-            <button
-              className="mini-button"
-              onClick={save}
-            >
-              SAVE
-            </button>
-
-            <button
-              className="mini-button"
-              onClick={() =>
-                onSelect(player)
-              }
-            >
-              HISTORY
-            </button>
-
-            <button
-              className="danger-button"
-              onClick={() =>
-                onDelete(
-                  player.id
-                )
-              }
-            >
-              DELETE
-            </button>
-          </div>
-        </td>
-      )}
-    </tr>
-  );
-}
-
-/* ============================================================
-   ATTENDANCE PAGE
+   ATTENDANCE
 ============================================================ */
 
 function AttendancePage({
@@ -1532,22 +1269,21 @@ function AttendancePage({
   const [newWeapon, setNewWeapon] =
     useState("");
 
+  const [message, setMessage] =
+    useState("");
+
   const [
     sonyaPoints,
     setSonyaPoints,
   ] = useState(
-    String(
-      settings.sonyaPoints
-    )
+    String(settings.sonyaPoints)
   );
 
   const [
     miniPoints,
     setMiniPoints,
   ] = useState(
-    String(
-      settings.miniBossPoints
-    )
+    String(settings.miniBossPoints)
   );
 
   const [
@@ -1559,28 +1295,27 @@ function AttendancePage({
     )
   );
 
-  const [message, setMessage] =
-    useState("");
-
-  /* ----------------------------------------------------------
-     CALCULATE SCORES FROM HISTORY
-  ---------------------------------------------------------- */
-
-  const scoredPlayers =
-    useMemo(
-      () =>
-        calculateAllScores(
-          players,
-          history
-        ),
-      [players, history]
+  useEffect(() => {
+    setSonyaPoints(
+      String(settings.sonyaPoints)
     );
 
+    setMiniPoints(
+      String(settings.miniBossPoints)
+    );
+
+    setEligibility(
+      String(
+        settings.eligibilityScore
+      )
+    );
+  }, [settings]);
+
   /* ----------------------------------------------------------
-     WEAPON OPTIONS
+     WEAPON LIST
   ---------------------------------------------------------- */
 
-  const weaponOptions =
+  const availableWeapons =
     useMemo(() => {
       const values =
         players
@@ -1588,25 +1323,23 @@ function AttendancePage({
             (player) =>
               player.weapon
           )
-          .filter(
-            (weapon) =>
-              String(
-                weapon || ""
-              ).trim()
-          );
+          .filter(Boolean)
+          .map((weapon) =>
+            String(
+              weapon
+            ).trim()
+          )
+          .filter(Boolean);
 
       return [
-        ...new Set(
-          values.map(
-            (x) =>
-              String(x).trim()
-          )
-        ),
-      ].sort();
+        ...new Set(values),
+      ].sort((a, b) =>
+        a.localeCompare(b)
+      );
     }, [players]);
 
   /* ----------------------------------------------------------
-     FILTER PLAYERS
+     FILTERED PLAYERS
   ---------------------------------------------------------- */
 
   const filteredPlayers =
@@ -1616,7 +1349,7 @@ function AttendancePage({
           .trim()
           .toLowerCase();
 
-      return scoredPlayers.filter(
+      return players.filter(
         (player) => {
           if (
             term &&
@@ -1647,7 +1380,7 @@ function AttendancePage({
 
           const eligible =
             Number(
-              player.calculatedScore
+              player.totalScore || 0
             ) >=
             Number(
               settings.eligibilityScore
@@ -1655,7 +1388,7 @@ function AttendancePage({
 
           if (
             claimFilter ===
-              "eligible" &&
+            "eligible" &&
             !eligible
           ) {
             return false;
@@ -1663,7 +1396,7 @@ function AttendancePage({
 
           if (
             claimFilter ===
-              "not-eligible" &&
+            "not-eligible" &&
             eligible
           ) {
             return false;
@@ -1673,63 +1406,20 @@ function AttendancePage({
         }
       );
     }, [
-      scoredPlayers,
+      players,
       search,
       classFilter,
       weaponFilter,
       claimFilter,
-      settings.eligibilityScore,
+      settings,
     ]);
 
-  /* ----------------------------------------------------------
-     SETTINGS
-  ---------------------------------------------------------- */
-
-  useEffect(() => {
-    setSonyaPoints(
-      String(
-        settings.sonyaPoints
-      )
-    );
-
-    setMiniPoints(
-      String(
-        settings.miniBossPoints
-      )
-    );
-
-    setEligibility(
-      String(
-        settings.eligibilityScore
-      )
-    );
-  }, [settings]);
-
-  /* ----------------------------------------------------------
-     SELECT PLAYER
-  ---------------------------------------------------------- */
-
   function selectPlayer(player) {
-    const latest =
-      scoredPlayers.find(
-        (item) =>
-          item.id === player.id
-      );
-
-    setSelectedPlayer(
-      latest || player
-    );
-
+    setSelectedPlayer(player);
     setSelectedBosses([]);
   }
 
-  /* ----------------------------------------------------------
-     BOSS TOGGLE
-  ---------------------------------------------------------- */
-
   function toggleBoss(id) {
-    if (!admin) return;
-
     setSelectedBosses(
       (current) =>
         current.includes(id)
@@ -1789,24 +1479,32 @@ function AttendancePage({
         (sum, boss) =>
           sum +
           Number(
-            boss.points || 0
+            boss.points
           ),
         0
       );
 
-    await onAddAttendance(
-      selectedPlayer,
-      bosses,
-      points
-    );
+    try {
+      await onAddAttendance(
+        selectedPlayer,
+        bosses,
+        points
+      );
 
-    setSelectedBosses([]);
+      setSelectedBosses([]);
 
-    setMessage(
-      `${selectedPlayer.ign} attendance saved. +${points.toFixed(
-        2
-      )} points.`
-    );
+      setMessage(
+        `${selectedPlayer.ign} attendance saved. +${points.toFixed(
+          2
+        )} points.`
+      );
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        "Unable to save attendance."
+      );
+    }
 
     setTimeout(
       () => setMessage(""),
@@ -1826,19 +1524,26 @@ function AttendancePage({
 
     if (!ign) return;
 
-    await onAddPlayer({
-      ign,
-      className: newClass,
-      weapon:
-        newWeapon.trim(),
-    });
+    try {
+      await onAddPlayer({
+        ign,
+        className: newClass,
+        weapon: newWeapon.trim(),
+      });
 
-    setNewIGN("");
-    setNewWeapon("");
+      setNewIGN("");
+      setNewWeapon("");
 
-    setMessage(
-      `${ign} added successfully.`
-    );
+      setMessage(
+        `${ign} added successfully.`
+      );
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        "Unable to add player."
+      );
+    }
 
     setTimeout(
       () => setMessage(""),
@@ -1873,32 +1578,36 @@ function AttendancePage({
         values.eligibilityScore
       )
     ) {
-      setMessage(
-        "Invalid settings."
-      );
-
       return;
     }
 
-    await setDoc(
-      doc(
-        db,
-        "settings",
-        "attendance"
-      ),
-      {
-        ...values,
-        updatedAt:
-          serverTimestamp(),
-      },
-      {
-        merge: true,
-      }
-    );
+    try {
+      await setDoc(
+        doc(
+          db,
+          "settings",
+          "attendance"
+        ),
+        {
+          ...values,
+          updatedAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      );
 
-    setMessage(
-      "Attendance settings saved."
-    );
+      setMessage(
+        "Attendance settings saved."
+      );
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        "Unable to save settings."
+      );
+    }
 
     setTimeout(
       () => setMessage(""),
@@ -1912,21 +1621,19 @@ function AttendancePage({
 
   function exportXLSX() {
     const playerRows =
-      scoredPlayers.map(
+      players.map(
         (player) => ({
           IGN: player.ign,
           Class:
             player.className,
           "Preferred Weapon":
-            player.weapon || "",
+            player.weapon,
           Score: Number(
-            player.calculatedScore ||
-              0
+            player.totalScore || 0
           ),
           Eligible:
             Number(
-              player.calculatedScore ||
-                0
+              player.totalScore || 0
             ) >=
             Number(
               settings.eligibilityScore
@@ -1943,20 +1650,15 @@ function AttendancePage({
     const historyRows =
       history.map(
         (item) => ({
-          HistoryID: item.id,
-          PlayerID:
-            item.playerId,
           IGN: item.ign,
-          Date:
-            item.dateKey,
+          Date: item.dateKey,
           Bosses:
             item.bosses
               ?.map(
                 (b) =>
                   b.name
               )
-              .join(", ") ||
-            "",
+              .join(", "),
           Points: Number(
             item.points || 0
           ),
@@ -1964,49 +1666,31 @@ function AttendancePage({
             formatTimestamp(
               item.createdAt
             ),
-          "Created By":
-            item.createdBy ||
-            "",
         })
       );
 
     const wb =
       XLSX.utils.book_new();
 
-    const playersSheet =
-      XLSX.utils.json_to_sheet(
-        playerRows
-      );
-
-    const historySheet =
-      XLSX.utils.json_to_sheet(
-        historyRows
-      );
-
     XLSX.utils.book_append_sheet(
       wb,
-      playersSheet,
+      XLSX.utils.json_to_sheet(
+        playerRows
+      ),
       "Attendance"
     );
 
     XLSX.utils.book_append_sheet(
       wb,
-      historySheet,
+      XLSX.utils.json_to_sheet(
+        historyRows
+      ),
       "History"
     );
 
     XLSX.writeFile(
       wb,
       `RAN_EP7_Attendance_Backup_${getDateKey()}.xlsx`
-    );
-
-    setMessage(
-      "Attendance backup exported."
-    );
-
-    setTimeout(
-      () => setMessage(""),
-      3000
     );
   }
 
@@ -2031,227 +1715,82 @@ function AttendancePage({
           type: "array",
         });
 
-      /*
-        IMPORT PLAYERS
-      */
-
-      const attendanceSheet =
+      const sheet =
         workbook.Sheets[
           "Attendance"
-        ];
-
-      if (attendanceSheet) {
-        const rows =
-          XLSX.utils.sheet_to_json(
-            attendanceSheet
-          );
-
-        for (const row of rows) {
-          const ign =
-            String(
-              row.IGN || ""
-            ).trim();
-
-          if (!ign) continue;
-
-          const existing =
-            players.find(
-              (p) =>
-                String(
-                  p.ign || ""
-                ).toLowerCase() ===
-                ign.toLowerCase()
-            );
-
-          const playerData = {
-            ign,
-            className:
-              String(
-                row.Class ||
-                  "Swordman"
-              ),
-            weapon:
-              String(
-                row[
-                  "Preferred Weapon"
-                ] || ""
-              ),
-            updatedAt:
-              serverTimestamp(),
-          };
-
-          if (existing) {
-            await updateDoc(
-              doc(
-                db,
-                "attendancePlayers",
-                existing.id
-              ),
-              playerData
-            );
-          } else {
-            await addDoc(
-              collection(
-                db,
-                "attendancePlayers"
-              ),
-              {
-                ...playerData,
-                createdAt:
-                  serverTimestamp(),
-              }
-            );
-          }
-        }
-      }
-
-      /*
-        IMPORT HISTORY
-
-        If History sheet exists, restore
-        each history record.
-
-        IMPORTANT:
-        We DO NOT import a manually
-        calculated score into players.
-
-        The score is reconstructed
-        from history.
-      */
-
-      const historySheet =
+        ] ||
         workbook.Sheets[
-          "History"
+          workbook.SheetNames[0]
         ];
 
-      if (historySheet) {
-        const rows =
-          XLSX.utils.sheet_to_json(
-            historySheet
+      if (!sheet) return;
+
+      const rows =
+        XLSX.utils.sheet_to_json(
+          sheet
+        );
+
+      for (const row of rows) {
+        const ign =
+          String(
+            row.IGN || ""
+          ).trim();
+
+        if (!ign) continue;
+
+        const existing =
+          players.find(
+            (p) =>
+              String(
+                p.ign || ""
+              ).toLowerCase() ===
+              ign.toLowerCase()
           );
 
-        for (const row of rows) {
-          const ign =
+        const score =
+          Number(
+            row.Score || 0
+          );
+
+        const data = {
+          ign,
+          className:
             String(
-              row.IGN || ""
-            ).trim();
-
-          if (!ign) continue;
-
-          let player =
-            players.find(
-              (p) =>
-                String(
-                  p.ign || ""
-                ).toLowerCase() ===
-                ign.toLowerCase()
-            );
-
-          /*
-            The player may have been
-            created moments ago and not
-            yet appeared in the realtime
-            snapshot.
-
-            Find by IGN again.
-          */
-
-          if (!player) {
-            continue;
-          }
-
-          const bossText =
+              row.Class || ""
+            ),
+          weapon:
             String(
-              row.Bosses || ""
-            );
+              row[
+                "Preferred Weapon"
+              ] || ""
+            ),
+          totalScore:
+            Number.isFinite(score)
+              ? score
+              : 0,
+          updatedAt:
+            serverTimestamp(),
+        };
 
-          const bossNames =
-            bossText
-              .split(",")
-              .map(
-                (x) =>
-                  x.trim()
-              )
-              .filter(Boolean);
-
-          const bosses =
-            bossNames.map(
-              (name) => {
-                const boss =
-                  DEFAULT_RAIDS.find(
-                    (x) =>
-                      x.name.toLowerCase() ===
-                      name.toLowerCase()
-                  );
-
-                const points =
-                  boss?.id ===
-                  "sonya"
-                    ? Number(
-                        settings.sonyaPoints
-                      )
-                    : Number(
-                        settings.miniBossPoints
-                      );
-
-                return {
-                  id:
-                    boss?.id ||
-                    name
-                      .toLowerCase()
-                      .replace(
-                        /\s+/g,
-                        "-"
-                      ),
-                  name,
-                  points,
-                };
-              }
-            );
-
-          const pointsFromBosses =
-            bosses.reduce(
-              (
-                total,
-                boss
-              ) =>
-                total +
-                Number(
-                  boss.points ||
-                    0
-                ),
-              0
-            );
-
-          const points =
-            Number.isFinite(
-              Number(row.Points)
-            )
-              ? Number(
-                  row.Points
-                )
-              : pointsFromBosses;
-
+        if (existing) {
+          await updateDoc(
+            doc(
+              db,
+              "attendancePlayers",
+              existing.id
+            ),
+            data
+          );
+        } else {
           await addDoc(
             collection(
               db,
-              "attendanceHistory"
+              "attendancePlayers"
             ),
             {
-              playerId:
-                player.id,
-              ign,
-              dateKey:
-                String(
-                  row.Date ||
-                    getDateKey()
-                ),
-              bosses,
-              points,
+              ...data,
               createdAt:
                 serverTimestamp(),
-              createdBy:
-                userEmail(),
             }
           );
         }
@@ -2260,85 +1799,33 @@ function AttendancePage({
       event.target.value = "";
 
       setMessage(
-        "XLSX backup imported successfully."
+        "XLSX attendance backup imported."
       );
     } catch (error) {
-      console.error(
-        "Import failed:",
-        error
-      );
+      console.error(error);
 
       setMessage(
-        "Import failed. Check the XLSX format."
+        "Unable to import XLSX."
       );
     }
 
     setTimeout(
       () => setMessage(""),
-      4000
+      3000
     );
   }
-
-  function userEmail() {
-    return (
-      auth.currentUser?.email ||
-      ""
-    );
-  }
-
-  /*
-    Selected player's history
-  */
 
   const selectedHistory =
     selectedPlayer
-      ? history
-          .filter(
-            (item) =>
-              item.playerId ===
-              selectedPlayer.id
-          )
-          .sort(
-            (a, b) => {
-              const aTime =
-                a.createdAt
-                  ?.toDate?.()
-                  ?.getTime?.() ||
-                0;
-
-              const bTime =
-                b.createdAt
-                  ?.toDate?.()
-                  ?.getTime?.() ||
-                0;
-
-              return (
-                bTime - aTime
-              );
-            }
-          )
-      : [];
-
-  const selectedScore =
-    selectedPlayer
-      ? calculatePlayerScore(
-          selectedPlayer.id,
-          history
+      ? history.filter(
+          (item) =>
+            item.playerId ===
+            selectedPlayer.id
         )
-      : 0;
-
-  const selectedEligible =
-    selectedScore >=
-    Number(
-      settings.eligibilityScore
-    );
+      : [];
 
   return (
     <main className="page attendance-page">
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
       <div className="page-title-row">
         <div>
           <div className="section-label">
@@ -2385,10 +1872,6 @@ function AttendancePage({
         </div>
       </div>
 
-      {/* ======================================================
-          SUMMARY
-      ====================================================== */}
-
       <div className="score-summary">
         <div>
           <span>PLAYERS</span>
@@ -2401,10 +1884,10 @@ function AttendancePage({
           <span>ELIGIBLE</span>
           <strong>
             {
-              scoredPlayers.filter(
+              players.filter(
                 (p) =>
                   Number(
-                    p.calculatedScore
+                    p.totalScore || 0
                   ) >=
                   Number(
                     settings.eligibilityScore
@@ -2417,33 +1900,31 @@ function AttendancePage({
         <div>
           <span>SONYA</span>
           <strong>
-            {Number(
-              settings.sonyaPoints
-            ).toFixed(2)}
+            {settings.sonyaPoints}
           </strong>
         </div>
 
         <div>
           <span>MINI BOSS</span>
           <strong>
-            {Number(
+            {
               settings.miniBossPoints
-            ).toFixed(2)}
+            }
           </strong>
         </div>
 
         <div>
           <span>REQUIRED</span>
           <strong>
-            {Number(
+            {
               settings.eligibilityScore
-            ).toFixed(2)}
+            }
           </strong>
         </div>
       </div>
 
       {/* ======================================================
-          ADD IGN
+          ADMIN ADD PLAYER
       ====================================================== */}
 
       {admin && (
@@ -2459,8 +1940,8 @@ function AttendancePage({
               </h3>
 
               <p>
-                Add a player to the
-                attendance database.
+                Add the player first, then
+                record attendance.
               </p>
             </div>
           </div>
@@ -2468,7 +1949,6 @@ function AttendancePage({
           <div className="form-grid compact">
             <label>
               IGN
-
               <input
                 value={newIGN}
                 onChange={(e) =>
@@ -2482,7 +1962,6 @@ function AttendancePage({
 
             <label>
               CLASS
-
               <select
                 value={newClass}
                 onChange={(e) =>
@@ -2495,6 +1974,7 @@ function AttendancePage({
                   (item) => (
                     <option
                       key={item}
+                      value={item}
                     >
                       {item}
                     </option>
@@ -2505,20 +1985,19 @@ function AttendancePage({
 
             <label>
               PREFERRED WEAPON
-
               <input
-                list="new-weapon-list"
+                list="weapon-options"
                 value={newWeapon}
                 onChange={(e) =>
                   setNewWeapon(
                     e.target.value
                   )
                 }
-                placeholder="Type or select"
+                placeholder="Type or select weapon"
               />
 
-              <datalist id="new-weapon-list">
-                {weaponOptions.map(
+              <datalist id="weapon-options">
+                {availableWeapons.map(
                   (weapon) => (
                     <option
                       key={weapon}
@@ -2562,13 +2041,10 @@ function AttendancePage({
           <div className="settings-grid">
             <label>
               SONYA POINTS
-
               <input
                 type="number"
                 step="0.1"
-                value={
-                  sonyaPoints
-                }
+                value={sonyaPoints}
                 onChange={(e) =>
                   setSonyaPoints(
                     e.target.value
@@ -2579,13 +2055,10 @@ function AttendancePage({
 
             <label>
               MINI BOSS POINTS
-
               <input
                 type="number"
                 step="0.1"
-                value={
-                  miniPoints
-                }
+                value={miniPoints}
                 onChange={(e) =>
                   setMiniPoints(
                     e.target.value
@@ -2596,13 +2069,10 @@ function AttendancePage({
 
             <label>
               ELIGIBILITY SCORE
-
               <input
                 type="number"
                 step="0.1"
-                value={
-                  eligibility
-                }
+                value={eligibility}
                 onChange={(e) =>
                   setEligibility(
                     e.target.value
@@ -2624,7 +2094,7 @@ function AttendancePage({
       )}
 
       {/* ======================================================
-          RECORD ATTENDANCE / FIND PLAYER
+          RECORD ATTENDANCE
       ====================================================== */}
 
       <section className="attendance-entry panel">
@@ -2639,13 +2109,12 @@ function AttendancePage({
             </h3>
 
             <p>
-              Search the table and select
-              an IGN to record attendance.
+              Search the attendance table,
+              select an IGN, choose bosses,
+              then save.
             </p>
           </div>
         </div>
-
-        {/* FILTERS */}
 
         <div className="filter-grid">
           <input
@@ -2674,6 +2143,7 @@ function AttendancePage({
               (item) => (
                 <option
                   key={item}
+                  value={item}
                 >
                   {item}
                 </option>
@@ -2693,7 +2163,7 @@ function AttendancePage({
               All Weapons
             </option>
 
-            {weaponOptions.map(
+            {availableWeapons.map(
               (weapon) => (
                 <option
                   key={weapon}
@@ -2727,108 +2197,99 @@ function AttendancePage({
           </select>
         </div>
 
-        {/* ====================================================
-            PLAYER TABLE
-        ==================================================== */}
-
+        {/* TABLE */}
         <div className="table-scroll">
-          <table className="attendance-table">
+          <table className="attendance-table record-table">
             <thead>
               <tr>
-                <th>
-                  IGN
-                </th>
-
-                <th>
-                  CLASS
-                </th>
-
-                <th>
-                  PREFERRED WEAPON
-                </th>
-
-                <th>
-                  CURRENT SCORE
-                </th>
-
-                <th>
-                  CLAIM
-                </th>
-
-                <th>
-                  LAST UPDATED
-                </th>
-
-                {admin && (
-                  <th>
-                    ACTIONS
-                  </th>
-                )}
+                <th>IGN</th>
+                <th>CLASS</th>
+                <th>WEAPON</th>
+                <th>SCORE</th>
+                <th>CLAIM</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredPlayers.map(
-                (player) => {
-                  const score =
-                    Number(
-                      player.calculatedScore ||
-                        0
-                    );
-
-                  const eligible =
-                    score >=
-                    Number(
-                      settings.eligibilityScore
-                    );
-
-                  return (
-                    <AttendancePlayerRow
-                      key={
-                        player.id
-                      }
-                      player={
+                (player) => (
+                  <tr
+                    key={
+                      player.id
+                    }
+                    className={
+                      selectedPlayer?.id ===
+                      player.id
+                        ? "selected-row"
+                        : ""
+                    }
+                    onClick={() =>
+                      selectPlayer(
                         player
+                      )
+                    }
+                  >
+                    <td>
+                      <strong>
+                        {
+                          player.ign
+                        }
+                      </strong>
+                    </td>
+
+                    <td>
+                      {
+                        player.className
                       }
-                      score={
-                        score
+                    </td>
+
+                    <td>
+                      {
+                        player.weapon ||
+                        "—"
                       }
-                      eligible={
-                        eligible
-                      }
-                      admin={
-                        admin
-                      }
-                      onSelect={
-                        selectPlayer
-                      }
-                      onUpdate={
-                        onUpdatePlayer
-                      }
-                      onDelete={
-                        onDeletePlayer
-                      }
-                      weaponOptions={
-                        weaponOptions
-                      }
-                    />
-                  );
-                }
+                    </td>
+
+                    <td>
+                      <strong>
+                        {Number(
+                          player.totalScore ||
+                            0
+                        ).toFixed(
+                          2
+                        )}
+                      </strong>
+                    </td>
+
+                    <td>
+                      {Number(
+                        player.totalScore ||
+                          0
+                      ) >=
+                      Number(
+                        settings.eligibilityScore
+                      ) ? (
+                        <span className="eligible-badge small">
+                          ✓ ELIGIBLE
+                        </span>
+                      ) : (
+                        <span className="not-eligible">
+                          NOT YET
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
               )}
 
               {filteredPlayers.length ===
                 0 && (
                 <tr>
                   <td
-                    colSpan={
-                      admin
-                        ? 7
-                        : 6
-                    }
+                    colSpan={5}
                     className="empty-table"
                   >
-                    No players
-                    found.
+                    No players found.
                   </td>
                 </tr>
               )}
@@ -2836,10 +2297,7 @@ function AttendancePage({
           </table>
         </div>
 
-        {/* ==================================================
-            SELECTED PLAYER
-        ================================================== */}
-
+        {/* SELECTED PLAYER */}
         {selectedPlayer && (
           <div className="attendance-selector">
             <div className="selected-player">
@@ -2866,131 +2324,91 @@ function AttendancePage({
                 </small>
               </div>
 
-              <div
-                className={
-                  selectedEligible
-                    ? "eligible-badge"
-                    : "score-large"
-                }
-              >
+              <div className="score-large">
                 {Number(
-                  selectedScore
+                  selectedPlayer.totalScore ||
+                    0
                 ).toFixed(2)}
 
-                {selectedEligible && (
+                {Number(
+                  selectedPlayer.totalScore ||
+                    0
+                ) >=
+                  Number(
+                    settings.eligibilityScore
+                  ) && (
                   <small>
-                    SONYA WEAPON
-                    ELIGIBLE
+                    SONYA WEAPON ELIGIBLE
                   </small>
                 )}
               </div>
             </div>
 
-            {/* BOSS TABLE */}
+            <div className="boss-check-grid">
+              {DEFAULT_RAIDS.map(
+                (boss) => {
+                  const checked =
+                    selectedBosses.includes(
+                      boss.id
+                    );
 
-            <div className="table-scroll">
-              <table className="history-table">
-                <thead>
-                  <tr>
-                    <th>
-                      BOSS
-                    </th>
+                  const points =
+                    boss.id ===
+                    "sonya"
+                      ? settings.sonyaPoints
+                      : settings.miniBossPoints;
 
-                    <th>
-                      TYPE
-                    </th>
-
-                    <th>
-                      POINTS
-                    </th>
-
-                    <th>
-                      ATTENDANCE
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {DEFAULT_RAIDS.map(
-                    (boss) => {
-                      const checked =
-                        selectedBosses.includes(
-                          boss.id
-                        );
-
-                      const points =
-                        boss.id ===
-                        "sonya"
-                          ? Number(
-                              settings.sonyaPoints
-                            )
-                          : Number(
-                              settings.miniBossPoints
-                            );
-
-                      return (
-                        <tr
-                          key={
+                  return (
+                    <label
+                      className={`boss-check ${
+                        checked
+                          ? "checked"
+                          : ""
+                      }`}
+                      key={
+                        boss.id
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          checked
+                        }
+                        disabled={!admin}
+                        onChange={() =>
+                          toggleBoss(
                             boss.id
+                          )
+                        }
+                      />
+
+                      <span className="check-box">
+                        {checked
+                          ? "✓"
+                          : ""}
+                      </span>
+
+                      <span>
+                        <strong>
+                          {
+                            boss.name
                           }
-                        >
-                          <td>
-                            <strong>
-                              {
-                                boss.name
-                              }
-                            </strong>
-                          </td>
+                        </strong>
 
-                          <td>
-                            {
-                              boss.type
-                            }
-                          </td>
-
-                          <td>
-                            +
-                            {points.toFixed(
-                              2
-                            )}
-                          </td>
-
-                          <td>
-                            <label className="boss-check">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  checked
-                                }
-                                disabled={
-                                  !admin
-                                }
-                                onChange={() =>
-                                  toggleBoss(
-                                    boss.id
-                                  )
-                                }
-                              />
-
-                              <span className="check-box">
-                                {checked
-                                  ? "✓"
-                                  : ""}
-                              </span>
-
-                              <span>
-                                {checked
-                                  ? "SELECTED"
-                                  : "MARK ATTENDANCE"}
-                              </span>
-                            </label>
-                          </td>
-                        </tr>
-                      );
-                    }
-                  )}
-                </tbody>
-              </table>
+                        <small>
+                          +
+                          {Number(
+                            points
+                          ).toFixed(
+                            2
+                          )}{" "}
+                          points
+                        </small>
+                      </span>
+                    </label>
+                  );
+                }
+              )}
             </div>
 
             <div className="save-attendance-row">
@@ -3022,7 +2440,7 @@ function AttendancePage({
                 </strong>
               </div>
 
-              {admin && (
+              {admin ? (
                 <button
                   className="primary-button"
                   disabled={
@@ -3035,6 +2453,11 @@ function AttendancePage({
                 >
                   SAVE ATTENDANCE
                 </button>
+              ) : (
+                <span className="public-note">
+                  Login required to
+                  record attendance.
+                </span>
               )}
             </div>
           </div>
@@ -3060,19 +2483,10 @@ function AttendancePage({
               </h3>
 
               <p>
-                Attendance history is the
-                source of truth for the
-                player's score.
+                Every attendance save is
+                stored permanently in
+                Firestore.
               </p>
-            </div>
-
-            <div>
-              <strong>
-                TOTAL:{" "}
-                {Number(
-                  selectedScore
-                ).toFixed(2)}
-              </strong>
             </div>
           </div>
 
@@ -3080,26 +2494,13 @@ function AttendancePage({
             <table className="history-table">
               <thead>
                 <tr>
-                  <th>
-                    DATE
-                  </th>
-
-                  <th>
-                    BOSSES
-                  </th>
-
-                  <th>
-                    POINTS
-                  </th>
-
-                  <th>
-                    RECORDED
-                  </th>
+                  <th>DATE</th>
+                  <th>BOSSES</th>
+                  <th>POINTS</th>
+                  <th>RECORDED</th>
 
                   {admin && (
-                    <th>
-                      ACTION
-                    </th>
+                    <th>ACTION</th>
                   )}
                 </tr>
               </thead>
@@ -3110,9 +2511,7 @@ function AttendancePage({
                   <tr>
                     <td
                       colSpan={
-                        admin
-                          ? 5
-                          : 4
+                        admin ? 5 : 4
                       }
                       className="empty-table"
                     >
@@ -3169,7 +2568,8 @@ function AttendancePage({
                               className="danger-button"
                               onClick={() =>
                                 onDeleteHistory(
-                                  item.id
+                                  item.id,
+                                  selectedPlayer.id
                                 )
                               }
                             >
@@ -3203,183 +2603,110 @@ function AttendancePage({
             </h3>
 
             <p>
-              Scores are calculated from
-              Firebase attendance history.
+              Administrators can edit player
+              information directly.
             </p>
           </div>
 
-          <div className="backup-actions">
-            {admin && (
-              <>
-                <button
-                  className="secondary-button"
-                  onClick={
-                    exportXLSX
+          {admin && (
+            <div className="backup-actions">
+              <button
+                className="secondary-button"
+                onClick={
+                  exportXLSX
+                }
+              >
+                EXPORT XLSX
+              </button>
+
+              <label className="secondary-button file-button">
+                IMPORT XLSX
+
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={
+                    importXLSX
                   }
-                >
-                  EXPORT XLSX
-                </button>
-
-                <label className="secondary-button file-button">
-                  IMPORT XLSX
-
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={
-                      importXLSX
-                    }
-                    hidden
-                  />
-                </label>
-              </>
-            )}
-          </div>
+                  hidden
+                />
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="table-scroll">
           <table className="attendance-table">
             <thead>
               <tr>
-                <th>
-                  IGN
-                </th>
-
-                <th>
-                  CLASS
-                </th>
-
-                <th>
-                  WEAPON
-                </th>
-
-                <th>
-                  SCORE
-                </th>
-
-                <th>
-                  CLAIM
-                </th>
-
-                <th>
-                  LAST UPDATED
-                </th>
+                <th>IGN</th>
+                <th>CLASS</th>
+                <th>WEAPON</th>
+                <th>SCORE</th>
+                <th>CLAIM</th>
+                <th>LAST UPDATED</th>
 
                 {admin && (
-                  <th>
-                    ACTIONS
-                  </th>
+                  <th>ACTIONS</th>
                 )}
               </tr>
             </thead>
 
             <tbody>
-              {scoredPlayers.map(
-                (player) => {
-                  const score =
-                    Number(
-                      player.calculatedScore ||
-                        0
-                    );
-
-                  const eligible =
-                    score >=
-                    Number(
+              {filteredPlayers.map(
+                (player) => (
+                  <AttendanceRow
+                    key={
+                      player.id
+                    }
+                    player={
+                      player
+                    }
+                    admin={
+                      admin
+                    }
+                    eligibility={
                       settings.eligibilityScore
-                    );
+                    }
+                    availableWeapons={
+                      availableWeapons
+                    }
+                    onSelect={
+                      selectPlayer
+                    }
+                    onUpdate={
+                      onUpdatePlayer
+                    }
+                    onDelete={
+                      onDeletePlayer
+                    }
+                  />
+                )
+              )}
 
-                  return (
-                    <tr
-                      key={
-                        player.id
-                      }
-                    >
-                      <td>
-                        <button
-                          className="ign-link"
-                          onClick={() =>
-                            selectPlayer(
-                              player
-                            )
-                          }
-                        >
-                          {
-                            player.ign
-                          }
-                        </button>
-                      </td>
-
-                      <td>
-                        {
-                          player.className
-                        }
-                      </td>
-
-                      <td>
-                        {
-                          player.weapon ||
-                          "—"
-                        }
-                      </td>
-
-                      <td>
-                        <strong className="score-value">
-                          {score.toFixed(
-                            2
-                          )}
-                        </strong>
-                      </td>
-
-                      <td>
-                        {eligible ? (
-                          <span className="eligible-badge small">
-                            ✓ ELIGIBLE
-                          </span>
-                        ) : (
-                          <span className="not-eligible">
-                            NOT YET
-                          </span>
-                        )}
-                      </td>
-
-                      <td>
-                        {formatTimestamp(
-                          player.updatedAt
-                        )}
-                      </td>
-
-                      {admin && (
-                        <td>
-                          <button
-                            className="mini-button"
-                            onClick={() =>
-                              selectPlayer(
-                                player
-                              )
-                            }
-                          >
-                            HISTORY
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                }
+              {filteredPlayers.length ===
+                0 && (
+                <tr>
+                  <td
+                    colSpan={
+                      admin ? 7 : 6
+                    }
+                    className="empty-table"
+                  >
+                    No players found.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
 
-      {/* MESSAGE */}
-
       {message && (
         <div className="success-message">
           ✓ {message}
         </div>
       )}
-
-      {/* LOGIN */}
 
       {showLogin && (
         <LoginModal
@@ -3389,6 +2716,344 @@ function AttendancePage({
         />
       )}
     </main>
+  );
+}
+
+/* ============================================================
+   ATTENDANCE ROW
+============================================================ */
+
+function AttendanceRow({
+  player,
+  admin,
+  eligibility,
+  availableWeapons,
+  onSelect,
+  onUpdate,
+  onDelete,
+}) {
+  const [ign, setIgn] =
+    useState(player.ign);
+
+  const [className, setClassName] =
+    useState(
+      player.className
+    );
+
+  const [weapon, setWeapon] =
+    useState(
+      player.weapon || ""
+    );
+
+  useEffect(() => {
+    setIgn(player.ign);
+
+    setClassName(
+      player.className
+    );
+
+    setWeapon(
+      player.weapon || ""
+    );
+  }, [
+    player.ign,
+    player.className,
+    player.weapon,
+  ]);
+
+  async function save() {
+    const cleanIGN =
+      ign.trim();
+
+    if (!cleanIGN) return;
+
+    await onUpdate(
+      player.id,
+      {
+        ign: cleanIGN,
+        className,
+        weapon:
+          weapon.trim(),
+      }
+    );
+  }
+
+  const score =
+    Number(
+      player.totalScore || 0
+    );
+
+  const eligible =
+    score >=
+    Number(eligibility);
+
+  return (
+    <tr>
+      <td>
+        {admin ? (
+          <input
+            className="table-input ign-input"
+            value={ign}
+            onChange={(e) =>
+              setIgn(
+                e.target.value
+              )
+            }
+          />
+        ) : (
+          <button
+            className="ign-link"
+            onClick={() =>
+              onSelect(
+                player
+              )
+            }
+          >
+            {player.ign}
+          </button>
+        )}
+      </td>
+
+      <td>
+        {admin ? (
+          <select
+            className="table-select"
+            value={className}
+            onChange={(e) =>
+              setClassName(
+                e.target.value
+              )
+            }
+          >
+            {CLASSES.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+        ) : (
+          player.className
+        )}
+      </td>
+
+      <td>
+        {admin ? (
+          <>
+            <input
+              className="table-input"
+              list={`weapon-list-${player.id}`}
+              value={weapon}
+              onChange={(e) =>
+                setWeapon(
+                  e.target.value
+                )
+              }
+              placeholder="Type or select"
+            />
+
+            <datalist
+              id={`weapon-list-${player.id}`}
+            >
+              {availableWeapons.map(
+                (item) => (
+                  <option
+                    key={item}
+                    value={item}
+                  />
+                )
+              )}
+            </datalist>
+          </>
+        ) : (
+          player.weapon ||
+          "—"
+        )}
+      </td>
+
+      <td>
+        <strong className="score-value">
+          {score.toFixed(2)}
+        </strong>
+      </td>
+
+      <td>
+        {eligible ? (
+          <span className="eligible-badge small">
+            ✓ ELIGIBLE
+          </span>
+        ) : (
+          <span className="not-eligible">
+            NOT YET
+          </span>
+        )}
+      </td>
+
+      <td className="updated-cell">
+        {formatTimestamp(
+          player.updatedAt
+        )}
+      </td>
+
+      {admin && (
+        <td>
+          <div className="row-actions">
+            <button
+              className="mini-button"
+              onClick={
+                save
+              }
+            >
+              SAVE
+            </button>
+
+            <button
+              className="danger-button"
+              onClick={() =>
+                onDelete(
+                  player.id
+                )
+              }
+            >
+              DELETE
+            </button>
+
+            <button
+              className="mini-button"
+              onClick={() =>
+                onSelect(
+                  player
+                )
+              }
+            >
+              HISTORY
+            </button>
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
+/* ============================================================
+   LOGIN MODAL
+============================================================ */
+
+function LoginModal({
+  onClose,
+}) {
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+
+    setError("");
+    setLoading(true);
+
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+
+      onClose();
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        "Invalid email or password."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+    >
+      <form
+        className="modal-card"
+        onSubmit={submit}
+        onClick={(e) =>
+          e.stopPropagation()
+        }
+      >
+        <div className="section-label">
+          ADMIN ACCESS
+        </div>
+
+        <h2>
+          Attendance Admin
+        </h2>
+
+        <input
+          type="email"
+          placeholder="Admin email"
+          value={email}
+          onChange={(e) =>
+            setEmail(
+              e.target.value
+            )
+          }
+          required
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) =>
+            setPassword(
+              e.target.value
+            )
+          }
+          required
+        />
+
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+          >
+            CANCEL
+          </button>
+
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "LOGIN..."
+              : "LOGIN"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -3411,9 +3076,6 @@ export default function App() {
 
   const [raids, setRaids] =
     useState(DEFAULT_RAIDS);
-
-  const [raidUpdated, setRaidUpdated] =
-    useState(null);
 
   const [players, setPlayers] =
     useState([]);
@@ -3454,10 +3116,14 @@ export default function App() {
               )
             );
 
+          const adminData =
+            adminDoc.exists()
+              ? adminDoc.data()
+              : null;
+
           setIsAdmin(
-            adminDoc.exists() &&
-              adminDoc.data()
-                ?.active === true
+            adminData?.active ===
+              true
           );
         } catch (error) {
           console.error(
@@ -3491,27 +3157,33 @@ export default function App() {
           const data =
             snapshot.data();
 
-          const firebaseRaids =
-            data.raids;
-
-          if (
+          const storedRaids =
             Array.isArray(
-              firebaseRaids
-            ) &&
-            firebaseRaids.length
-          ) {
-            setRaids(
-              firebaseRaids
-            );
-          } else {
-            setRaids(
-              DEFAULT_RAIDS
-            );
-          }
+              data.raids
+            )
+              ? data.raids
+              : [];
 
-          setRaidUpdated(
-            data.updatedAt
-          );
+          const merged =
+            DEFAULT_RAIDS.map(
+              (defaultRaid) => {
+                const stored =
+                  storedRaids.find(
+                    (raid) =>
+                      raid.id ===
+                      defaultRaid.id
+                  );
+
+                return stored
+                  ? {
+                      ...defaultRaid,
+                      ...stored,
+                    }
+                  : defaultRaid;
+              }
+            );
+
+          setRaids(merged);
         } else {
           setRaids(
             DEFAULT_RAIDS
@@ -3636,48 +3308,17 @@ export default function App() {
   }, []);
 
   /* ==========================================================
-     UPDATE RAID
+     PUBLIC RAID UPDATE
   ========================================================== */
 
   async function updateRaid(
     id,
     updatedRaid
   ) {
-    /*
-      Raid editing is intentionally
-      allowed according to Firestore
-      rules.
-
-      If your rules require admin,
-      this function requires the
-      logged-in admin.
-    */
-
-    if (
-      !isAdmin
-    ) {
-      alert(
-        "Admin login required to change raid schedules."
-      );
-
-      return;
-    }
-
-    const now =
-      new Date();
-
-    const updatedWithTime = {
-      ...updatedRaid,
-      updatedAt:
-        now.toISOString(),
-      updatedBy:
-        user?.email || "",
-    };
-
     const next =
       raids.map((raid) =>
         raid.id === id
-          ? updatedWithTime
+          ? updatedRaid
           : raid
       );
 
@@ -3691,8 +3332,6 @@ export default function App() {
         raids: next,
         updatedAt:
           serverTimestamp(),
-        updatedBy:
-          user?.email || "",
       },
       {
         merge: true,
@@ -3707,16 +3346,11 @@ export default function App() {
   async function addPlayer(
     player
   ) {
-    if (!isAdmin) return;
-
-    const cleanIGN =
-      player.ign.trim();
-
-    if (!cleanIGN) return;
-
-    /*
-      Prevent duplicate IGN.
-    */
+    if (!isAdmin) {
+      throw new Error(
+        "Admin required."
+      );
+    }
 
     const duplicate =
       players.some(
@@ -3724,15 +3358,15 @@ export default function App() {
           String(
             existing.ign || ""
           ).toLowerCase() ===
-          cleanIGN.toLowerCase()
+          String(
+            player.ign || ""
+          ).toLowerCase()
       );
 
     if (duplicate) {
-      alert(
-        "That IGN already exists."
+      throw new Error(
+        "IGN already exists."
       );
-
-      return;
     }
 
     await addDoc(
@@ -3741,11 +3375,13 @@ export default function App() {
         "attendancePlayers"
       ),
       {
-        ign: cleanIGN,
+        ign: player.ign,
         className:
           player.className,
         weapon:
           player.weapon || "",
+        totalScore: 0,
+        eligible: false,
         createdAt:
           serverTimestamp(),
         updatedAt:
@@ -3764,47 +3400,6 @@ export default function App() {
   ) {
     if (!isAdmin) return;
 
-    const cleanIGN =
-      String(
-        changes.ign || ""
-      ).trim();
-
-    if (!cleanIGN) {
-      alert(
-        "IGN cannot be empty."
-      );
-
-      return;
-    }
-
-    const duplicate =
-      players.some(
-        (player) =>
-          player.id !== id &&
-          String(
-            player.ign || ""
-          ).toLowerCase() ===
-            cleanIGN.toLowerCase()
-      );
-
-    if (duplicate) {
-      alert(
-        "Another player already uses this IGN."
-      );
-
-      return;
-    }
-
-    /*
-      IMPORTANT:
-
-      We deliberately DO NOT save
-      totalScore here.
-
-      Score is calculated from
-      attendanceHistory.
-    */
-
     await updateDoc(
       doc(
         db,
@@ -3812,40 +3407,11 @@ export default function App() {
         id
       ),
       {
-        ign: cleanIGN,
-        className:
-          changes.className ||
-          "Swordman",
-        weapon:
-          changes.weapon || "",
+        ...changes,
         updatedAt:
           serverTimestamp(),
       }
     );
-
-    /*
-      Keep history IGN synchronized
-      when an admin changes an IGN.
-    */
-
-    const relatedHistory =
-      history.filter(
-        (item) =>
-          item.playerId === id
-      );
-
-    for (const item of relatedHistory) {
-      await updateDoc(
-        doc(
-          db,
-          "attendanceHistory",
-          item.id
-        ),
-        {
-          ign: cleanIGN,
-        }
-      );
-    }
   }
 
   /* ==========================================================
@@ -3857,15 +3423,9 @@ export default function App() {
   ) {
     if (!isAdmin) return;
 
-    const player =
-      players.find(
-        (p) =>
-          p.id === id
-      );
-
     const answer =
       window.confirm(
-        `Delete ${player?.ign || "this player"}?\n\nThe attendance history will NOT be deleted.`
+        "Delete this IGN? Attendance history will be kept."
       );
 
     if (!answer) return;
@@ -3881,6 +3441,10 @@ export default function App() {
 
   /* ==========================================================
      ADD ATTENDANCE
+
+     IMPORTANT:
+     Score is recalculated from ALL history after adding.
+     This avoids score corruption.
   ========================================================== */
 
   async function addAttendance(
@@ -3888,16 +3452,11 @@ export default function App() {
     bosses,
     points
   ) {
-    if (!isAdmin) return;
-
-    /*
-      ONLY create the history record.
-
-      DO NOT manually increment
-      player.totalScore.
-
-      This prevents score drift.
-    */
+    if (!isAdmin) {
+      throw new Error(
+        "Admin required."
+      );
+    }
 
     await addDoc(
       collection(
@@ -3913,7 +3472,7 @@ export default function App() {
           getDateKey(),
         bosses,
         points:
-          Number(points || 0),
+          Number(points),
         createdAt:
           serverTimestamp(),
         createdBy:
@@ -3921,18 +3480,51 @@ export default function App() {
       }
     );
 
-    /*
-      Update player timestamp only.
-      Score remains derived from history.
-    */
+    await recalculatePlayerScore(
+      player.id
+    );
+  }
+
+  /* ==========================================================
+     RECALCULATE PLAYER SCORE
+  ========================================================== */
+
+  async function recalculatePlayerScore(
+    playerId
+  ) {
+    const playerHistory =
+      history.filter(
+        (item) =>
+          item.playerId ===
+          playerId
+      );
+
+    const total =
+      playerHistory.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.points || 0
+          ),
+        0
+      );
+
+    const score =
+      Number(total.toFixed(2));
 
     await updateDoc(
       doc(
         db,
         "attendancePlayers",
-        player.id
+        playerId
       ),
       {
+        totalScore: score,
+        eligible:
+          score >=
+          Number(
+            settings.eligibilityScore
+          ),
         updatedAt:
           serverTimestamp(),
       }
@@ -3941,32 +3533,19 @@ export default function App() {
 
   /* ==========================================================
      DELETE HISTORY
+
+     Score is recalculated from remaining history.
   ========================================================== */
 
   async function deleteHistory(
-    historyId
+    historyId,
+    playerId
   ) {
     if (!isAdmin) return;
 
-    const item =
-      history.find(
-        (x) =>
-          x.id ===
-          historyId
-      );
-
-    if (!item) return;
-
     const answer =
       window.confirm(
-        `Delete this attendance record?\n\n${item.ign || ""}\n${item.bosses
-          ?.map(
-            (b) =>
-              b.name
-          )
-          .join(", ")}\n+${Number(
-          item.points || 0
-        ).toFixed(2)} points`
+        "Delete this attendance record?"
       );
 
     if (!answer) return;
@@ -3980,36 +3559,51 @@ export default function App() {
     );
 
     /*
-      IMPORTANT:
-
-      We do NOT subtract points from
-      the player.
-
-      The score will automatically
-      recalculate from the remaining
-      history records.
+      Build score from local history
+      minus the deleted record.
     */
 
-    if (item.playerId) {
-      try {
-        await updateDoc(
-          doc(
-            db,
-            "attendancePlayers",
-            item.playerId
+    const remaining =
+      history.filter(
+        (item) =>
+          item.playerId ===
+            playerId &&
+          item.id !==
+            historyId
+      );
+
+    const total =
+      remaining.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.points || 0
           ),
-          {
-            updatedAt:
-              serverTimestamp(),
-          }
-        );
-      } catch (error) {
-        console.error(
-          "Player timestamp update failed:",
-          error
-        );
+        0
+      );
+
+    const score =
+      Number(
+        total.toFixed(2)
+      );
+
+    await updateDoc(
+      doc(
+        db,
+        "attendancePlayers",
+        playerId
+      ),
+      {
+        totalScore: score,
+        eligible:
+          score >=
+          Number(
+            settings.eligibilityScore
+          ),
+        updatedAt:
+          serverTimestamp(),
       }
-    }
+    );
   }
 
   /* ==========================================================
@@ -4073,9 +3667,8 @@ export default function App() {
           </strong>
 
           <small>
-            Fixed Philippines raid
-            times are converted
-            automatically.
+            Fixed Philippines raid times
+            are converted automatically.
           </small>
         </div>
       </header>
@@ -4114,12 +3707,8 @@ export default function App() {
       {page === "raid" ? (
         <RaidPage
           raids={raids}
-          admin={isAdmin}
           onUpdateRaid={
             updateRaid
-          }
-          lastUpdated={
-            raidUpdated
           }
         />
       ) : (
