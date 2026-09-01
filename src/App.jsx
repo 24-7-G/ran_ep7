@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import {
   addDoc,
   collection,
@@ -11,14 +12,17 @@ import {
   setDoc,
   writeBatch,
 } from "firebase/firestore";
+
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
+
 import * as XLSX from "xlsx";
 
 import { auth, db } from "./firebase";
+
 import "./App.css";
 
 /* =========================================================
@@ -26,6 +30,12 @@ import "./App.css";
 ========================================================= */
 
 const PH_TIMEZONE = "Asia/Manila";
+
+const GEOMANCER_INTERVAL_HOURS = 10;
+const GEOMANCER_CYCLE_DAYS = 3;
+const GEOMANCER_UPCOMING_COUNT = 8;
+
+const ADMIN_UID = "S4dPP7gtceeqnQV2guLmorgikh23";
 
 const TIMEZONE_OPTIONS = [
   {
@@ -94,6 +104,79 @@ const TIMEZONE_OPTIONS = [
   },
 ];
 
+const BOSSES = [
+  {
+    id: "sonya",
+    name: "Sonya",
+    type: "BOSS RAID",
+    frequency: "Every Wednesday",
+    day: 3,
+    pointsKey: "sonyaPoints",
+    defaultHour: 21,
+    defaultMinute: 0,
+    image: "",
+  },
+  {
+    id: "geomancer",
+    name: "Geomancer",
+    type: "MINI BOSS",
+    frequency: "Every 10 Hours",
+    day: null,
+    intervalHours: GEOMANCER_INTERVAL_HOURS,
+    pointsKey: "geomancerPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image: "",
+  },
+  {
+    id: "reflector",
+    name: "Reflector",
+    type: "MINI BOSS",
+    frequency: "Every Day",
+    day: null,
+    pointsKey: "reflectorPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image:
+      "https://www.deviantart.com/michaelxgamingph/art/Reflector-01-Ran-Online-1026072917",
+  },
+  {
+    id: "giantHawk",
+    name: "Giant Hawk",
+    type: "MINI BOSS",
+    frequency: "Every Day",
+    day: null,
+    pointsKey: "giantHawkPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image:
+      "https://www.deviantart.com/michaelxgamingph/art/Giant-Hawk-Ran-Online-PH-01-982873311",
+  },
+];
+
+const DEFAULT_SETTINGS = {
+  sonyaPoints: 1,
+  geomancerPoints: 0.2,
+  reflectorPoints: 0.2,
+  giantHawkPoints: 0.2,
+  eligibilityScore: 6,
+};
+
+const CLASS_OPTIONS = [
+  "Swordman",
+  "Archer",
+  "Gunner",
+  "Shaman",
+  "Extreme",
+  "Brawler",
+];
+
+const WEAPON_OPTIONS = [];
+
+/* =========================================================
+   TIMEZONE HELPERS
+========================================================= */
+
 function getBrowserTimezone() {
   try {
     return (
@@ -151,136 +234,9 @@ function getTimezoneLabel(selectedTimezone) {
   return option?.label || selectedTimezone;
 }
 
-function formatRaidDateTime(value, timezone) {
-  const date = timestampToDate(value);
-
-  if (!date) return "—";
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-}
-
-function formatRaidTime(value, timezone) {
-  const date = timestampToDate(value);
-
-  if (!date) return "—";
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-}
-
-function formatRaidDateOnly(value, timezone) {
-  const date = timestampToDate(value);
-
-  if (!date) return "—";
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-const BOSSES = [
-  {
-    id: "sonya",
-    name: "Sonya",
-    type: "BOSS RAID",
-    frequency: "Every Wednesday",
-    day: 3,
-    pointsKey: "sonyaPoints",
-    defaultHour: 21,
-    defaultMinute: 0,
-    image: "",
-  },
-  {
-    id: "geomancer",
-    name: "Geomancer",
-    type: "MINI BOSS",
-    frequency: "Every Day",
-    day: null,
-    pointsKey: "geomancerPoints",
-    defaultHour: 12,
-    defaultMinute: 0,
-    image: "",
-  },
-  {
-    id: "reflector",
-    name: "Reflector",
-    type: "MINI BOSS",
-    frequency: "Every Day",
-    day: null,
-    pointsKey: "reflectorPoints",
-    defaultHour: 12,
-    defaultMinute: 0,
-    image:
-      "https://www.deviantart.com/michaelxgamingph/art/Reflector-01-Ran-Online-1026072917",
-  },
-  {
-    id: "giantHawk",
-    name: "Giant Hawk",
-    type: "MINI BOSS",
-    frequency: "Every Day",
-    day: null,
-    pointsKey: "giantHawkPoints",
-    defaultHour: 12,
-    defaultMinute: 0,
-    image:
-      "https://www.deviantart.com/michaelxgamingph/art/Giant-Hawk-Ran-Online-PH-01-982873311",
-  },
-];
-
-const DEFAULT_SETTINGS = {
-  sonyaPoints: 1,
-  geomancerPoints: 0.2,
-  reflectorPoints: 0.2,
-  giantHawkPoints: 0.2,
-  eligibilityScore: 6,
-};
-
-const CLASS_OPTIONS = [
-  "Swordman",
-  "Archer",
-  "Gunner",
-  "Shaman",
-  "Extreme",
-  "Brawler",
-];
-
-const WEAPON_OPTIONS = [
-
-];
-
 /* =========================================================
-   HELPERS
+   DATE HELPERS
 ========================================================= */
-
-function normalizeIgn(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function roundScore(value) {
-  const n = Number(value || 0);
-  return Math.round(n * 100) / 100;
-}
-
-function formatScore(value) {
-  return roundScore(value).toFixed(2).replace(/\.00$/, "");
-}
 
 function timestampToDate(value) {
   if (!value) return null;
@@ -295,15 +251,81 @@ function timestampToDate(value) {
 
   if (typeof value === "string") {
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
+
+    return Number.isNaN(d.getTime())
+      ? null
+      : d;
   }
 
   if (typeof value === "number") {
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
+
+    return Number.isNaN(d.getTime())
+      ? null
+      : d;
   }
 
   return null;
+}
+
+function formatRaidDateTime(
+  value,
+  timezone
+) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: timezone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }
+  ).format(date);
+}
+
+function formatRaidTime(
+  value,
+  timezone
+) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: timezone,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }
+  ).format(date);
+}
+
+function formatRaidDateOnly(
+  value,
+  timezone
+) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: timezone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }
+  ).format(date);
 }
 
 function formatDateTime(value) {
@@ -311,14 +333,17 @@ function formatDateTime(value) {
 
   if (!date) return "—";
 
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }
+  ).format(date);
 }
 
 function formatDateOnly(value) {
@@ -326,24 +351,56 @@ function formatDateOnly(value) {
 
   if (!date) return "—";
 
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    }
+  ).format(date);
 }
 
-function formatTime12(hour24, minute) {
+/* =========================================================
+   SCORE HELPERS
+========================================================= */
+
+function normalizeIgn(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function roundScore(value) {
+  const n = Number(value || 0);
+
+  return Math.round(n * 100) / 100;
+}
+
+function formatScore(value) {
+  return roundScore(value)
+    .toFixed(2)
+    .replace(/\.00$/, "");
+}
+
+function formatTime12(
+  hour24,
+  minute
+) {
   let h = Number(hour24);
   const m = Number(minute);
 
-  if (!Number.isFinite(h) || !Number.isFinite(m)) {
+  if (
+    !Number.isFinite(h) ||
+    !Number.isFinite(m)
+  ) {
     return "—";
   }
 
   h = ((h % 24) + 24) % 24;
 
-  const period = h >= 12 ? "PM" : "AM";
+  const period =
+    h >= 12 ? "PM" : "AM";
 
   let h12 = h % 12;
 
@@ -351,24 +408,52 @@ function formatTime12(hour24, minute) {
     h12 = 12;
   }
 
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+  return `${h12}:${String(
+    m
+  ).padStart(2, "0")} ${period}`;
 }
 
-function normalize12HourTo24(hour12, minute, period) {
-  let h = parseInt(hour12, 10);
-  const m = parseInt(minute, 10);
+function normalize12HourTo24(
+  hour12,
+  minute,
+  period
+) {
+  let h = parseInt(
+    hour12,
+    10
+  );
 
-  if (!Number.isFinite(h) || h < 1 || h > 12) {
-    throw new Error("Hour must be between 1 and 12.");
+  const m = parseInt(
+    minute,
+    10
+  );
+
+  if (
+    !Number.isFinite(h) ||
+    h < 1 ||
+    h > 12
+  ) {
+    throw new Error(
+      "Hour must be between 1 and 12."
+    );
   }
 
-  if (!Number.isFinite(m) || m < 0 || m > 59) {
-    throw new Error("Minute must be between 0 and 59.");
+  if (
+    !Number.isFinite(m) ||
+    m < 0 ||
+    m > 59
+  ) {
+    throw new Error(
+      "Minute must be between 0 and 59."
+    );
   }
 
   h = h % 12;
 
-  if (String(period).toUpperCase() === "PM") {
+  if (
+    String(period).toUpperCase() ===
+    "PM"
+  ) {
     h += 12;
   }
 
@@ -379,30 +464,47 @@ function normalize12HourTo24(hour12, minute, period) {
 }
 
 function from24Hour(hour24) {
-  const h = Number(hour24) || 0;
+  const h =
+    Number(hour24) || 0;
 
   return {
-    hour: String(h % 12 || 12),
-    period: h >= 12 ? "PM" : "AM",
+    hour: String(
+      h % 12 || 12
+    ),
+    period:
+      h >= 12 ? "PM" : "AM",
   };
 }
 
-function getPhilippinesDateParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: PH_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
+/* =========================================================
+   PHILIPPINES DATE HELPERS
+========================================================= */
+
+function getPhilippinesDateParts(
+  date = new Date()
+) {
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone: PH_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }
+    ).formatToParts(date);
 
   const result = {};
 
   parts.forEach((part) => {
-    if (part.type !== "literal") {
-      result[part.type] = part.value;
+    if (
+      part.type !== "literal"
+    ) {
+      result[part.type] =
+        part.value;
     }
   });
 
@@ -416,52 +518,344 @@ function getPhilippinesDateParts(date = new Date()) {
 }
 
 function getTodayPhilippines() {
-  const p = getPhilippinesDateParts();
+  const p =
+    getPhilippinesDateParts();
 
-  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(
+  return `${p.year}-${String(
+    p.month
+  ).padStart(2, "0")}-${String(
     p.day
   ).padStart(2, "0")}`;
 }
 
 /*
-  Philippines is UTC+8 year-round.
-*/
-function philippinesDateToUTC(year, month, day, hour, minute) {
+ * Philippines is UTC+8 year-round.
+ */
+function philippinesDateToUTC(
+  year,
+  month,
+  day,
+  hour,
+  minute
+) {
   return new Date(
-    Date.UTC(year, month - 1, day, hour, minute) - 8 * 60 * 60 * 1000
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      hour,
+      minute
+    ) -
+    8 *
+    60 *
+    60 *
+    1000
   );
 }
 
-function getNextRaidOccurrence(raid) {
-  const now = new Date();
-  const today = getPhilippinesDateParts(now);
-
-  const base = new Date(
-    Date.UTC(today.year, today.month - 1, today.day)
+function parsePhilippinesDateString(
+  value
+) {
+  const match = String(
+    value || ""
+  ).match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
   );
 
-  for (let i = 0; i <= 14; i++) {
-    const candidate = new Date(base);
-    candidate.setUTCDate(candidate.getUTCDate() + i);
+  if (!match) return null;
 
-    const year = candidate.getUTCFullYear();
-    const month = candidate.getUTCMonth() + 1;
-    const day = candidate.getUTCDate();
-    const weekday = candidate.getUTCDay();
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
 
-    if (raid.day !== null && raid.day !== weekday) {
-      continue;
-    }
+function getPhilippinesDateString(
+  date
+) {
+  const parts =
+    getPhilippinesDateParts(date);
 
-    const occurrence = philippinesDateToUTC(
-      year,
-      month,
-      day,
+  return `${parts.year}-${String(
+    parts.month
+  ).padStart(2, "0")}-${String(
+    parts.day
+  ).padStart(2, "0")}`;
+}
+
+/* =========================================================
+   GEOMANCER CYCLE
+========================================================= */
+
+function getGeomancerAnchorDateTime(
+  raid
+) {
+  if (!raid) return null;
+
+  const parsed =
+    parsePhilippinesDateString(
+      raid.anchorDate
+    );
+
+  if (!parsed) {
+    const today =
+      getPhilippinesDateParts();
+
+    return philippinesDateToUTC(
+      today.year,
+      today.month,
+      today.day,
       Number(raid.hour || 0),
       Number(raid.minute || 0)
     );
+  }
 
-    if (occurrence > now) {
+  return philippinesDateToUTC(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    Number(raid.hour || 0),
+    Number(raid.minute || 0)
+  );
+}
+
+function getNextGeomancerOccurrence(
+  raid
+) {
+  const anchor =
+    getGeomancerAnchorDateTime(
+      raid
+    );
+
+  if (!anchor) return null;
+
+  const interval =
+    Number(raid?.intervalHours) >
+      0
+      ? Number(
+        raid.intervalHours
+      )
+      : GEOMANCER_INTERVAL_HOURS;
+
+  const intervalMs =
+    interval *
+    60 *
+    60 *
+    1000;
+
+  const now = Date.now();
+
+  const anchorMs =
+    anchor.getTime();
+
+  if (anchorMs > now) {
+    return anchor;
+  }
+
+  const elapsed =
+    now - anchorMs;
+
+  const intervalsPassed =
+    Math.floor(
+      elapsed / intervalMs
+    ) + 1;
+
+  return new Date(
+    anchorMs +
+    intervalsPassed *
+    intervalMs
+  );
+}
+
+function getGeomancerCycleOccurrences(
+  raid,
+  days = GEOMANCER_CYCLE_DAYS
+) {
+  const anchor =
+    getGeomancerAnchorDateTime(
+      raid
+    );
+
+  if (!anchor) return [];
+
+  const interval =
+    Number(raid?.intervalHours) >
+      0
+      ? Number(
+        raid.intervalHours
+      )
+      : GEOMANCER_INTERVAL_HOURS;
+
+  const intervalMs =
+    interval *
+    60 *
+    60 *
+    1000;
+
+  const spanMs =
+    Number(days) *
+    24 *
+    60 *
+    60 *
+    1000;
+
+  const occurrences = [];
+
+  for (
+    let time = anchor.getTime();
+    time <
+    anchor.getTime() +
+    spanMs;
+    time += intervalMs
+  ) {
+    occurrences.push(
+      new Date(time)
+    );
+  }
+
+  return occurrences;
+}
+
+/*
+ * PUBLIC SCHEDULE:
+ *
+ * Always starts from the NEXT actual
+ * Geomancer occurrence and then shows
+ * eight future occurrences.
+ *
+ * 8 occurrences =
+ * 0, 10, 20, 30, 40, 50, 60, 70 hours
+ *
+ * This covers the next 72 hours.
+ */
+function getUpcomingGeomancerOccurrences(
+  raid,
+  count = GEOMANCER_UPCOMING_COUNT
+) {
+  const first =
+    getNextGeomancerOccurrence(
+      raid
+    );
+
+  if (!first) return [];
+
+  const intervalMs =
+    (
+      Number(
+        raid?.intervalHours
+      ) ||
+      GEOMANCER_INTERVAL_HOURS
+    ) *
+    60 *
+    60 *
+    1000;
+
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      new Date(
+        first.getTime() +
+        index * intervalMs
+      )
+  );
+}
+
+function formatPhilippinesCycleOccurrence(
+  date
+) {
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: PH_TIMEZONE,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }
+  ).format(date);
+}
+
+/* =========================================================
+   RAID OCCURRENCE
+========================================================= */
+
+function getNextRaidOccurrence(
+  raid
+) {
+  if (
+    raid?.id === "geomancer" &&
+    raid?.frequency ===
+    "Every 10 Hours"
+  ) {
+    return getNextGeomancerOccurrence(
+      raid
+    );
+  }
+
+  const now = new Date();
+
+  const today =
+    getPhilippinesDateParts(now);
+
+  const base = new Date(
+    Date.UTC(
+      today.year,
+      today.month - 1,
+      today.day
+    )
+  );
+
+  for (
+    let i = 0;
+    i <= 14;
+    i++
+  ) {
+    const candidate =
+      new Date(base);
+
+    candidate.setUTCDate(
+      candidate.getUTCDate() +
+      i
+    );
+
+    const year =
+      candidate.getUTCFullYear();
+
+    const month =
+      candidate.getUTCMonth() +
+      1;
+
+    const day =
+      candidate.getUTCDate();
+
+    const weekday =
+      candidate.getUTCDay();
+
+    if (
+      raid.day !== null &&
+      raid.day !== undefined &&
+      raid.day !== weekday
+    ) {
+      continue;
+    }
+
+    const occurrence =
+      philippinesDateToUTC(
+        year,
+        month,
+        day,
+        Number(raid.hour || 0),
+        Number(raid.minute || 0)
+      );
+
+    if (
+      occurrence > now
+    ) {
       return occurrence;
     }
   }
@@ -469,78 +863,209 @@ function getNextRaidOccurrence(raid) {
   return null;
 }
 
+/* =========================================================
+   RAID STORAGE
+========================================================= */
+
 function getDefaultRaid(boss) {
+  const isGeomancer =
+    boss.id === "geomancer";
+
   return {
     id: boss.id,
     name: boss.name,
     type: boss.type,
-    frequency: boss.frequency,
+    frequency:
+      boss.frequency,
     day: boss.day,
-    hour: boss.defaultHour,
-    minute: boss.defaultMinute,
-    image: boss.image || "",
+    hour:
+      boss.defaultHour,
+    minute:
+      boss.defaultMinute,
+    image:
+      boss.image || "",
+    intervalHours:
+      isGeomancer
+        ? GEOMANCER_INTERVAL_HOURS
+        : undefined,
+    anchorDate:
+      isGeomancer
+        ? getTodayPhilippines()
+        : undefined,
     updatedAt: null,
     updatedBy: "",
   };
 }
 
-function sanitizeRaid(raid, boss) {
+function sanitizeRaid(
+  raid,
+  boss
+) {
+  const isGeomancer =
+    boss.id === "geomancer";
+
+  const frequency =
+    raid?.frequency ||
+    boss.frequency;
+
+  let intervalHours;
+
+  if (isGeomancer) {
+    intervalHours =
+      Number(
+        raid?.intervalHours
+      ) > 0
+        ? Number(
+          raid.intervalHours
+        )
+        : GEOMANCER_INTERVAL_HOURS;
+  }
+
+  let anchorDate;
+
+  if (isGeomancer) {
+    anchorDate =
+      typeof raid?.anchorDate ===
+        "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(
+          raid.anchorDate
+        )
+        ? raid.anchorDate
+        : getTodayPhilippines();
+  }
+
   return {
     id: boss.id,
+
     name: boss.name,
+
     type: boss.type,
-    frequency: raid?.frequency || boss.frequency,
+
+    frequency:
+      isGeomancer
+        ? "Every 10 Hours"
+        : frequency,
+
     day:
-      raid?.day === null || raid?.day === undefined
-        ? boss.day
-        : Number(raid.day),
-    hour: Number.isFinite(Number(raid?.hour))
+      isGeomancer
+        ? null
+        : raid?.day === null ||
+          raid?.day === undefined
+          ? boss.day
+          : Number(
+            raid.day
+          ),
+
+    hour: Number.isFinite(
+      Number(raid?.hour)
+    )
       ? Number(raid.hour)
       : boss.defaultHour,
-    minute: Number.isFinite(Number(raid?.minute))
-      ? Number(raid.minute)
-      : boss.defaultMinute,
-    image: raid?.image || boss.image || "",
-    updatedAt: raid?.updatedAt || null,
-    updatedBy: raid?.updatedBy || "",
+
+    minute:
+      Number.isFinite(
+        Number(raid?.minute)
+      )
+        ? Number(
+          raid.minute
+        )
+        : boss.defaultMinute,
+
+    intervalHours,
+
+    anchorDate,
+
+    image:
+      raid?.image ||
+      boss.image ||
+      "",
+
+    updatedAt:
+      raid?.updatedAt ||
+      null,
+
+    updatedBy:
+      raid?.updatedBy ||
+      "",
   };
 }
 
+/* =========================================================
+   XLSX HELPERS
+========================================================= */
+
 function safeRow(value) {
-  if (value === undefined || value === null) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
     return "";
   }
 
   if (value?.toDate) {
-    return value.toDate().toISOString();
+    return value
+      .toDate()
+      .toISOString();
   }
 
-  if (value instanceof Date) {
+  if (
+    value instanceof Date
+  ) {
     return value.toISOString();
   }
 
-  if (typeof value === "object") {
-    return JSON.stringify(value);
+  if (
+    typeof value ===
+    "object"
+  ) {
+    return JSON.stringify(
+      value
+    );
   }
 
   return value;
 }
 
-function excelDateToJS(value) {
-  if (value instanceof Date) {
+function excelDateToJS(
+  value
+) {
+  if (
+    value instanceof Date
+  ) {
     return value;
   }
 
-  if (typeof value === "number") {
+  if (
+    typeof value ===
+    "number"
+  ) {
     return new Date(
-      Date.UTC(1899, 11, 30) + value * 24 * 60 * 60 * 1000
+      Date.UTC(
+        1899,
+        11,
+        30
+      ) +
+      value *
+      24 *
+      60 *
+      60 *
+      1000
     );
   }
 
-  if (typeof value === "string") {
-    const d = new Date(value);
+  if (
+    typeof value ===
+    "string"
+  ) {
+    const d = new Date(
+      value
+    );
 
-    if (!Number.isNaN(d.getTime())) {
+    if (
+      !Number.isNaN(
+        d.getTime()
+      )
+    ) {
       return d;
     }
   }
@@ -548,50 +1073,48 @@ function excelDateToJS(value) {
   return null;
 }
 
-function convertFirestoreObjectForImport(obj) {
-  const result = { ...obj };
-
-  Object.keys(result).forEach((key) => {
-    const value = result[key];
-
-    if (
-      key.toLowerCase().includes("at") ||
-      key.toLowerCase().includes("date")
-    ) {
-      const parsed = excelDateToJS(value);
-
-      if (parsed) {
-        result[key] = parsed.toISOString();
-      }
-    }
-  });
-
-  return result;
-}
-
 /* =========================================================
    MODAL
 ========================================================= */
 
-function Modal({ title, children, onClose, wide = false }) {
+function Modal({
+  title,
+  children,
+  onClose,
+  wide = false,
+}) {
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={onClose}
+    >
       <div
-        className={`modal-card ${wide ? "modal-wide" : ""}`}
-        onMouseDown={(event) => event.stopPropagation()}
+        className={`modal-card ${wide ? "modal-wide" : ""
+          }`}
+        onMouseDown={(event) =>
+          event.stopPropagation()
+        }
       >
         <div className="modal-header">
           <div>
-            <div className="modal-kicker">ADMIN PANEL</div>
+            <div className="modal-kicker">
+              ADMIN PANEL
+            </div>
+
             <h2>{title}</h2>
           </div>
 
-          <button className="modal-close" onClick={onClose}>
+          <button
+            className="modal-close"
+            onClick={onClose}
+          >
             ×
           </button>
         </div>
 
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -601,31 +1124,59 @@ function Modal({ title, children, onClose, wide = false }) {
    ADMIN LOGIN
 ========================================================= */
 
-function AdminLogin({ onClose }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+function AdminLogin({
+  onClose,
+}) {
+  const [email, setEmail] =
+    useState("");
 
-  async function login(event) {
+  const [password, setPassword] =
+    useState("");
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  async function login(
+    event
+  ) {
     event.preventDefault();
 
     setBusy(true);
     setError("");
 
     try {
-      const credential = await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password
-      );
+      const credential =
+        await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password
+        );
 
-      const adminRef = doc(db, "admins", credential.user.uid);
-      const adminSnap = await getDoc(adminRef);
+      const adminRef =
+        doc(
+          db,
+          "admins",
+          credential.user.uid
+        );
 
-      if (!adminSnap.exists() || adminSnap.data()?.active !== true) {
+      const adminSnap =
+        await getDoc(
+          adminRef
+        );
+
+      if (
+        !adminSnap.exists() ||
+        adminSnap.data()
+          ?.active !== true
+      ) {
         await signOut(auth);
-        throw new Error("This account is not an active administrator.");
+
+        throw new Error(
+          "This account is not an active administrator."
+        );
       }
 
       onClose();
@@ -633,7 +1184,8 @@ function AdminLogin({ onClose }) {
       console.error(err);
 
       setError(
-        err?.message || "Unable to sign in. Check your credentials."
+        err?.message ||
+        "Unable to sign in. Check your credentials."
       );
     } finally {
       setBusy(false);
@@ -641,23 +1193,43 @@ function AdminLogin({ onClose }) {
   }
 
   return (
-    <Modal title="Administrator Login" onClose={onClose}>
-      <form className="login-form" onSubmit={login}>
-        <div className="login-icon">⚡</div>
+    <Modal
+      title="Administrator Login"
+      onClose={onClose}
+    >
+      <form
+        className="login-form"
+        onSubmit={login}
+      >
+        <div className="login-icon">
+          ⚡
+        </div>
 
         <p className="modal-description">
-          Administrator access is required for attendance, players,
-          scoring, claims, settings, and backup operations.
+          Administrator access is
+          required for attendance,
+          players, scoring, claims,
+          settings, and backup
+          operations.
         </p>
 
-        {error && <div className="error-box">{error}</div>}
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
 
         <label>
           Email
+
           <input
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) =>
+              setEmail(
+                event.target.value
+              )
+            }
             placeholder="admin@email.com"
             autoComplete="username"
             required
@@ -666,18 +1238,28 @@ function AdminLogin({ onClose }) {
 
         <label>
           Password
+
           <input
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) =>
+              setPassword(
+                event.target.value
+              )
+            }
             placeholder="Password"
             autoComplete="current-password"
             required
           />
         </label>
 
-        <button className="primary-button full-button" disabled={busy}>
-          {busy ? "SIGNING IN..." : "SIGN IN"}
+        <button
+          className="primary-button full-button"
+          disabled={busy}
+        >
+          {busy
+            ? "SIGNING IN..."
+            : "SIGN IN"}
         </button>
       </form>
     </Modal>
@@ -694,9 +1276,27 @@ function RaidCard({
   timezone,
 }) {
   const displayTimezone =
-    getDisplayTimezone(timezone);
+    getDisplayTimezone(
+      timezone
+    );
 
-  const next = getNextRaidOccurrence(raid);
+  const next =
+    getNextRaidOccurrence(
+      raid
+    );
+
+  const isGeomancer =
+    raid.id === "geomancer" &&
+    raid.frequency ===
+    "Every 10 Hours";
+
+  const upcomingGeomancer =
+    isGeomancer
+      ? getUpcomingGeomancerOccurrences(
+        raid,
+        GEOMANCER_UPCOMING_COUNT
+      )
+      : [];
 
   return (
     <article className="raid-card">
@@ -713,8 +1313,12 @@ function RaidCard({
         ) : (
           <div className="boss-placeholder">
             <span>RAN</span>
+
             <strong>
-              {raid.name.slice(0, 1)}
+              {raid.name.slice(
+                0,
+                1
+              )}
             </strong>
           </div>
         )}
@@ -727,8 +1331,13 @@ function RaidCard({
       <div className="raid-content">
         <div className="raid-title-row">
           <div>
-            <h2>{raid.name}</h2>
-            <p>{raid.frequency}</p>
+            <h2>
+              {raid.name}
+            </h2>
+
+            <p>
+              {raid.frequency}
+            </p>
           </div>
 
           <div className="raid-status">
@@ -738,7 +1347,9 @@ function RaidCard({
         </div>
 
         <div className="raid-time-box timezone-aware">
-          <span>NEXT RAID</span>
+          <span>
+            NEXT RAID
+          </span>
 
           {next ? (
             <>
@@ -757,14 +1368,16 @@ function RaidCard({
               </div>
 
               <small>
-                {getTimezoneLabel(timezone)}
+                {getTimezoneLabel(
+                  timezone
+                )}
               </small>
 
               <div className="raid-ph-time">
                 Philippines Time:{" "}
-                {formatTime12(
-                  raid.hour,
-                  raid.minute
+                {formatRaidDateTime(
+                  next,
+                  PH_TIMEZONE
                 )}
               </div>
             </>
@@ -777,20 +1390,24 @@ function RaidCard({
 
         <div className="raid-meta">
           <div>
-            <span>Schedule</span>
+            <span>
+              Schedule
+            </span>
 
             <strong>
-              {raid.frequency}
-              <br />
-              {formatTime12(
-                raid.hour,
-                raid.minute
-              )}
+              {isGeomancer
+                ? `Every ${raid.intervalHours || GEOMANCER_INTERVAL_HOURS} Hours`
+                : `${raid.frequency} — ${formatTime12(
+                  raid.hour,
+                  raid.minute
+                )}`}
             </strong>
           </div>
 
           <div>
-            <span>Last Updated</span>
+            <span>
+              Last Updated
+            </span>
 
             <strong>
               {raid.updatedAt
@@ -802,9 +1419,89 @@ function RaidCard({
           </div>
         </div>
 
+        {isGeomancer && (
+          <>
+            <details className="geomancer-cycle">
+              <summary>
+                <span className="geomancer-summary-text">
+                  <span>
+                    VIEW 3-DAY SCHEDULE
+                  </span>
+
+                  <strong>
+                    2 raids per day
+                  </strong>
+                </span>
+              </summary>
+
+              <div className="geomancer-cycle-list">
+                {upcomingGeomancer.map(
+                  (
+                    occurrence,
+                    index
+                  ) => (
+                    <div
+                      className={`geomancer-cycle-item ${index === 0
+                        ? "next-spawn"
+                        : ""
+                        }`}
+                      key={occurrence.toISOString()}
+                    >
+                      <span className="geomancer-cycle-number">
+                        {index + 1}
+                      </span>
+
+                      <div className="geomancer-cycle-time">
+                        <strong>
+                          {formatRaidDateTime(
+                            occurrence,
+                            displayTimezone
+                          )}
+                        </strong>
+
+                        <small>
+                          Philippines:{" "}
+                          {formatRaidDateTime(
+                            occurrence,
+                            PH_TIMEZONE
+                          )}
+                        </small>
+                      </div>
+
+                      {index ===
+                        0 && (
+                          <span className="geomancer-next-badge">
+                            NEXT
+                          </span>
+                        )}
+                    </div>
+                  )
+                )}
+              </div>
+            </details>
+
+            <div className="geomancer-cycle-info">
+              <span>
+                CYCLE START — PHILIPPINES TIME
+              </span>
+
+              <strong>
+                {raid.anchorDate
+                  ? `${raid.anchorDate} ${formatTime12(
+                    raid.hour,
+                    raid.minute
+                  )}`
+                  : "—"}
+              </strong>
+            </div>
+          </>
+        )}
+
         <button
           className="outline-button"
-          onClick={() => onEdit(raid)}
+          onClick={() =>
+            onEdit(raid)
+          }
         >
           EDIT SCHEDULE
         </button>
@@ -817,204 +1514,927 @@ function RaidCard({
    RAID EDITOR
 ========================================================= */
 
-function RaidEditor({ raid, onClose, onSaved }) {
-  const initial = from24Hour(raid.hour);
+function RaidEditor({
+  raid,
+  onClose,
+  onSaved,
+}) {
+  const initial =
+    from24Hour(
+      raid.hour
+    );
 
-  const [hour, setHour] = useState(initial.hour);
-  const [minute, setMinute] = useState(
-    String(raid.minute ?? 0).padStart(2, "0")
-  );
-  const [period, setPeriod] = useState(initial.period);
-  const [frequency, setFrequency] = useState(
-    raid.day === null ? "daily" : "weekly"
-  );
-  const [day, setDay] = useState(
-    raid.day === null ? "0" : String(raid.day)
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const isGeomancer =
+    raid.id ===
+    "geomancer";
+
+  const [hour, setHour] =
+    useState(
+      initial.hour
+    );
+
+  const [minute, setMinute] =
+    useState(
+      String(
+        raid.minute ?? 0
+      ).padStart(2, "0")
+    );
+
+  const [period, setPeriod] =
+    useState(
+      initial.period
+    );
+
+  const [frequency, setFrequency] =
+    useState(
+      isGeomancer
+        ? "10hours"
+        : raid.day === null
+          ? "daily"
+          : "weekly"
+    );
+
+  const [day, setDay] =
+    useState(
+      raid.day === null
+        ? "0"
+        : String(
+          raid.day
+        )
+    );
+
+  const [anchorDate, setAnchorDate] =
+    useState(
+      raid.anchorDate ||
+      getTodayPhilippines()
+    );
+
+  const [cycleSelection, setCycleSelection] =
+    useState("");
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const cyclePreviewRaid =
+    useMemo(() => {
+      try {
+        const converted =
+          normalize12HourTo24(
+            hour,
+            minute,
+            period
+          );
+
+        return {
+          ...raid,
+          id: "geomancer",
+          frequency:
+            "Every 10 Hours",
+          day: null,
+          hour:
+            converted.hour,
+          minute:
+            converted.minute,
+          intervalHours:
+            GEOMANCER_INTERVAL_HOURS,
+          anchorDate,
+        };
+      } catch {
+        return {
+          ...raid,
+          id: "geomancer",
+          frequency:
+            "Every 10 Hours",
+          day: null,
+          hour:
+            Number(raid.hour) ||
+            12,
+          minute:
+            Number(raid.minute) ||
+            0,
+          intervalHours:
+            GEOMANCER_INTERVAL_HOURS,
+          anchorDate,
+        };
+      }
+    }, [
+      raid,
+      hour,
+      minute,
+      period,
+      anchorDate,
+    ]);
+
+  const cycleOccurrences =
+    useMemo(() => {
+      if (!isGeomancer) {
+        return [];
+      }
+
+      return getGeomancerCycleOccurrences(
+        cyclePreviewRaid,
+        GEOMANCER_CYCLE_DAYS
+      );
+    }, [
+      isGeomancer,
+      cyclePreviewRaid,
+    ]);
+
+  function selectCycleOccurrence(
+    value
+  ) {
+    setCycleSelection(value);
+
+    const selected =
+      cycleOccurrences.find(
+        (item) =>
+          String(
+            item.getTime()
+          ) ===
+          String(value)
+      );
+
+    if (!selected) {
+      return;
+    }
+
+    const ph =
+      getPhilippinesDateParts(
+        selected
+      );
+
+    const selectedDate =
+      `${ph.year}-${String(
+        ph.month
+      ).padStart(
+        2,
+        "0"
+      )}-${String(
+        ph.day
+      ).padStart(
+        2,
+        "0"
+      )}`;
+
+    const selectedTime =
+      from24Hour(
+        ph.hour
+      );
+
+    setAnchorDate(
+      selectedDate
+    );
+
+    setHour(
+      selectedTime.hour
+    );
+
+    setMinute(
+      String(
+        ph.minute
+      ).padStart(
+        2,
+        "0"
+      )
+    );
+
+    setPeriod(
+      selectedTime.period
+    );
+  }
+
+  function handleHourChange(
+    value
+  ) {
+    setHour(value);
+    setCycleSelection("");
+  }
+
+  function handleMinuteChange(
+    value
+  ) {
+    setMinute(value);
+    setCycleSelection("");
+  }
+
+  function handlePeriodChange(
+    value
+  ) {
+    setPeriod(value);
+    setCycleSelection("");
+  }
+
+  function handleAnchorDateChange(
+    value
+  ) {
+    setAnchorDate(value);
+    setCycleSelection("");
+  }
 
   async function save() {
     setBusy(true);
     setError("");
 
     try {
-      const converted = normalize12HourTo24(
-        hour,
-        minute,
-        period
-      );
-
-      const updatedRaid = {
-        ...raid,
-        frequency:
-          frequency === "daily"
-            ? "Every Day"
-            : `Every ${[
-              "Sunday",
-              "Monday",
-              "Tuesday",
-              "Wednesday",
-              "Thursday",
-              "Friday",
-              "Saturday",
-            ][Number(day)]
-            }`,
-        day:
-          frequency === "daily"
-            ? null
-            : Number(day),
-        hour: converted.hour,
-        minute: converted.minute,
-        updatedAt: new Date().toISOString(),
-        updatedBy: auth.currentUser?.email || auth.currentUser?.uid || "Admin",
-      };
-
-      const currentRef = doc(db, "settings", "raidSchedule");
-      const currentSnap = await getDoc(currentRef);
-
-      const currentData = currentSnap.exists()
-        ? currentSnap.data()
-        : {};
-
-      const currentRaids = Array.isArray(currentData.raids)
-        ? currentData.raids
-        : BOSSES.map(getDefaultRaid);
-
-      const nextRaids = BOSSES.map((boss) => {
-        if (boss.id === raid.id) {
-          return sanitizeRaid(updatedRaid, boss);
-        }
-
-        const existing = currentRaids.find(
-          (item) => item.id === boss.id
+      const converted =
+        normalize12HourTo24(
+          hour,
+          minute,
+          period
         );
 
-        return sanitizeRaid(existing, boss);
-      });
+      let updatedRaid;
+
+      if (
+        isGeomancer
+      ) {
+        if (!anchorDate) {
+          throw new Error(
+            "Select a Geomancer cycle start date."
+          );
+        }
+
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(
+            anchorDate
+          )
+        ) {
+          throw new Error(
+            "Invalid Geomancer cycle date."
+          );
+        }
+
+        updatedRaid = {
+          ...raid,
+          frequency:
+            "Every 10 Hours",
+          day: null,
+          hour:
+            converted.hour,
+          minute:
+            converted.minute,
+          intervalHours:
+            GEOMANCER_INTERVAL_HOURS,
+          anchorDate,
+          updatedAt:
+            new Date().toISOString(),
+          updatedBy:
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
+            "Admin",
+        };
+      } else {
+        const days = [
+          "Sunday",
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+          "Saturday",
+        ];
+
+        updatedRaid = {
+          ...raid,
+
+          frequency:
+            frequency ===
+              "daily"
+              ? "Every Day"
+              : `Every ${days[
+              Number(day)
+              ]
+              }`,
+
+          day:
+            frequency ===
+              "daily"
+              ? null
+              : Number(day),
+
+          hour:
+            converted.hour,
+
+          minute:
+            converted.minute,
+
+          updatedAt:
+            new Date().toISOString(),
+
+          updatedBy:
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
+            "Admin",
+        };
+      }
+
+      const currentRef =
+        doc(
+          db,
+          "settings",
+          "raidSchedule"
+        );
+
+      const currentSnap =
+        await getDoc(
+          currentRef
+        );
+
+      const currentData =
+        currentSnap.exists()
+          ? currentSnap.data()
+          : {};
+
+      const currentRaids =
+        Array.isArray(
+          currentData.raids
+        )
+          ? currentData.raids
+          : BOSSES.map(
+            getDefaultRaid
+          );
+
+      const nextRaids =
+        BOSSES.map(
+          (boss) => {
+            if (
+              boss.id ===
+              raid.id
+            ) {
+              return sanitizeRaid(
+                updatedRaid,
+                boss
+              );
+            }
+
+            const existing =
+              currentRaids.find(
+                (item) =>
+                  item.id ===
+                  boss.id
+              );
+
+            return sanitizeRaid(
+              existing,
+              boss
+            );
+          }
+        );
 
       await setDoc(
         currentRef,
         {
-          raids: nextRaids,
-          updatedAt: serverTimestamp(),
+          raids:
+            nextRaids,
+
+          updatedAt:
+            serverTimestamp(),
+
           updatedBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
             "Admin",
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
 
       onSaved();
       onClose();
     } catch (err) {
       console.error(err);
-      setError(err?.message || "Unable to save schedule.");
+
+      setError(
+        err?.message ||
+        "Unable to save schedule."
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal title={`Edit ${raid.name} Schedule`} onClose={onClose}>
+    <Modal
+      title={`Edit ${raid.name} Schedule`}
+      onClose={onClose}
+      wide={isGeomancer}
+    >
       <div className="editor-grid">
         <div className="editor-preview">
-          <span className="editor-preview-label">CURRENT TIME</span>
-          <strong>{formatTime12(raid.hour, raid.minute)}</strong>
-          <small>Philippines Time</small>
+          <span className="editor-preview-label">
+            CURRENT TIME
+          </span>
+
+          <strong>
+            {formatTime12(
+              raid.hour,
+              raid.minute
+            )}
+          </strong>
+
+          <small>
+            Philippines Time
+          </small>
         </div>
 
         <div className="editor-section">
-          <label>
-            Frequency
-            <select
-              value={frequency}
-              onChange={(event) => setFrequency(event.target.value)}
-            >
-              <option value="daily">Every Day</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </label>
-
-          {frequency === "weekly" && (
+          {!isGeomancer && (
             <label>
-              Day
+              Frequency
+
               <select
-                value={day}
-                onChange={(event) => setDay(event.target.value)}
+                value={
+                  frequency
+                }
+                onChange={(
+                  event
+                ) => {
+                  setFrequency(
+                    event.target
+                      .value
+                  );
+                }}
               >
-                <option value="0">Sunday</option>
-                <option value="1">Monday</option>
-                <option value="2">Tuesday</option>
-                <option value="3">Wednesday</option>
-                <option value="4">Thursday</option>
-                <option value="5">Friday</option>
-                <option value="6">Saturday</option>
+                <option value="daily">
+                  Every Day
+                </option>
+
+                <option value="weekly">
+                  Weekly
+                </option>
               </select>
             </label>
           )}
 
-          <div className="time-controls">
-            <label>
-              Hour
-              <select
-                value={hour}
-                onChange={(event) => setHour(event.target.value)}
-              >
-                {Array.from({ length: 12 }, (_, index) => {
-                  const value = String(index + 1);
+          {isGeomancer && (
+            <div className="geomancer-cycle-editor">
+              <div className="geomancer-cycle-heading">
+                <div>
+                  <span>
+                    GEOMANCER CYCLE
+                  </span>
 
-                  return (
-                    <option key={value} value={value}>
-                      {value}
+                  <strong>
+                    10-HOUR RECURRING
+                    SCHEDULE
+                  </strong>
+                </div>
+
+                <div className="geomancer-cycle-badge">
+                  3 DAYS
+                </div>
+              </div>
+
+              <p className="geomancer-cycle-description">
+                Choose the starting
+                occurrence in
+                Philippines Time.
+                Geomancer will then
+                respawn automatically
+                every 10 hours.
+              </p>
+
+              <label>
+                Cycle Start Date
+
+                <input
+                  type="date"
+                  value={
+                    anchorDate
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    handleAnchorDateChange(
+                      event.target
+                        .value
+                    )
+                  }
+                />
+              </label>
+
+              <div className="time-controls">
+                <label>
+                  Hour
+
+                  <select
+                    value={
+                      hour
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      handleHourChange(
+                        event
+                          .target
+                          .value
+                      )
+                    }
+                  >
+                    {Array.from(
+                      {
+                        length: 12,
+                      },
+                      (
+                        _,
+                        index
+                      ) => {
+                        const value =
+                          String(
+                            index +
+                            1
+                          );
+
+                        return (
+                          <option
+                            key={
+                              value
+                            }
+                            value={
+                              value
+                            }
+                          >
+                            {
+                              value
+                            }
+                          </option>
+                        );
+                      }
+                    )}
+                  </select>
+                </label>
+
+                <label>
+                  Minute
+
+                  <select
+                    value={
+                      minute
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      handleMinuteChange(
+                        event
+                          .target
+                          .value
+                      )
+                    }
+                  >
+                    {Array.from(
+                      {
+                        length: 60,
+                      },
+                      (
+                        _,
+                        index
+                      ) => {
+                        const value =
+                          String(
+                            index
+                          ).padStart(
+                            2,
+                            "0"
+                          );
+
+                        return (
+                          <option
+                            key={
+                              value
+                            }
+                            value={
+                              value
+                            }
+                          >
+                            {
+                              value
+                            }
+                          </option>
+                        );
+                      }
+                    )}
+                  </select>
+                </label>
+
+                <label>
+                  AM / PM
+
+                  <select
+                    value={
+                      period
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      handlePeriodChange(
+                        event
+                          .target
+                          .value
+                      )
+                    }
+                  >
+                    <option value="AM">
+                      AM
                     </option>
-                  );
-                })}
-              </select>
-            </label>
 
-            <label>
-              Minute
-              <select
-                value={minute}
-                onChange={(event) => setMinute(event.target.value)}
-              >
-                {Array.from({ length: 60 }, (_, index) => {
-                  const value = String(index).padStart(2, "0");
-
-                  return (
-                    <option key={value} value={value}>
-                      {value}
+                    <option value="PM">
+                      PM
                     </option>
-                  );
-                })}
-              </select>
-            </label>
+                  </select>
+                </label>
+              </div>
 
-            <label>
-              AM / PM
-              <select
-                value={period}
-                onChange={(event) => setPeriod(event.target.value)}
-              >
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
-            </label>
-          </div>
+              <label className="geomancer-occurrence-label">
+                Select 3-Day Cycle
+                Occurrence
+
+                <select
+                  value={
+                    cycleSelection
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    selectCycleOccurrence(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                >
+                  <option value="">
+                    Select cycle start...
+                  </option>
+
+                  {cycleOccurrences.map(
+                    (
+                      occurrence,
+                      index
+                    ) => (
+                      <option
+                        key={`${occurrence.getTime()}-${index}`}
+                        value={String(
+                          occurrence.getTime()
+                        )}
+                      >
+                        {formatPhilippinesCycleOccurrence(
+                          occurrence
+                        )}
+                      </option>
+                    )
+                  )}
+                </select>
+              </label>
+
+              <div className="geomancer-cycle-list">
+                <div className="geomancer-cycle-list-title">
+                  3-DAY PREVIEW —
+                  PHILIPPINES TIME
+                </div>
+
+                {cycleOccurrences.map(
+                  (
+                    occurrence,
+                    index
+                  ) => (
+                    <div
+                      className="geomancer-cycle-row"
+                      key={`${occurrence.getTime()}-row-${index}`}
+                    >
+                      <span>
+                        #{index + 1}
+                      </span>
+
+                      <strong>
+                        {formatPhilippinesCycleOccurrence(
+                          occurrence
+                        )}
+                      </strong>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isGeomancer &&
+            frequency ===
+            "weekly" && (
+              <label>
+                Day
+
+                <select
+                  value={
+                    day
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setDay(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                >
+                  <option value="0">
+                    Sunday
+                  </option>
+
+                  <option value="1">
+                    Monday
+                  </option>
+
+                  <option value="2">
+                    Tuesday
+                  </option>
+
+                  <option value="3">
+                    Wednesday
+                  </option>
+
+                  <option value="4">
+                    Thursday
+                  </option>
+
+                  <option value="5">
+                    Friday
+                  </option>
+
+                  <option value="6">
+                    Saturday
+                  </option>
+                </select>
+              </label>
+            )}
+
+          {!isGeomancer && (
+            <div className="time-controls">
+              <label>
+                Hour
+
+                <select
+                  value={
+                    hour
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setHour(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                >
+                  {Array.from(
+                    {
+                      length: 12,
+                    },
+                    (
+                      _,
+                      index
+                    ) => {
+                      const value =
+                        String(
+                          index +
+                          1
+                        );
+
+                      return (
+                        <option
+                          key={
+                            value
+                          }
+                          value={
+                            value
+                          }
+                        >
+                          {
+                            value
+                          }
+                        </option>
+                      );
+                    }
+                  )}
+                </select>
+              </label>
+
+              <label>
+                Minute
+
+                <select
+                  value={
+                    minute
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setMinute(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                >
+                  {Array.from(
+                    {
+                      length: 60,
+                    },
+                    (
+                      _,
+                      index
+                    ) => {
+                      const value =
+                        String(
+                          index
+                        ).padStart(
+                          2,
+                          "0"
+                        );
+
+                      return (
+                        <option
+                          key={
+                            value
+                          }
+                          value={
+                            value
+                          }
+                        >
+                          {
+                            value
+                          }
+                        </option>
+                      );
+                    }
+                  )}
+                </select>
+              </label>
+
+              <label>
+                AM / PM
+
+                <select
+                  value={
+                    period
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setPeriod(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                >
+                  <option value="AM">
+                    AM
+                  </option>
+
+                  <option value="PM">
+                    PM
+                  </option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <div className="modal-actions">
-        <button className="secondary-button" onClick={onClose}>
+        <button
+          className="secondary-button"
+          onClick={onClose}
+        >
           CANCEL
         </button>
 
-        <button className="primary-button" onClick={save} disabled={busy}>
-          {busy ? "SAVING..." : "SAVE SCHEDULE"}
+        <button
+          className="primary-button"
+          onClick={save}
+          disabled={busy}
+        >
+          {busy
+            ? "SAVING..."
+            : "SAVE SCHEDULE"}
         </button>
       </div>
     </Modal>
@@ -1030,30 +2450,50 @@ function PlayerFormModal({
   onClose,
   onSaved,
 }) {
-  const [ign, setIgn] = useState(player?.ign || "");
-  const [playerClass, setPlayerClass] = useState(
-    player?.class || ""
-  );
-  const [weapon, setWeapon] = useState(
-    player?.preferredWeapon || ""
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [ign, setIgn] =
+    useState(
+      player?.ign || ""
+    );
 
-  const editing = Boolean(player);
+  const [playerClass, setPlayerClass] =
+    useState(
+      player?.class || ""
+    );
 
-  async function savePlayer(event) {
+  const [weapon, setWeapon] =
+    useState(
+      player?.preferredWeapon ||
+      ""
+    );
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const editing =
+    Boolean(player);
+
+  async function savePlayer(
+    event
+  ) {
     event.preventDefault();
 
-    const cleanIgn = ign.trim();
+    const cleanIgn =
+      ign.trim();
 
     if (!cleanIgn) {
-      setError("IGN is required.");
+      setError(
+        "IGN is required."
+      );
       return;
     }
 
     if (!playerClass.trim()) {
-      setError("Class is required.");
+      setError(
+        "Class is required."
+      );
       return;
     }
 
@@ -1061,44 +2501,68 @@ function PlayerFormModal({
     setError("");
 
     try {
+      const adminName =
+        auth.currentUser
+          ?.email ||
+        auth.currentUser
+          ?.uid ||
+        "Admin";
+
       if (editing) {
         await setDoc(
-          doc(db, "attendancePlayers", player.id),
+          doc(
+            db,
+            "attendancePlayers",
+            player.id
+          ),
           {
             ign: cleanIgn,
-            class: playerClass.trim(),
-            preferredWeapon: weapon.trim(),
-            updatedAt: serverTimestamp(),
+            class:
+              playerClass.trim(),
+            preferredWeapon:
+              weapon.trim(),
+            updatedAt:
+              serverTimestamp(),
             updatedBy:
-              auth.currentUser?.email ||
-              auth.currentUser?.uid ||
-              "Admin",
+              adminName,
           },
-          { merge: true }
+          {
+            merge: true,
+          }
         );
       } else {
-        await addDoc(collection(db, "attendancePlayers"), {
-          ign: cleanIgn,
-          class: playerClass.trim(),
-          preferredWeapon: weapon.trim(),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          createdBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
-            "Admin",
-          updatedBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
-            "Admin",
-        });
+        await addDoc(
+          collection(
+            db,
+            "attendancePlayers"
+          ),
+          {
+            ign: cleanIgn,
+            class:
+              playerClass.trim(),
+            preferredWeapon:
+              weapon.trim(),
+            createdAt:
+              serverTimestamp(),
+            updatedAt:
+              serverTimestamp(),
+            createdBy:
+              adminName,
+            updatedBy:
+              adminName,
+          }
+        );
       }
 
       onSaved();
       onClose();
     } catch (err) {
       console.error(err);
-      setError(err?.message || "Unable to save player.");
+
+      setError(
+        err?.message ||
+        "Unable to save player."
+      );
     } finally {
       setBusy(false);
     }
@@ -1106,17 +2570,33 @@ function PlayerFormModal({
 
   return (
     <Modal
-      title={editing ? `Edit ${player.ign}` : "Add New Player"}
+      title={
+        editing
+          ? `Edit ${player.ign}`
+          : "Add New Player"
+      }
       onClose={onClose}
     >
-      <form className="player-form" onSubmit={savePlayer}>
-        {error && <div className="error-box">{error}</div>}
+      <form
+        className="player-form"
+        onSubmit={savePlayer}
+      >
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
 
         <label>
           IGN
+
           <input
             value={ign}
-            onChange={(event) => setIgn(event.target.value)}
+            onChange={(event) =>
+              setIgn(
+                event.target.value
+              )
+            }
             placeholder="Enter in-game name"
             autoFocus
             required
@@ -1125,32 +2605,54 @@ function PlayerFormModal({
 
         <label>
           Class
+
           <input
             list="class-options"
             value={playerClass}
-            onChange={(event) => setPlayerClass(event.target.value)}
+            onChange={(event) =>
+              setPlayerClass(
+                event.target.value
+              )
+            }
             placeholder="Type any class"
             required
           />
+
           <datalist id="class-options">
-            {CLASS_OPTIONS.map((item) => (
-              <option key={item} value={item} />
-            ))}
+            {CLASS_OPTIONS.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                />
+              )
+            )}
           </datalist>
         </label>
 
         <label>
           Preferred Weapon
+
           <input
             list="weapon-options"
             value={weapon}
-            onChange={(event) => setWeapon(event.target.value)}
+            onChange={(event) =>
+              setWeapon(
+                event.target.value
+              )
+            }
             placeholder="Type or select weapon"
           />
+
           <datalist id="weapon-options">
-            {WEAPON_OPTIONS.map((item) => (
-              <option key={item} value={item} />
-            ))}
+            {WEAPON_OPTIONS.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                />
+              )
+            )}
           </datalist>
         </label>
 
@@ -1181,43 +2683,61 @@ function PlayerFormModal({
 }
 
 /* =========================================================
-   SCORE CALCULATION
+   SCORE
 ========================================================= */
 
-function getPlayerScore(player, histories, ledger) {
+function getPlayerScore(
+  player,
+  histories,
+  ledger
+) {
   let total = 0;
 
   for (const record of histories) {
     const samePlayer =
-      record.playerId === player.id ||
-      (
-        !record.playerId &&
-        normalizeIgn(record.ign) === normalizeIgn(player.ign)
-      );
+      record.playerId ===
+      player.id ||
+      (!record.playerId &&
+        normalizeIgn(
+          record.ign
+        ) ===
+        normalizeIgn(
+          player.ign
+        ));
 
     if (samePlayer) {
-      total += Number(record.points || 0);
+      total += Number(
+        record.points || 0
+      );
     }
   }
 
   for (const record of ledger) {
     const samePlayer =
-      record.playerId === player.id ||
-      (
-        !record.playerId &&
-        normalizeIgn(record.ign) === normalizeIgn(player.ign)
-      );
+      record.playerId ===
+      player.id ||
+      (!record.playerId &&
+        normalizeIgn(
+          record.ign
+        ) ===
+        normalizeIgn(
+          player.ign
+        ));
 
     if (samePlayer) {
-      total += Number(record.delta || 0);
+      total += Number(
+        record.delta || 0
+      );
     }
   }
 
-  return roundScore(total);
+  return roundScore(
+    total
+  );
 }
 
 /* =========================================================
-   HISTORY MODAL
+   PLAYER HISTORY
 ========================================================= */
 
 function PlayerHistoryModal({
@@ -1229,104 +2749,202 @@ function PlayerHistoryModal({
 }) {
   if (!player) return null;
 
-  const playerHistory = histories
-    .filter(
-      (item) =>
-        item.playerId === player.id ||
-        (
-          !item.playerId &&
-          normalizeIgn(item.ign) === normalizeIgn(player.ign)
-        )
-    )
-    .sort((a, b) => {
-      const ad = timestampToDate(a.createdAt)?.getTime() || 0;
-      const bd = timestampToDate(b.createdAt)?.getTime() || 0;
+  const playerHistory =
+    histories
+      .filter(
+        (item) =>
+          item.playerId ===
+          player.id ||
+          (!item.playerId &&
+            normalizeIgn(
+              item.ign
+            ) ===
+            normalizeIgn(
+              player.ign
+            ))
+      )
+      .sort((a, b) => {
+        const ad =
+          timestampToDate(
+            a.createdAt
+          )?.getTime() || 0;
 
-      return bd - ad;
-    });
+        const bd =
+          timestampToDate(
+            b.createdAt
+          )?.getTime() || 0;
 
-  const playerLedger = ledger
-    .filter(
-      (item) =>
-        item.playerId === player.id ||
-        (
-          !item.playerId &&
-          normalizeIgn(item.ign) === normalizeIgn(player.ign)
-        )
-    )
-    .sort((a, b) => {
-      const ad = timestampToDate(a.createdAt)?.getTime() || 0;
-      const bd = timestampToDate(b.createdAt)?.getTime() || 0;
+        return bd - ad;
+      });
 
-      return bd - ad;
-    });
+  const playerLedger =
+    ledger
+      .filter(
+        (item) =>
+          item.playerId ===
+          player.id ||
+          (!item.playerId &&
+            normalizeIgn(
+              item.ign
+            ) ===
+            normalizeIgn(
+              player.ign
+            ))
+      )
+      .sort((a, b) => {
+        const ad =
+          timestampToDate(
+            a.createdAt
+          )?.getTime() || 0;
+
+        const bd =
+          timestampToDate(
+            b.createdAt
+          )?.getTime() || 0;
+
+        return bd - ad;
+      });
 
   return (
-    <Modal title={`${player.ign} — Full History`} onClose={onClose} wide>
+    <Modal
+      title={`${player.ign} — Full History`}
+      onClose={onClose}
+      wide
+    >
       <div className="history-profile">
         <div>
-          <span>IGN</span>
-          <strong>{player.ign}</strong>
+          <span>
+            IGN
+          </span>
+
+          <strong>
+            {player.ign}
+          </strong>
         </div>
 
         <div>
-          <span>CLASS</span>
-          <strong>{player.class || "—"}</strong>
+          <span>
+            CLASS
+          </span>
+
+          <strong>
+            {player.class ||
+              "—"}
+          </strong>
         </div>
 
         <div>
-          <span>WEAPON</span>
-          <strong>{player.preferredWeapon || "—"}</strong>
+          <span>
+            WEAPON
+          </span>
+
+          <strong>
+            {player.preferredWeapon ||
+              "—"}
+          </strong>
         </div>
 
         <div>
-          <span>CURRENT SCORE</span>
-          <strong className={score >= 6 ? "score-green" : ""}>
-            {formatScore(score)}
+          <span>
+            CURRENT SCORE
+          </span>
+
+          <strong
+            className={
+              score >= 6
+                ? "score-green"
+                : ""
+            }
+          >
+            {formatScore(
+              score
+            )}
           </strong>
         </div>
       </div>
 
       <div className="history-section">
         <div className="section-title-row">
-          <h3>Attendance History</h3>
-          <span>{playerHistory.length} records</span>
+          <h3>
+            Attendance History
+          </h3>
+
+          <span>
+            {
+              playerHistory.length
+            }{" "}
+            records
+          </span>
         </div>
 
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Boss</th>
-                <th>Points</th>
-                <th>Saved By</th>
+                <th>
+                  Date
+                </th>
+
+                <th>
+                  Boss
+                </th>
+
+                <th>
+                  Points
+                </th>
+
+                <th>
+                  Saved By
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {playerHistory.length === 0 ? (
+              {playerHistory.length ===
+                0 ? (
                 <tr>
-                  <td colSpan="4" className="empty-cell">
-                    No attendance history.
+                  <td
+                    colSpan="4"
+                    className="empty-cell"
+                  >
+                    No attendance
+                    history.
                   </td>
                 </tr>
               ) : (
-                playerHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      {item.attendanceDate ||
-                        formatDateOnly(item.createdAt)}
-                    </td>
-                    <td>{item.bossName || item.bossId}</td>
-                    <td className="positive-value">
-                      +{formatScore(item.points)}
-                    </td>
-                    <td>
-                      {item.createdBy || "—"}
-                    </td>
-                  </tr>
-                ))
+                playerHistory.map(
+                  (item) => (
+                    <tr
+                      key={
+                        item.id
+                      }
+                    >
+                      <td>
+                        {item.attendanceDate ||
+                          formatDateOnly(
+                            item.createdAt
+                          )}
+                      </td>
+
+                      <td>
+                        {item.bossName ||
+                          item.bossId}
+                      </td>
+
+                      <td className="positive-value">
+                        +
+                        {formatScore(
+                          item.points
+                        )}
+                      </td>
+
+                      <td>
+                        {item.createdBy ||
+                          "—"}
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>
@@ -1335,54 +2953,120 @@ function PlayerHistoryModal({
 
       <div className="history-section">
         <div className="section-title-row">
-          <h3>Score Ledger</h3>
-          <span>{playerLedger.length} records</span>
+          <h3>
+            Score Ledger
+          </h3>
+
+          <span>
+            {
+              playerLedger.length
+            }{" "}
+            records
+          </span>
         </div>
 
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Delta</th>
-                <th>Old Score</th>
-                <th>New Score</th>
-                <th>Reason</th>
+                <th>
+                  Date
+                </th>
+
+                <th>
+                  Type
+                </th>
+
+                <th>
+                  Delta
+                </th>
+
+                <th>
+                  Old Score
+                </th>
+
+                <th>
+                  New Score
+                </th>
+
+                <th>
+                  Reason
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {playerLedger.length === 0 ? (
+              {playerLedger.length ===
+                0 ? (
                 <tr>
-                  <td colSpan="6" className="empty-cell">
-                    No score ledger records.
+                  <td
+                    colSpan="6"
+                    className="empty-cell"
+                  >
+                    No score ledger
+                    records.
                   </td>
                 </tr>
               ) : (
-                playerLedger.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatDateTime(item.createdAt)}</td>
-                    <td>
-                      <span className="ledger-type">
-                        {item.type || "LEDGER"}
-                      </span>
-                    </td>
-                    <td
-                      className={
-                        Number(item.delta) >= 0
-                          ? "positive-value"
-                          : "negative-value"
+                playerLedger.map(
+                  (item) => (
+                    <tr
+                      key={
+                        item.id
                       }
                     >
-                      {Number(item.delta) >= 0 ? "+" : ""}
-                      {formatScore(item.delta)}
-                    </td>
-                    <td>{formatScore(item.oldScore)}</td>
-                    <td>{formatScore(item.newScore)}</td>
-                    <td>{item.reason || "—"}</td>
-                  </tr>
-                ))
+                      <td>
+                        {formatDateTime(
+                          item.createdAt
+                        )}
+                      </td>
+
+                      <td>
+                        <span className="ledger-type">
+                          {item.type ||
+                            "LEDGER"}
+                        </span>
+                      </td>
+
+                      <td
+                        className={
+                          Number(
+                            item.delta
+                          ) >= 0
+                            ? "positive-value"
+                            : "negative-value"
+                        }
+                      >
+                        {Number(
+                          item.delta
+                        ) >= 0
+                          ? "+"
+                          : ""}
+
+                        {formatScore(
+                          item.delta
+                        )}
+                      </td>
+
+                      <td>
+                        {formatScore(
+                          item.oldScore
+                        )}
+                      </td>
+
+                      <td>
+                        {formatScore(
+                          item.newScore
+                        )}
+                      </td>
+
+                      <td>
+                        {item.reason ||
+                          "—"}
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>
@@ -1402,23 +3086,43 @@ function ClaimModal({
   eligibilityScore,
   onClose,
 }) {
-  const [weapon, setWeapon] = useState(player?.preferredWeapon || "");
-  const [reason, setReason] = useState("Weapon claim");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [weapon, setWeapon] =
+    useState(
+      player?.preferredWeapon ||
+      ""
+    );
+
+  const [reason, setReason] =
+    useState(
+      "Weapon claim"
+    );
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   if (!player) return null;
 
-  const eligible = currentScore >= eligibilityScore;
+  const eligible =
+    currentScore >=
+    eligibilityScore;
 
   async function claim() {
     if (!eligible) {
-      setError("This player is not eligible.");
+      setError(
+        "This player is not eligible."
+      );
+
       return;
     }
 
     if (!weapon.trim()) {
-      setError("Enter the weapon being claimed.");
+      setError(
+        "Enter the weapon being claimed."
+      );
+
       return;
     }
 
@@ -1426,111 +3130,214 @@ function ClaimModal({
     setError("");
 
     try {
-      const oldScore = roundScore(currentScore);
-      const newScore = roundScore(
-        currentScore - eligibilityScore
+      const oldScore =
+        roundScore(
+          currentScore
+        );
+
+      const newScore =
+        roundScore(
+          currentScore -
+          eligibilityScore
+        );
+
+      await addDoc(
+        collection(
+          db,
+          "scoreLedger"
+        ),
+        {
+          playerId:
+            player.id,
+
+          ign:
+            player.ign,
+
+          type:
+            "WEAPON_CLAIM",
+
+          delta:
+            -Number(
+              eligibilityScore
+            ),
+
+          oldScore,
+
+          newScore,
+
+          weapon:
+            weapon.trim(),
+
+          reason:
+            reason.trim() ||
+            "Weapon claim",
+
+          admin:
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
+            "Admin",
+
+          createdAt:
+            serverTimestamp(),
+        }
       );
 
-      await addDoc(collection(db, "scoreLedger"), {
-        playerId: player.id,
-        ign: player.ign,
-        type: "WEAPON_CLAIM",
-        delta: -Number(eligibilityScore),
-        oldScore,
-        newScore,
-        weapon: weapon.trim(),
-        reason: reason.trim() || "Weapon claim",
-        admin:
-          auth.currentUser?.email ||
-          auth.currentUser?.uid ||
-          "Admin",
-        createdAt: serverTimestamp(),
-      });
-
       await setDoc(
-        doc(db, "attendancePlayers", player.id),
+        doc(
+          db,
+          "attendancePlayers",
+          player.id
+        ),
         {
-          updatedAt: serverTimestamp(),
+          updatedAt:
+            serverTimestamp(),
+
           updatedBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
             "Admin",
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
 
       onClose();
     } catch (err) {
       console.error(err);
-      setError(err?.message || "Unable to claim weapon.");
+
+      setError(
+        err?.message ||
+        "Unable to claim weapon."
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal title={`Claim Weapon — ${player.ign}`} onClose={onClose}>
+    <Modal
+      title={`Claim Weapon — ${player.ign}`}
+      onClose={onClose}
+    >
       <div className="claim-summary">
         <div>
-          <span>CURRENT SCORE</span>
-          <strong>{formatScore(currentScore)}</strong>
+          <span>
+            CURRENT SCORE
+          </span>
+
+          <strong>
+            {formatScore(
+              currentScore
+            )}
+          </strong>
         </div>
 
         <div>
-          <span>REQUIRED</span>
-          <strong>{formatScore(eligibilityScore)}</strong>
+          <span>
+            REQUIRED
+          </span>
+
+          <strong>
+            {formatScore(
+              eligibilityScore
+            )}
+          </strong>
         </div>
 
         <div>
-          <span>AFTER CLAIM</span>
-          <strong>{formatScore(currentScore - eligibilityScore)}</strong>
+          <span>
+            AFTER CLAIM
+          </span>
+
+          <strong>
+            {formatScore(
+              currentScore -
+              eligibilityScore
+            )}
+          </strong>
         </div>
       </div>
 
       {!eligible && (
         <div className="warning-box">
-          This player needs {formatScore(eligibilityScore - currentScore)}{" "}
+          This player needs{" "}
+          {formatScore(
+            eligibilityScore -
+            currentScore
+          )}{" "}
           more points to claim.
         </div>
       )}
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <label>
         Weapon
+
         <input
           list="claim-weapon-options"
           value={weapon}
-          onChange={(event) => setWeapon(event.target.value)}
+          onChange={(event) =>
+            setWeapon(
+              event.target.value
+            )
+          }
           placeholder="Weapon being claimed"
         />
+
         <datalist id="claim-weapon-options">
-          {WEAPON_OPTIONS.map((item) => (
-            <option key={item} value={item} />
-          ))}
+          {WEAPON_OPTIONS.map(
+            (item) => (
+              <option
+                key={item}
+                value={item}
+              />
+            )
+          )}
         </datalist>
       </label>
 
       <label>
         Reason
+
         <input
           value={reason}
-          onChange={(event) => setReason(event.target.value)}
+          onChange={(event) =>
+            setReason(
+              event.target.value
+            )
+          }
           placeholder="Reason"
         />
       </label>
 
       <div className="modal-actions">
-        <button className="secondary-button" onClick={onClose}>
+        <button
+          className="secondary-button"
+          onClick={onClose}
+        >
           CANCEL
         </button>
 
         <button
           className="danger-button"
           onClick={claim}
-          disabled={busy || !eligible}
+          disabled={
+            busy || !eligible
+          }
         >
-          {busy ? "PROCESSING..." : "CONFIRM CLAIM"}
+          {busy
+            ? "PROCESSING..."
+            : "CONFIRM CLAIM"}
         </button>
       </div>
     </Modal>
@@ -1538,7 +3345,7 @@ function ClaimModal({
 }
 
 /* =========================================================
-   SCORE OVERRIDE MODAL
+   SCORE OVERRIDE
 ========================================================= */
 
 function OverrideModal({
@@ -1546,102 +3353,196 @@ function OverrideModal({
   currentScore,
   onClose,
 }) {
-  const [newScore, setNewScore] = useState(String(currentScore));
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [newScore, setNewScore] =
+    useState(
+      String(currentScore)
+    );
+
+  const [reason, setReason] =
+    useState("");
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   if (!player) return null;
 
   async function save() {
-    const target = Number(newScore);
+    const target =
+      Number(newScore);
 
-    if (!Number.isFinite(target) || target < 0) {
-      setError("Enter a valid score.");
+    if (
+      !Number.isFinite(
+        target
+      ) ||
+      target < 0
+    ) {
+      setError(
+        "Enter a valid score."
+      );
+
       return;
     }
 
     if (!reason.trim()) {
-      setError("A reason is required.");
+      setError(
+        "A reason is required."
+      );
+
       return;
     }
 
-    const oldScore = roundScore(currentScore);
-    const finalScore = roundScore(target);
-    const delta = roundScore(finalScore - oldScore);
+    const oldScore =
+      roundScore(
+        currentScore
+      );
+
+    const finalScore =
+      roundScore(target);
+
+    const delta =
+      roundScore(
+        finalScore -
+        oldScore
+      );
 
     setBusy(true);
     setError("");
 
     try {
-      await addDoc(collection(db, "scoreLedger"), {
-        playerId: player.id,
-        ign: player.ign,
-        type: "MANUAL_OVERRIDE",
-        delta,
-        oldScore,
-        newScore: finalScore,
-        reason: reason.trim(),
-        admin:
-          auth.currentUser?.email ||
-          auth.currentUser?.uid ||
-          "Admin",
-        createdAt: serverTimestamp(),
-      });
+      await addDoc(
+        collection(
+          db,
+          "scoreLedger"
+        ),
+        {
+          playerId:
+            player.id,
+
+          ign:
+            player.ign,
+
+          type:
+            "MANUAL_OVERRIDE",
+
+          delta,
+
+          oldScore,
+
+          newScore:
+            finalScore,
+
+          reason:
+            reason.trim(),
+
+          admin:
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
+            "Admin",
+
+          createdAt:
+            serverTimestamp(),
+        }
+      );
 
       await setDoc(
-        doc(db, "attendancePlayers", player.id),
+        doc(
+          db,
+          "attendancePlayers",
+          player.id
+        ),
         {
-          updatedAt: serverTimestamp(),
+          updatedAt:
+            serverTimestamp(),
+
           updatedBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
             "Admin",
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
 
       onClose();
     } catch (err) {
       console.error(err);
-      setError(err?.message || "Unable to override score.");
+
+      setError(
+        err?.message ||
+        "Unable to override score."
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal title={`Override Score — ${player.ign}`} onClose={onClose}>
+    <Modal
+      title={`Override Score — ${player.ign}`}
+      onClose={onClose}
+    >
       <div className="override-current">
-        <span>CURRENT CALCULATED SCORE</span>
-        <strong>{formatScore(currentScore)}</strong>
+        <span>
+          CURRENT CALCULATED SCORE
+        </span>
+
+        <strong>
+          {formatScore(
+            currentScore
+          )}
+        </strong>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <label>
         New Score
+
         <input
           type="number"
           min="0"
           step="0.1"
           value={newScore}
-          onChange={(event) => setNewScore(event.target.value)}
+          onChange={(event) =>
+            setNewScore(
+              event.target.value
+            )
+          }
         />
       </label>
 
       <label>
         Required Reason
+
         <textarea
           value={reason}
-          onChange={(event) => setReason(event.target.value)}
+          onChange={(event) =>
+            setReason(
+              event.target.value
+            )
+          }
           placeholder="Explain why this score is being changed..."
           rows="4"
         />
       </label>
 
       <div className="modal-actions">
-        <button className="secondary-button" onClick={onClose}>
+        <button
+          className="secondary-button"
+          onClick={onClose}
+        >
           CANCEL
         </button>
 
@@ -1650,7 +3551,9 @@ function OverrideModal({
           onClick={save}
           disabled={busy}
         >
-          {busy ? "SAVING..." : "SAVE OVERRIDE"}
+          {busy
+            ? "SAVING..."
+            : "SAVE OVERRIDE"}
         </button>
       </div>
     </Modal>
@@ -1675,222 +3578,376 @@ function AttendancePage({
   onClaim,
   onOverride,
 }) {
-  const [search, setSearch] = useState("");
-  const [classFilter, setClassFilter] = useState("ALL");
-  const [weaponFilter, setWeaponFilter] = useState("ALL");
-  const [eligibilityFilter, setEligibilityFilter] = useState("ALL");
+  const [search, setSearch] =
+    useState("");
 
-  const [selectedPlayerId, setSelectedPlayerId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(
-    getTodayPhilippines()
-  );
-  const [attendanceDraft, setAttendanceDraft] = useState([]);
-  const [savingAttendance, setSavingAttendance] = useState(false);
-  const [attendanceMessage, setAttendanceMessage] = useState("");
+  const [classFilter, setClassFilter] =
+    useState("all");
 
-  const classList = useMemo(() => {
-    return [
-      ...new Set(
-        players
-          .map((p) => p.class)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [players]);
+  const [weaponFilter, setWeaponFilter] =
+    useState("all");
 
-  const weaponList = useMemo(() => {
-    return [
-      ...new Set(
-        players
-          .map((p) => p.preferredWeapon)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [players]);
+  const [eligibilityFilter, setEligibilityFilter] =
+    useState("all");
 
-  const selectedPlayer = players.find(
-    (player) => player.id === selectedPlayerId
-  );
+  const [selectedPlayerId, setSelectedPlayerId] =
+    useState("");
 
-  const selectedScore = selectedPlayer
-    ? getPlayerScore(selectedPlayer, histories, ledger)
-    : 0;
+  const [attendanceDate, setAttendanceDate] =
+    useState(
+      getTodayPhilippines()
+    );
 
-  const filteredPlayers = useMemo(() => {
-    const term = normalizeIgn(search);
+  const [attendanceDraft, setAttendanceDraft] =
+    useState({});
 
-    return [...players]
-      .filter((player) => {
-        if (
-          term &&
-          !normalizeIgn(player.ign).includes(term)
-        ) {
-          return false;
-        }
+  const [savingAttendance, setSavingAttendance] =
+    useState(false);
 
-        if (
-          classFilter !== "ALL" &&
-          player.class !== classFilter
-        ) {
-          return false;
-        }
+  const [attendanceMessage, setAttendanceMessage] =
+    useState("");
 
-        if (
-          weaponFilter !== "ALL" &&
-          player.preferredWeapon !== weaponFilter
-        ) {
-          return false;
-        }
+  const classList =
+    useMemo(
+      () =>
+        Array.from(
+          new Set(
+            players
+              .map(
+                (item) =>
+                  item.class
+              )
+              .filter(Boolean)
+          )
+        ).sort(),
+      [players]
+    );
 
-        const score = getPlayerScore(
-          player,
-          histories,
-          ledger
+  const weaponList =
+    useMemo(
+      () =>
+        Array.from(
+          new Set(
+            players
+              .map(
+                (item) =>
+                  item.preferredWeapon
+              )
+              .filter(Boolean)
+          )
+        ).sort(),
+      [players]
+    );
+
+  const selectedPlayer =
+    players.find(
+      (item) =>
+        item.id ===
+        selectedPlayerId
+    ) || null;
+
+  const selectedScore =
+    selectedPlayer
+      ? getPlayerScore(
+        selectedPlayer,
+        histories,
+        ledger
+      )
+      : 0;
+
+  const filteredPlayers =
+    useMemo(() => {
+      const q =
+        normalizeIgn(
+          search
         );
 
-        if (
-          eligibilityFilter === "ELIGIBLE" &&
-          score < Number(settings.eligibilityScore)
-        ) {
-          return false;
-        }
+      return players
+        .filter((player) => {
+          if (
+            q &&
+            !normalizeIgn(
+              player.ign
+            ).includes(q)
+          ) {
+            return false;
+          }
 
-        if (
-          eligibilityFilter === "NOT_ELIGIBLE" &&
-          score >= Number(settings.eligibilityScore)
-        ) {
-          return false;
-        }
+          if (
+            classFilter !==
+            "all" &&
+            player.class !==
+            classFilter
+          ) {
+            return false;
+          }
 
-        return true;
+          if (
+            weaponFilter !==
+            "all" &&
+            player.preferredWeapon !==
+            weaponFilter
+          ) {
+            return false;
+          }
+
+          const score =
+            getPlayerScore(
+              player,
+              histories,
+              ledger
+            );
+
+          if (
+            eligibilityFilter ===
+            "eligible" &&
+            score <
+            Number(
+              settings.eligibilityScore
+            )
+          ) {
+            return false;
+          }
+
+          if (
+            eligibilityFilter ===
+            "notEligible" &&
+            score >=
+            Number(
+              settings.eligibilityScore
+            )
+          ) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort((a, b) =>
+          String(
+            a.ign || ""
+          ).localeCompare(
+            String(
+              b.ign || ""
+            )
+          )
+        );
+    }, [
+      players,
+      histories,
+      ledger,
+      settings,
+      search,
+      classFilter,
+      weaponFilter,
+      eligibilityFilter,
+    ]);
+
+  function toggleBoss(
+    bossId
+  ) {
+    setAttendanceDraft(
+      (current) => ({
+        ...current,
+        [bossId]:
+          !current[bossId],
       })
-      .sort((a, b) =>
-        String(a.ign).localeCompare(String(b.ign))
-      );
-  }, [
-    players,
-    histories,
-    ledger,
-    search,
-    classFilter,
-    weaponFilter,
-    eligibilityFilter,
-    settings.eligibilityScore,
-  ]);
-
-  function toggleBoss(bossId) {
-    setAttendanceDraft((current) =>
-      current.includes(bossId)
-        ? current.filter((id) => id !== bossId)
-        : [...current, bossId]
     );
   }
 
   async function saveAttendance() {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      setAttendanceMessage(
+        "Administrator access required."
+      );
 
-    if (!selectedPlayer) {
-      setAttendanceMessage("Select a player first.");
       return;
     }
 
-    if (attendanceDraft.length === 0) {
-      setAttendanceMessage("Select at least one boss.");
+    if (!selectedPlayer) {
+      setAttendanceMessage(
+        "Select a player."
+      );
+
+      return;
+    }
+
+    const selectedBosses =
+      BOSSES.filter(
+        (boss) =>
+          attendanceDraft[
+          boss.id
+          ]
+      );
+
+    if (
+      selectedBosses.length ===
+      0
+    ) {
+      setAttendanceMessage(
+        "Select at least one boss."
+      );
+
       return;
     }
 
     if (!attendanceDate) {
-      setAttendanceMessage("Select an attendance date.");
+      setAttendanceMessage(
+        "Select an attendance date."
+      );
+
       return;
     }
 
-    setSavingAttendance(true);
+    setSavingAttendance(
+      true
+    );
+
     setAttendanceMessage("");
 
     try {
-      const selectedBosses = BOSSES.filter((boss) =>
-        attendanceDraft.includes(boss.id)
-      );
-
       const adminName =
-        auth.currentUser?.email ||
-        auth.currentUser?.uid ||
+        auth.currentUser
+          ?.email ||
+        auth.currentUser
+          ?.uid ||
         "Admin";
 
-      for (const boss of selectedBosses) {
-        const points = Number(
-          settings[boss.pointsKey] || 0
-        );
+      const batch =
+        writeBatch(db);
 
-        await addDoc(collection(db, "attendanceHistory"), {
-          playerId: selectedPlayer.id,
-          ign: selectedPlayer.ign,
-          bossId: boss.id,
-          bossName: boss.name,
+      for (const boss of selectedBosses) {
+        const points =
+          Number(
+            settings[
+            boss.pointsKey
+            ] || 0
+          );
+
+        const ref =
+          doc(
+            collection(
+              db,
+              "attendanceHistory"
+            )
+          );
+
+        batch.set(ref, {
+          playerId:
+            selectedPlayer.id,
+
+          ign:
+            selectedPlayer.ign,
+
+          bossId:
+            boss.id,
+
+          bossName:
+            boss.name,
+
           points,
+
           attendanceDate,
-          createdAt: serverTimestamp(),
-          createdBy: adminName,
+
+          createdAt:
+            serverTimestamp(),
+
+          createdBy:
+            adminName,
         });
       }
 
-      await setDoc(
+      batch.set(
         doc(
           db,
           "attendancePlayers",
           selectedPlayer.id
         ),
         {
-          updatedAt: serverTimestamp(),
-          updatedBy: adminName,
+          updatedAt:
+            serverTimestamp(),
+
+          updatedBy:
+            adminName,
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
 
-      setAttendanceDraft([]);
+      await batch.commit();
+
+      setAttendanceDraft({});
+
       setAttendanceMessage(
-        `Attendance saved for ${selectedPlayer.ign}.`
+        `${selectedPlayer.ign} attendance saved successfully.`
       );
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
+
       setAttendanceMessage(
-        err?.message || "Unable to save attendance."
+        error?.message ||
+        "Unable to save attendance."
       );
     } finally {
-      setSavingAttendance(false);
+      setSavingAttendance(
+        false
+      );
     }
   }
 
-  async function deletePlayer(player) {
-    if (!isAdmin) return;
+  async function deletePlayer(
+    player
+  ) {
+    if (!isAdmin) {
+      return;
+    }
 
-    const confirmed = window.confirm(
-      `Delete the player profile for "${player.ign}"?\n\n` +
-      `Their attendance history and score ledger will remain.\n\n` +
-      `Use NEW USER / PURGE if this is actually a completely different person.`
-    );
+    const confirmed =
+      window.confirm(
+        `Delete the player profile for "${player.ign}"?\n\nAttendance history and score records will be preserved.`
+      );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
-    await onDeletePlayer(player);
+    try {
+      await onDeletePlayer(
+        player
+      );
+    } catch (error) {
+      window.alert(
+        error?.message ||
+        "Unable to delete player."
+      );
+    }
   }
 
   return (
     <section className="page-section">
-      <div className="page-heading">
+      <div className="hero-heading">
         <div>
-          <div className="eyebrow">RAN ONLINE EP7</div>
-          <h1>Attendance</h1>
+          <div className="eyebrow">
+            RAN ONLINE EP7 CLASSIC
+          </div>
+
+          <h1>
+            Attendance
+          </h1>
+
           <p>
-            Track raid attendance, points, eligibility, claims,
-            and complete player history.
+            Track guild attendance,
+            scores, eligibility and
+            weapon claims.
           </p>
         </div>
 
         {isAdmin && (
           <button
             className="primary-button"
-            onClick={onAddPlayer}
+            onClick={
+              onAddPlayer
+            }
           >
             + ADD PLAYER
           </button>
@@ -1899,373 +3956,532 @@ function AttendancePage({
 
       {isAdmin && (
         <div className="attendance-console">
-          <div className="console-header">
+          <div className="content-card-header">
             <div>
-              <span className="console-kicker">
-                ADMIN ATTENDANCE
-              </span>
-              <h2>Record Attendance</h2>
-            </div>
+              <h2>
+                Attendance Console
+              </h2>
 
-            <div className="admin-badge">ADMIN</div>
+              <p>
+                Record attendance for
+                one player and one date.
+              </p>
+            </div>
           </div>
 
-          <div className="console-grid">
+          <div className="attendance-console-grid">
             <label>
               Player
+
               <select
-                value={selectedPlayerId}
-                onChange={(event) => {
-                  setSelectedPlayerId(event.target.value);
-                  setAttendanceDraft([]);
-                  setAttendanceMessage("");
-                }}
+                value={
+                  selectedPlayerId
+                }
+                onChange={(event) =>
+                  setSelectedPlayerId(
+                    event.target
+                      .value
+                  )
+                }
               >
-                <option value="">Select IGN...</option>
+                <option value="">
+                  Select player...
+                </option>
 
                 {players
                   .slice()
-                  .sort((a, b) =>
-                    a.ign.localeCompare(b.ign)
+                  .sort(
+                    (
+                      a,
+                      b
+                    ) =>
+                      String(
+                        a.ign
+                      ).localeCompare(
+                        String(
+                          b.ign
+                        )
+                      )
                   )
-                  .map((player) => (
-                    <option key={player.id} value={player.id}>
-                      {player.ign} — {player.class || "No Class"}
-                    </option>
-                  ))}
+                  .map(
+                    (
+                      player
+                    ) => (
+                      <option
+                        key={
+                          player.id
+                        }
+                        value={
+                          player.id
+                        }
+                      >
+                        {
+                          player.ign
+                        }
+                      </option>
+                    )
+                  )}
               </select>
             </label>
 
             <label>
               Attendance Date
+
               <input
                 type="date"
-                value={attendanceDate}
-                onChange={(event) =>
-                  setAttendanceDate(event.target.value)
+                value={
+                  attendanceDate
+                }
+                onChange={(
+                  event
+                ) =>
+                  setAttendanceDate(
+                    event
+                      .target
+                      .value
+                  )
                 }
               />
             </label>
 
-            <div className="console-score">
-              <span>CURRENT SCORE</span>
+            <div className="attendance-score-preview">
+              <span>
+                CURRENT SCORE
+              </span>
+
               <strong>
-                {selectedPlayer
-                  ? formatScore(selectedScore)
-                  : "—"}
+                {formatScore(
+                  selectedScore
+                )}
               </strong>
             </div>
           </div>
 
-          <div className="boss-selector">
-            <span className="field-label">
-              Select Boss Attendance
-            </span>
-
-            <div className="boss-check-grid">
-              {BOSSES.map((boss) => {
-                const checked = attendanceDraft.includes(
-                  boss.id
-                );
+          <div className="boss-attendance-buttons">
+            {BOSSES.map(
+              (boss) => {
+                const active =
+                  Boolean(
+                    attendanceDraft[
+                    boss.id
+                    ]
+                  );
 
                 return (
                   <button
-                    type="button"
-                    key={boss.id}
-                    className={`boss-check ${checked ? "checked" : ""
-                      }`}
-                    onClick={() => toggleBoss(boss.id)}
+                    key={
+                      boss.id
+                    }
+                    className={
+                      active
+                        ? "boss-attendance-button active"
+                        : "boss-attendance-button"
+                    }
+                    onClick={() =>
+                      toggleBoss(
+                        boss.id
+                      )
+                    }
                   >
-                    <span className="checkbox">
-                      {checked ? "✓" : ""}
+                    <span>
+                      {boss.name}
                     </span>
 
-                    <span>
-                      <strong>{boss.name}</strong>
-                      <small>
-                        +{formatScore(settings[boss.pointsKey])}
-                      </small>
-                    </span>
+                    <small>
+                      +
+                      {formatScore(
+                        settings[
+                        boss.pointsKey
+                        ]
+                      )}
+                    </small>
                   </button>
                 );
-              })}
-            </div>
-          </div>
-
-          <div className="console-footer">
-            {attendanceMessage && (
-              <span
-                className={
-                  attendanceMessage.includes("saved")
-                    ? "success-text"
-                    : "error-text"
-                }
-              >
-                {attendanceMessage}
-              </span>
+              }
             )}
-
-            <button
-              className="primary-button"
-              onClick={saveAttendance}
-              disabled={savingAttendance}
-            >
-              {savingAttendance
-                ? "SAVING..."
-                : "SAVE ATTENDANCE"}
-            </button>
           </div>
+
+          {attendanceMessage && (
+            <div className="success-box">
+              {attendanceMessage}
+            </div>
+          )}
+
+          <button
+            className="primary-button"
+            onClick={
+              saveAttendance
+            }
+            disabled={
+              savingAttendance
+            }
+          >
+            {savingAttendance
+              ? "SAVING..."
+              : "SAVE ATTENDANCE"}
+          </button>
         </div>
       )}
 
-      <div className="filter-panel">
-        <div className="filter-title">
-          <span>PLAYER DIRECTORY</span>
-          <strong>{filteredPlayers.length} players</strong>
+      <div className="admin-content-card">
+        <div className="content-card-header">
+          <div>
+            <h2>
+              Player Directory
+            </h2>
+
+            <p>
+              {filteredPlayers.length}{" "}
+              players shown.
+            </p>
+          </div>
         </div>
 
-        <div className="filters">
+        <div className="directory-filters">
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) =>
+              setSearch(
+                event.target
+                  .value
+              )
+            }
             placeholder="Search IGN..."
           />
 
           <select
-            value={classFilter}
+            value={
+              classFilter
+            }
             onChange={(event) =>
-              setClassFilter(event.target.value)
+              setClassFilter(
+                event.target
+                  .value
+              )
             }
           >
-            <option value="ALL">All Classes</option>
+            <option value="all">
+              All Classes
+            </option>
 
-            {classList.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
+            {classList.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
           </select>
 
           <select
-            value={weaponFilter}
+            value={
+              weaponFilter
+            }
             onChange={(event) =>
-              setWeaponFilter(event.target.value)
+              setWeaponFilter(
+                event.target
+                  .value
+              )
             }
           >
-            <option value="ALL">All Weapons</option>
+            <option value="all">
+              All Weapons
+            </option>
 
-            {weaponList.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
+            {weaponList.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item}
+                </option>
+              )
+            )}
           </select>
 
           <select
-            value={eligibilityFilter}
+            value={
+              eligibilityFilter
+            }
             onChange={(event) =>
-              setEligibilityFilter(event.target.value)
+              setEligibilityFilter(
+                event.target
+                  .value
+              )
             }
           >
-            <option value="ALL">All Scores</option>
-            <option value="ELIGIBLE">Eligible</option>
-            <option value="NOT_ELIGIBLE">
+            <option value="all">
+              All Eligibility
+            </option>
+
+            <option value="eligible">
+              Eligible
+            </option>
+
+            <option value="notEligible">
               Not Eligible
             </option>
           </select>
         </div>
-      </div>
 
-      <div className="attendance-table-card">
         <div className="table-scroll">
-          <table className="attendance-table">
+          <table>
             <thead>
               <tr>
-                <th>IGN</th>
-                <th>Class</th>
-                <th>Preferred Weapon</th>
+                <th>
+                  IGN
+                </th>
 
-                {BOSSES.map((boss) => (
-                  <th key={boss.id}>{boss.name}</th>
-                ))}
+                <th>
+                  Class
+                </th>
 
-                <th>Score</th>
-                <th>Eligibility</th>
-                <th>Last Updated</th>
+                <th>
+                  Preferred Weapon
+                </th>
 
-                {isAdmin && <th>Actions</th>}
+                {BOSSES.map(
+                  (boss) => (
+                    <th
+                      key={
+                        boss.id
+                      }
+                    >
+                      {
+                        boss.name
+                      }
+                    </th>
+                  )
+                )}
+
+                <th>
+                  Score
+                </th>
+
+                <th>
+                  Eligibility
+                </th>
+
+                <th>
+                  Last Updated
+                </th>
+
+                {isAdmin && (
+                  <th>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
 
             <tbody>
-              {filteredPlayers.length === 0 ? (
+              {filteredPlayers.length ===
+                0 ? (
                 <tr>
                   <td
-                    colSpan={isAdmin ? 12 : 11}
+                    colSpan={
+                      8 +
+                      BOSSES.length +
+                      (isAdmin
+                        ? 1
+                        : 0)
+                    }
                     className="empty-cell"
                   >
                     No players found.
                   </td>
                 </tr>
               ) : (
-                filteredPlayers.map((player) => {
-                  const score = getPlayerScore(
-                    player,
-                    histories,
-                    ledger
-                  );
+                filteredPlayers.map(
+                  (player) => {
+                    const score =
+                      getPlayerScore(
+                        player,
+                        histories,
+                        ledger
+                      );
 
-                  const eligible =
-                    score >=
-                    Number(settings.eligibilityScore);
+                    const eligible =
+                      score >=
+                      Number(
+                        settings.eligibilityScore
+                      );
 
-                  const playerHistory = histories.filter(
-                    (item) =>
-                      item.playerId === player.id ||
-                      (
-                        !item.playerId &&
-                        normalizeIgn(item.ign) ===
-                        normalizeIgn(player.ign)
-                      )
-                  );
+                    return (
+                      <tr
+                        key={
+                          player.id
+                        }
+                      >
+                        <td>
+                          <strong>
+                            {
+                              player.ign
+                            }
+                          </strong>
+                        </td>
 
-                  const attendedBosses = new Set(
-                    playerHistory.map(
-                      (item) => item.bossId
-                    )
-                  );
-
-                  return (
-                    <tr key={player.id}>
-                      <td>
-                        <button
-                          className="ign-button"
-                          onClick={() =>
-                            onHistory(player)
+                        <td>
+                          {
+                            player.class
                           }
-                        >
-                          {player.ign}
-                        </button>
-                      </td>
+                        </td>
 
-                      <td>
-                        <span className="class-pill">
-                          {player.class || "—"}
-                        </span>
-                      </td>
+                        <td>
+                          {player.preferredWeapon ||
+                            "—"}
+                        </td>
 
-                      <td>
-                        {player.preferredWeapon || "—"}
-                      </td>
+                        {BOSSES.map(
+                          (
+                            boss
+                          ) => {
+                            const attended =
+                              histories.some(
+                                (
+                                  item
+                                ) =>
+                                  (
+                                    item.playerId ===
+                                    player.id ||
+                                    (!item.playerId &&
+                                      normalizeIgn(
+                                        item.ign
+                                      ) ===
+                                      normalizeIgn(
+                                        player.ign
+                                      ))
+                                  ) &&
+                                  item.bossId ===
+                                  boss.id
+                              );
 
-                      {BOSSES.map((boss) => (
-                        <td key={boss.id}>
+                            return (
+                              <td
+                                key={
+                                  boss.id
+                                }
+                                className={
+                                  attended
+                                    ? "positive-value"
+                                    : ""
+                                }
+                              >
+                                {attended
+                                  ? "✓"
+                                  : "—"}
+                              </td>
+                            );
+                          }
+                        )}
+
+                        <td>
+                          <strong>
+                            {formatScore(
+                              score
+                            )}
+                          </strong>
+                        </td>
+
+                        <td>
                           <span
-                            className={`attendance-dot ${attendedBosses.has(boss.id)
-                              ? "present"
-                              : ""
-                              }`}
+                            className={
+                              eligible
+                                ? "eligibility eligible"
+                                : "eligibility"
+                            }
                           >
-                            {attendedBosses.has(
-                              boss.id
-                            )
-                              ? "✓"
-                              : "—"}
+                            {eligible
+                              ? "ELIGIBLE"
+                              : "NOT YET"}
                           </span>
                         </td>
-                      ))}
 
-                      <td>
-                        <strong
-                          className={`score-value ${eligible ? "score-green" : ""
-                            }`}
-                        >
-                          {formatScore(score)}
-                        </strong>
-                      </td>
-
-                      <td>
-                        <span
-                          className={`eligibility ${eligible
-                            ? "eligible"
-                            : "not-eligible"
-                            }`}
-                        >
-                          {eligible
-                            ? "ELIGIBLE"
-                            : "NOT ELIGIBLE"}
-                        </span>
-                      </td>
-
-                      <td className="date-cell">
-                        {formatDateTime(
-                          player.updatedAt
-                        )}
-                      </td>
-
-                      {isAdmin && (
                         <td>
-                          <div className="row-actions">
-                            <button
-                              className="small-button"
-                              onClick={() =>
-                                onEditPlayer(player)
-                              }
-                            >
-                              EDIT
-                            </button>
-
-                            <button
-                              className="small-button"
-                              onClick={() =>
-                                onHistory(player)
-                              }
-                            >
-                              HISTORY
-                            </button>
-
-                            <button
-                              className="small-button claim-button"
-                              onClick={() =>
-                                onClaim(player)
-                              }
-                              disabled={!eligible}
-                            >
-                              CLAIM
-                            </button>
-
-                            <button
-                              className="small-button override-button"
-                              onClick={() =>
-                                onOverride(player)
-                              }
-                            >
-                              SCORE
-                            </button>
-
-                            <button
-                              className="small-button delete-button"
-                              onClick={() =>
-                                deletePlayer(player)
-                              }
-                            >
-                              DELETE
-                            </button>
-
-                            <button
-                              className="small-button purge-button"
-                              onClick={() =>
-                                onPurgePlayer(player)
-                              }
-                            >
-                              NEW USER / PURGE
-                            </button>
-                          </div>
+                          {formatDateTime(
+                            player.updatedAt
+                          )}
                         </td>
-                      )}
-                    </tr>
-                  );
-                })
+
+                        {isAdmin && (
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                className="small-button"
+                                onClick={() =>
+                                  onEditPlayer(
+                                    player
+                                  )
+                                }
+                              >
+                                EDIT
+                              </button>
+
+                              <button
+                                className="small-button"
+                                onClick={() =>
+                                  onHistory(
+                                    player
+                                  )
+                                }
+                              >
+                                HISTORY
+                              </button>
+
+                              <button
+                                className="small-button"
+                                onClick={() =>
+                                  onClaim(
+                                    player
+                                  )
+                                }
+                              >
+                                CLAIM
+                              </button>
+
+                              <button
+                                className="small-button"
+                                onClick={() =>
+                                  onOverride(
+                                    player
+                                  )
+                                }
+                              >
+                                SCORE
+                              </button>
+
+                              <button
+                                className="small-danger-button"
+                                onClick={() =>
+                                  deletePlayer(
+                                    player
+                                  )
+                                }
+                              >
+                                DELETE
+                              </button>
+
+                              <button
+                                className="small-danger-button"
+                                onClick={() =>
+                                  onPurgePlayer(
+                                    player
+                                  )
+                                }
+                              >
+                                NEW USER
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  }
+                )
               )}
             </tbody>
           </table>
@@ -2273,19 +4489,20 @@ function AttendancePage({
       </div>
 
       {isAdmin && (
-        <div className="danger-information">
-          <div className="danger-icon">!</div>
+        <div className="danger-info">
+          <strong>
+            COMPLETE IGN PURGE
+          </strong>
 
-          <div>
-            <strong>NEW USER / PURGE IGN</strong>
-            <p>
-              Use this only when the current IGN belongs to a
-              completely different person. It permanently removes
-              the player's profile, attendance records, weapon
-              claims, score deductions, and manual score changes.
-              Re-adding the IGN afterwards starts from 0.
-            </p>
-          </div>
+          <p>
+            The NEW USER / PURGE action
+            permanently removes the player
+            profile, attendance history,
+            weapon claims, deductions and
+            manual score overrides for that
+            IGN. Adding the IGN again starts
+            the player at 0 points.
+          </p>
         </div>
       )}
     </section>
@@ -2303,7 +4520,9 @@ function RaidPage({
   onTimezoneChange,
 }) {
   const displayTimezone =
-    getDisplayTimezone(timezone);
+    getDisplayTimezone(
+      timezone
+    );
 
   return (
     <section className="page-section">
@@ -2313,23 +4532,27 @@ function RaidPage({
             RAN ONLINE EP7 CLASSIC
           </div>
 
-          <h1>Raid Schedule</h1>
+          <h1>
+            Raid Schedule
+          </h1>
 
           <p>
-            Philippines raid schedule with automatic
-            timezone conversion.
+            Philippines raid schedule
+            with automatic timezone
+            conversion.
           </p>
         </div>
 
         <div className="timezone-badge">
-          <span>SCHEDULE SOURCE</span>
-          <strong>PHILIPPINES TIME</strong>
+          <span>
+            SCHEDULE SOURCE
+          </span>
+
+          <strong>
+            PHILIPPINES TIME
+          </strong>
         </div>
       </div>
-
-      {/* =====================================================
-          TIMEZONE SELECTOR
-      ===================================================== */}
 
       <div className="timezone-panel">
         <div className="timezone-panel-info">
@@ -2343,9 +4566,11 @@ function RaidPage({
             </div>
 
             <div className="timezone-subtitle">
-              Raid schedules are stored in Philippines
-              Time (Asia/Manila). Choose how you want
-              the schedule displayed.
+              Raid schedules are stored
+              in Philippines Time
+              (Asia/Manila). Choose
+              how you want the schedule
+              displayed.
             </div>
           </div>
         </div>
@@ -2363,8 +4588,12 @@ function RaidPage({
             {TIMEZONE_OPTIONS.map(
               (option) => (
                 <option
-                  key={option.value}
-                  value={option.value}
+                  key={
+                    option.value
+                  }
+                  value={
+                    option.value
+                  }
                 >
                   {option.label}
                 </option>
@@ -2384,10 +4613,16 @@ function RaidPage({
       <div className="raid-grid">
         {raids.map((raid) => (
           <RaidCard
-            key={raid.id}
+            key={
+              raid.id
+            }
             raid={raid}
-            timezone={timezone}
-            onEdit={onEdit}
+            timezone={
+              timezone
+            }
+            onEdit={
+              onEdit
+            }
           />
         ))}
       </div>
@@ -2403,16 +4638,23 @@ function RaidPage({
           </strong>
 
           <p>
-            The official schedule is always saved in
-            Philippines Time (Asia/Manila). The displayed
-            time and date automatically convert to your
-            selected timezone, including when the conversion
-            crosses midnight into another day.
+            The official schedule is
+            always saved in
+            Philippines Time
+            (Asia/Manila). The
+            displayed time and date
+            automatically convert to
+            your selected timezone,
+            including when the
+            conversion crosses
+            midnight into another day.
           </p>
 
           <p className="raid-note-example">
-            Example: 9:00 PM Philippines → 6:00 AM US
-            Pacific → 9:00 AM US Eastern → 10:00 PM Tokyo.
+            Example: 9:00 PM Philippines
+            → 6:00 AM US Pacific
+            → 9:00 AM US Eastern
+            → 10:00 PM Tokyo.
           </p>
         </div>
       </div>
@@ -2421,540 +4663,227 @@ function RaidPage({
 }
 
 /* =========================================================
-   ADMIN DASHBOARD
+   SETTINGS PANEL
 ========================================================= */
 
-function AdminPage({
-  players,
-  histories,
-  ledger,
+function SettingsPanel({
   settings,
-  settingsHistory,
   user,
-  onAddPlayer,
-  onEditPlayer,
-  onHistory,
-  onClaim,
-  onOverride,
-  onPurgePlayer,
-  onDeletePlayer,
-  onSaveSettings,
-  onExport,
-  onImport,
+  onSave,
 }) {
-  const [tab, setTab] = useState("dashboard");
+  const [form, setForm] =
+    useState(settings);
 
-  const totalScore = useMemo(() => {
-    return roundScore(
-      players.reduce(
-        (sum, player) =>
-          sum +
-          getPlayerScore(player, histories, ledger),
-        0
-      )
-    );
-  }, [players, histories, ledger]);
+  const [busy, setBusy] =
+    useState(false);
 
-  const eligibleCount = players.filter(
-    (player) =>
-      getPlayerScore(player, histories, ledger) >=
-      Number(settings.eligibilityScore)
-  ).length;
+  const [message, setMessage] =
+    useState("");
 
-  return (
-    <section className="page-section">
-      <div className="page-heading">
-        <div>
-          <div className="eyebrow">CONTROL CENTER</div>
-          <h1>Administrator</h1>
-          <p>
-            Manage players, scoring, history, settings, and
-            backups.
-          </p>
-        </div>
-
-        <div className="admin-user">
-          <span>SIGNED IN</span>
-          <strong>
-            {user?.email || user?.uid || "Administrator"}
-          </strong>
-        </div>
-      </div>
-
-      <div className="admin-tabs">
-        {[
-          ["dashboard", "Dashboard"],
-          ["players", "Players"],
-          ["ledger", "Score Ledger"],
-          ["settings", "Scoring"],
-          ["history", "Settings History"],
-          ["backup", "Backup / Restore"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            className={tab === id ? "admin-tab-active" : ""}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "dashboard" && (
-        <div className="admin-dashboard">
-          <div className="stat-grid">
-            <div className="stat-card">
-              <span>TOTAL PLAYERS</span>
-              <strong>{players.length}</strong>
-            </div>
-
-            <div className="stat-card">
-              <span>ELIGIBLE</span>
-              <strong>{eligibleCount}</strong>
-            </div>
-
-            <div className="stat-card">
-              <span>ATTENDANCE RECORDS</span>
-              <strong>{histories.length}</strong>
-            </div>
-
-            <div className="stat-card">
-              <span>LEDGER RECORDS</span>
-              <strong>{ledger.length}</strong>
-            </div>
-
-            <div className="stat-card">
-              <span>POINTS IN SYSTEM</span>
-              <strong>{formatScore(totalScore)}</strong>
-            </div>
-          </div>
-
-          <div className="dashboard-grid">
-            <div className="dashboard-card">
-              <div className="dashboard-card-title">
-                <span>ELIGIBILITY THRESHOLD</span>
-              </div>
-
-              <strong className="big-number">
-                {formatScore(settings.eligibilityScore)}
-              </strong>
-
-              <p>
-                Players at or above this score can claim a weapon.
-              </p>
-            </div>
-
-            <div className="dashboard-card">
-              <div className="dashboard-card-title">
-                <span>LAST SETTINGS UPDATE</span>
-              </div>
-
-              <strong>
-                {formatDateTime(settings.updatedAt)}
-              </strong>
-
-              <p>
-                Changed by{" "}
-                {settings.updatedBy || "Not recorded"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === "players" && (
-        <div className="admin-content-card">
-          <div className="content-card-header">
-            <div>
-              <h2>Player Management</h2>
-              <p>
-                Manage player profiles without deleting historical
-                records.
-              </p>
-            </div>
-
-            <button
-              className="primary-button"
-              onClick={onAddPlayer}
-            >
-              + ADD PLAYER
-            </button>
-          </div>
-
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>IGN</th>
-                  <th>Class</th>
-                  <th>Weapon</th>
-                  <th>Score</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {players
-                  .slice()
-                  .sort((a, b) =>
-                    a.ign.localeCompare(b.ign)
-                  )
-                  .map((player) => {
-                    const score = getPlayerScore(
-                      player,
-                      histories,
-                      ledger
-                    );
-
-                    return (
-                      <tr key={player.id}>
-                        <td>
-                          <button
-                            className="ign-button"
-                            onClick={() =>
-                              onHistory(player)
-                            }
-                          >
-                            {player.ign}
-                          </button>
-                        </td>
-
-                        <td>{player.class || "—"}</td>
-                        <td>
-                          {player.preferredWeapon || "—"}
-                        </td>
-
-                        <td>
-                          <strong>
-                            {formatScore(score)}
-                          </strong>
-                        </td>
-
-                        <td>
-                          {formatDateTime(
-                            player.updatedAt
-                          )}
-                        </td>
-
-                        <td>
-                          <div className="row-actions">
-                            <button
-                              className="small-button"
-                              onClick={() =>
-                                onEditPlayer(player)
-                              }
-                            >
-                              EDIT
-                            </button>
-
-                            <button
-                              className="small-button"
-                              onClick={() =>
-                                onHistory(player)
-                              }
-                            >
-                              HISTORY
-                            </button>
-
-                            <button
-                              className="small-button purge-button"
-                              onClick={() =>
-                                onPurgePlayer(player)
-                              }
-                            >
-                              NEW USER / PURGE
-                            </button>
-
-                            <button
-                              className="small-button delete-button"
-                              onClick={() =>
-                                onDeletePlayer(player)
-                              }
-                            >
-                              DELETE
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "ledger" && (
-        <div className="admin-content-card">
-          <div className="content-card-header">
-            <div>
-              <h2>Score Ledger</h2>
-              <p>
-                Every weapon claim and manual score adjustment is
-                recorded here.
-              </p>
-            </div>
-          </div>
-
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>IGN</th>
-                  <th>Type</th>
-                  <th>Delta</th>
-                  <th>Old</th>
-                  <th>New</th>
-                  <th>Weapon</th>
-                  <th>Reason</th>
-                  <th>Admin</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {ledger.length === 0 ? (
-                  <tr>
-                    <td colSpan="9" className="empty-cell">
-                      No ledger records.
-                    </td>
-                  </tr>
-                ) : (
-                  ledger
-                    .slice()
-                    .sort((a, b) => {
-                      const ad =
-                        timestampToDate(
-                          a.createdAt
-                        )?.getTime() || 0;
-                      const bd =
-                        timestampToDate(
-                          b.createdAt
-                        )?.getTime() || 0;
-
-                      return bd - ad;
-                    })
-                    .map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          {formatDateTime(
-                            item.createdAt
-                          )}
-                        </td>
-
-                        <td>{item.ign || "—"}</td>
-
-                        <td>
-                          <span className="ledger-type">
-                            {item.type || "LEDGER"}
-                          </span>
-                        </td>
-
-                        <td
-                          className={
-                            Number(item.delta) >= 0
-                              ? "positive-value"
-                              : "negative-value"
-                          }
-                        >
-                          {Number(item.delta) >= 0
-                            ? "+"
-                            : ""}
-                          {formatScore(item.delta)}
-                        </td>
-
-                        <td>
-                          {formatScore(item.oldScore)}
-                        </td>
-
-                        <td>
-                          {formatScore(item.newScore)}
-                        </td>
-
-                        <td>{item.weapon || "—"}</td>
-                        <td>{item.reason || "—"}</td>
-                        <td>{item.admin || "—"}</td>
-                      </tr>
-                    ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "settings" && (
-        <SettingsPanel
-          settings={settings}
-          user={user}
-          onSave={onSaveSettings}
-        />
-      )}
-
-      {tab === "history" && (
-        <SettingsHistoryPanel
-          settingsHistory={settingsHistory}
-        />
-      )}
-
-      {tab === "backup" && (
-        <BackupPanel
-          players={players}
-          histories={histories}
-          ledger={ledger}
-          settings={settings}
-          settingsHistory={settingsHistory}
-          onExport={onExport}
-          onImport={onImport}
-        />
-      )}
-    </section>
-  );
-}
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-function SettingsPanel({ settings, user, onSave }) {
-  const [form, setForm] = useState({
-    sonyaPoints: settings.sonyaPoints,
-    geomancerPoints: settings.geomancerPoints,
-    reflectorPoints: settings.reflectorPoints,
-    giantHawkPoints: settings.giantHawkPoints,
-    eligibilityScore: settings.eligibilityScore,
-  });
-
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [error, setError] =
+    useState("");
 
   useEffect(() => {
-    setForm({
-      sonyaPoints: settings.sonyaPoints,
-      geomancerPoints: settings.geomancerPoints,
-      reflectorPoints: settings.reflectorPoints,
-      giantHawkPoints: settings.giantHawkPoints,
-      eligibilityScore: settings.eligibilityScore,
-    });
+    setForm(settings);
   }, [settings]);
 
-  function update(key, value) {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-    }));
+  function update(
+    key,
+    value
+  ) {
+    setForm(
+      (current) => ({
+        ...current,
+        [key]: value,
+      })
+    );
   }
 
   async function save() {
     setBusy(true);
     setMessage("");
+    setError("");
 
     try {
       await onSave({
-        sonyaPoints: Number(form.sonyaPoints),
-        geomancerPoints: Number(form.geomancerPoints),
-        reflectorPoints: Number(form.reflectorPoints),
-        giantHawkPoints: Number(form.giantHawkPoints),
-        eligibilityScore: Number(form.eligibilityScore),
+        sonyaPoints:
+          Number(
+            form.sonyaPoints
+          ),
+
+        geomancerPoints:
+          Number(
+            form.geomancerPoints
+          ),
+
+        reflectorPoints:
+          Number(
+            form.reflectorPoints
+          ),
+
+        giantHawkPoints:
+          Number(
+            form.giantHawkPoints
+          ),
+
+        eligibilityScore:
+          Number(
+            form.eligibilityScore
+          ),
       });
 
-      setMessage("Settings saved successfully.");
+      setMessage(
+        "Scoring settings saved successfully."
+      );
     } catch (err) {
-      setMessage(err?.message || "Unable to save settings.");
+      console.error(err);
+
+      setError(
+        err?.message ||
+        "Unable to save settings."
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="settings-layout">
-      <div className="settings-card">
-        <div className="content-card-header">
-          <div>
-            <h2>Scoring Settings</h2>
-            <p>
-              These values affect new attendance records only.
-              Existing attendance keeps the points awarded when it
-              was saved.
-            </p>
-          </div>
-        </div>
+    <div className="admin-content-card">
+      <div className="content-card-header">
+        <div>
+          <h2>
+            Scoring Settings
+          </h2>
 
-        <div className="settings-grid">
-          {BOSSES.map((boss) => (
-            <label key={boss.id}>
-              {boss.name} Points
+          <p>
+            Configure attendance points
+            and eligibility requirements.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="success-box">
+          {message}
+        </div>
+      )}
+
+      <div className="settings-grid">
+        {BOSSES.map(
+          (boss) => (
+            <div
+              className="setting-card"
+              key={
+                boss.id
+              }
+            >
+              <span>
+                {
+                  boss.name
+                }
+              </span>
+
+              <strong>
+                POINTS
+              </strong>
+
               <input
                 type="number"
-                min="0"
                 step="0.1"
-                value={form[boss.pointsKey]}
-                onChange={(event) =>
+                value={
+                  form[
+                  boss.pointsKey
+                  ] ?? 0
+                }
+                onChange={(
+                  event
+                ) =>
                   update(
                     boss.pointsKey,
-                    event.target.value
+                    event
+                      .target
+                      .value
                   )
                 }
               />
-            </label>
-          ))}
-
-          <label>
-            Eligibility Score
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={form.eligibilityScore}
-              onChange={(event) =>
-                update(
-                  "eligibilityScore",
-                  event.target.value
-                )
-              }
-            />
-          </label>
-        </div>
-
-        {message && (
-          <div
-            className={
-              message.includes("successfully")
-                ? "success-box"
-                : "error-box"
-            }
-          >
-            {message}
-          </div>
+            </div>
+          )
         )}
 
-        <div className="settings-footer">
-          <div>
-            <span>Last updated</span>
-            <strong>
-              {formatDateTime(settings.updatedAt)}
-            </strong>
-          </div>
+        <div className="setting-card">
+          <span>
+            Eligibility
+          </span>
 
-          <div>
-            <span>Changed by</span>
-            <strong>
-              {settings.updatedBy ||
-                user?.email ||
-                "—"}
-            </strong>
-          </div>
+          <strong>
+            REQUIRED SCORE
+          </strong>
 
-          <button
-            className="primary-button"
-            onClick={save}
-            disabled={busy}
-          >
-            {busy ? "SAVING..." : "SAVE SETTINGS"}
-          </button>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            value={
+              form.eligibilityScore ??
+              0
+            }
+            onChange={(
+              event
+            ) =>
+              update(
+                "eligibilityScore",
+                event
+                  .target
+                  .value
+              )
+            }
+          />
         </div>
       </div>
+
+      <div className="settings-meta">
+        <div>
+          <span>
+            Last Updated
+          </span>
+
+          <strong>
+            {settings.updatedAt
+              ? formatDateTime(
+                settings.updatedAt
+              )
+              : "Never"}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Changed By
+          </span>
+
+          <strong>
+            {settings.updatedBy ||
+              user?.email ||
+              "—"}
+          </strong>
+        </div>
+      </div>
+
+      <button
+        className="primary-button"
+        onClick={save}
+        disabled={busy}
+      >
+        {busy
+          ? "SAVING..."
+          : "SAVE SCORING SETTINGS"}
+      </button>
     </div>
   );
 }
@@ -2963,14 +4892,20 @@ function SettingsPanel({ settings, user, onSave }) {
    SETTINGS HISTORY
 ========================================================= */
 
-function SettingsHistoryPanel({ settingsHistory }) {
+function SettingsHistoryPanel({
+  settingsHistory,
+}) {
   return (
     <div className="admin-content-card">
       <div className="content-card-header">
         <div>
-          <h2>Settings History</h2>
+          <h2>
+            Settings History
+          </h2>
+
           <p>
-            Audit trail of every scoring setting change.
+            Audit trail of every
+            scoring setting change.
           </p>
         </div>
       </div>
@@ -2979,54 +4914,102 @@ function SettingsHistoryPanel({ settingsHistory }) {
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Setting</th>
-              <th>Old Value</th>
-              <th>New Value</th>
-              <th>Changed By</th>
+              <th>
+                Date
+              </th>
+
+              <th>
+                Setting
+              </th>
+
+              <th>
+                Old Value
+              </th>
+
+              <th>
+                New Value
+              </th>
+
+              <th>
+                Changed By
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            {settingsHistory.length === 0 ? (
+            {settingsHistory.length ===
+              0 ? (
               <tr>
-                <td colSpan="5" className="empty-cell">
-                  No settings history.
+                <td
+                  colSpan="5"
+                  className="empty-cell"
+                >
+                  No settings
+                  history.
                 </td>
               </tr>
             ) : (
               settingsHistory
                 .slice()
-                .sort((a, b) => {
-                  const ad =
-                    timestampToDate(
-                      a.changedAt
-                    )?.getTime() || 0;
+                .sort(
+                  (a, b) => {
+                    const ad =
+                      timestampToDate(
+                        a.changedAt
+                      )?.getTime() ||
+                      0;
 
-                  const bd =
-                    timestampToDate(
-                      b.changedAt
-                    )?.getTime() || 0;
+                    const bd =
+                      timestampToDate(
+                        b.changedAt
+                      )?.getTime() ||
+                      0;
 
-                  return bd - ad;
-                })
-                .map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      {formatDateTime(item.changedAt)}
-                    </td>
+                    return (
+                      bd - ad
+                    );
+                  }
+                )
+                .map(
+                  (item) => (
+                    <tr
+                      key={
+                        item.id
+                      }
+                    >
+                      <td>
+                        {formatDateTime(
+                          item.changedAt
+                        )}
+                      </td>
 
-                    <td>
-                      <span className="ledger-type">
-                        {item.setting}
-                      </span>
-                    </td>
+                      <td>
+                        <span className="ledger-type">
+                          {
+                            item.setting
+                          }
+                        </span>
+                      </td>
 
-                    <td>{safeRow(item.oldValue)}</td>
-                    <td>{safeRow(item.newValue)}</td>
-                    <td>{item.changedBy || "—"}</td>
-                  </tr>
-                ))
+                      <td>
+                        {safeRow(
+                          item.oldValue
+                        )}
+                      </td>
+
+                      <td>
+                        {safeRow(
+                          item.newValue
+                        )}
+                      </td>
+
+                      <td>
+                        {item.changedBy ||
+                          "—"}
+                      </td>
+                    </tr>
+                  )
+                )
             )}
           </tbody>
         </table>
@@ -3048,8 +5031,11 @@ function BackupPanel({
   onExport,
   onImport,
 }) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [busy, setBusy] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
 
   async function exportBackup() {
     setBusy(true);
@@ -3057,16 +5043,25 @@ function BackupPanel({
 
     try {
       await onExport();
-      setMessage("Full backup created successfully.");
+
+      setMessage(
+        "Full backup created successfully."
+      );
     } catch (err) {
-      setMessage(err?.message || "Backup failed.");
+      setMessage(
+        err?.message ||
+        "Backup failed."
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  async function importBackup(event) {
-    const file = event.target.files?.[0];
+  async function importBackup(
+    event
+  ) {
+    const file =
+      event.target.files?.[0];
 
     if (!file) return;
 
@@ -3081,8 +5076,10 @@ function BackupPanel({
       );
     } catch (err) {
       console.error(err);
+
       setMessage(
-        err?.message || "Unable to restore backup."
+        err?.message ||
+        "Unable to restore backup."
       );
     } finally {
       setBusy(false);
@@ -3093,52 +5090,88 @@ function BackupPanel({
   return (
     <div className="backup-layout">
       <div className="backup-card">
-        <div className="backup-icon">⇩</div>
+        <div className="backup-icon">
+          ⇩
+        </div>
 
-        <h2>Full Backup</h2>
+        <h2>
+          Full Backup
+        </h2>
 
         <p>
-          Creates a complete Excel backup containing players,
-          attendance history, score ledger, scoring settings,
-          settings history, raid schedule, and backup information.
+          Creates a complete Excel
+          backup containing players,
+          attendance history, score
+          ledger, scoring settings,
+          settings history, raid
+          schedule, and backup
+          information.
         </p>
 
         <div className="backup-counts">
-          <span>{players.length} Players</span>
-          <span>{histories.length} Attendance</span>
-          <span>{ledger.length} Ledger</span>
-          <span>{settingsHistory.length} Setting History</span>
+          <span>
+            {players.length} Players
+          </span>
+
+          <span>
+            {histories.length} Attendance
+          </span>
+
+          <span>
+            {ledger.length} Ledger
+          </span>
+
+          <span>
+            {
+              settingsHistory.length
+            }{" "}
+            Setting History
+          </span>
         </div>
 
         <button
           className="primary-button"
-          onClick={exportBackup}
+          onClick={
+            exportBackup
+          }
           disabled={busy}
         >
-          {busy ? "CREATING..." : "EXPORT FULL XLSX BACKUP"}
+          {busy
+            ? "CREATING..."
+            : "EXPORT FULL XLSX BACKUP"}
         </button>
       </div>
 
       <div className="backup-card">
-        <div className="backup-icon">⇧</div>
+        <div className="backup-icon">
+          ⇧
+        </div>
 
-        <h2>Restore Backup</h2>
+        <h2>
+          Restore Backup
+        </h2>
 
         <p>
-          Restores records from a previous full backup. Existing
-          records with matching IDs are updated. New records are
-          added.
+          Restores records from a
+          previous full backup.
+          Existing records with
+          matching IDs are updated.
+          New records are added.
         </p>
 
         <label className="file-upload">
           <span>
-            {busy ? "PROCESSING..." : "SELECT XLSX BACKUP"}
+            {busy
+              ? "PROCESSING..."
+              : "SELECT XLSX BACKUP"}
           </span>
 
           <input
             type="file"
             accept=".xlsx,.xls"
-            onChange={importBackup}
+            onChange={
+              importBackup
+            }
             disabled={busy}
           />
         </label>
@@ -3154,43 +5187,813 @@ function BackupPanel({
 }
 
 /* =========================================================
+   ADMIN PAGE
+========================================================= */
+
+function AdminPage({
+  players,
+  histories,
+  ledger,
+  settings,
+  settingsHistory,
+  user,
+  onAddPlayer,
+  onEditPlayer,
+  onHistory,
+  onClaim,
+  onOverride,
+  onPurgePlayer,
+  onDeletePlayer,
+  onSaveSettings,
+  onExport,
+  onImport,
+}) {
+  const [tab, setTab] =
+    useState(
+      "dashboard"
+    );
+
+  const totalScore =
+    useMemo(
+      () =>
+        roundScore(
+          players.reduce(
+            (
+              total,
+              player
+            ) =>
+              total +
+              getPlayerScore(
+                player,
+                histories,
+                ledger
+              ),
+            0
+          )
+        ),
+      [
+        players,
+        histories,
+        ledger,
+      ]
+    );
+
+  const eligibleCount =
+    players.filter(
+      (player) =>
+        getPlayerScore(
+          player,
+          histories,
+          ledger
+        ) >=
+        Number(
+          settings.eligibilityScore
+        )
+    ).length;
+
+  return (
+    <section className="page-section">
+      <div className="hero-heading">
+        <div>
+          <div className="eyebrow">
+            CONTROL CENTER
+          </div>
+
+          <h1>
+            Administrator
+          </h1>
+
+          <p>
+            Manage guild attendance,
+            players, scoring and
+            backups.
+          </p>
+        </div>
+
+        <div className="admin-user-badge">
+          <span>
+            SIGNED IN
+          </span>
+
+          <strong>
+            {user?.email ||
+              user?.uid}
+          </strong>
+        </div>
+      </div>
+
+      <div className="admin-tabs">
+        {[
+          [
+            "dashboard",
+            "Dashboard",
+          ],
+          [
+            "players",
+            "Players",
+          ],
+          [
+            "ledger",
+            "Score Ledger",
+          ],
+          [
+            "scoring",
+            "Scoring",
+          ],
+          [
+            "history",
+            "Settings History",
+          ],
+          [
+            "backup",
+            "Backup / Restore",
+          ],
+        ].map(
+          ([value, label]) => (
+            <button
+              key={value}
+              className={
+                tab === value
+                  ? "admin-tab active"
+                  : "admin-tab"
+              }
+              onClick={() =>
+                setTab(value)
+              }
+            >
+              {label}
+            </button>
+          )
+        )}
+      </div>
+
+      {tab ===
+        "dashboard" && (
+          <div className="dashboard-grid">
+            <div className="dashboard-stat">
+              <span>
+                TOTAL PLAYERS
+              </span>
+
+              <strong>
+                {players.length}
+              </strong>
+            </div>
+
+            <div className="dashboard-stat">
+              <span>
+                ELIGIBLE
+              </span>
+
+              <strong>
+                {eligibleCount}
+              </strong>
+            </div>
+
+            <div className="dashboard-stat">
+              <span>
+                ATTENDANCE RECORDS
+              </span>
+
+              <strong>
+                {histories.length}
+              </strong>
+            </div>
+
+            <div className="dashboard-stat">
+              <span>
+                LEDGER RECORDS
+              </span>
+
+              <strong>
+                {ledger.length}
+              </strong>
+            </div>
+
+            <div className="dashboard-stat">
+              <span>
+                POINTS IN SYSTEM
+              </span>
+
+              <strong>
+                {formatScore(
+                  totalScore
+                )}
+              </strong>
+            </div>
+
+            <div className="dashboard-stat">
+              <span>
+                ELIGIBILITY THRESHOLD
+              </span>
+
+              <strong>
+                {formatScore(
+                  settings.eligibilityScore
+                )}
+              </strong>
+            </div>
+
+            <div className="admin-content-card dashboard-wide-card">
+              <div className="content-card-header">
+                <div>
+                  <h2>
+                    Current Scoring
+                  </h2>
+
+                  <p>
+                    Points awarded per
+                    attendance.
+                  </p>
+                </div>
+              </div>
+
+              <div className="dashboard-scoring">
+                {BOSSES.map(
+                  (boss) => (
+                    <div
+                      key={
+                        boss.id
+                      }
+                    >
+                      <span>
+                        {
+                          boss.name
+                        }
+                      </span>
+
+                      <strong>
+                        +
+                        {formatScore(
+                          settings[
+                          boss.pointsKey
+                          ]
+                        )}
+                      </strong>
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="admin-content-card dashboard-wide-card">
+              <div className="content-card-header">
+                <div>
+                  <h2>
+                    Raid System
+                  </h2>
+
+                  <p>
+                    Geomancer is configured
+                    as a true 10-hour
+                    repeating schedule.
+                  </p>
+                </div>
+              </div>
+
+              <div className="dashboard-scoring">
+                <div>
+                  <span>
+                    GEOMANCER
+                  </span>
+
+                  <strong>
+                    EVERY 10 HOURS
+                  </strong>
+                </div>
+
+                <div>
+                  <span>
+                    CYCLE WINDOW
+                  </span>
+
+                  <strong>
+                    72 HOURS
+                  </strong>
+                </div>
+
+                <div>
+                  <span>
+                    UPCOMING
+                  </span>
+
+                  <strong>
+                    8 SPAWNS
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {tab ===
+        "players" && (
+          <div className="admin-content-card">
+            <div className="content-card-header">
+              <div>
+                <h2>
+                  Players
+                </h2>
+
+                <p>
+                  Manage guild player
+                  profiles.
+                </p>
+              </div>
+
+              <button
+                className="primary-button"
+                onClick={
+                  onAddPlayer
+                }
+              >
+                + ADD PLAYER
+              </button>
+            </div>
+
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      IGN
+                    </th>
+
+                    <th>
+                      Class
+                    </th>
+
+                    <th>
+                      Weapon
+                    </th>
+
+                    <th>
+                      Score
+                    </th>
+
+                    <th>
+                      Updated
+                    </th>
+
+                    <th>
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {players.length ===
+                    0 ? (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="empty-cell"
+                      >
+                        No players.
+                      </td>
+                    </tr>
+                  ) : (
+                    players
+                      .slice()
+                      .sort(
+                        (
+                          a,
+                          b
+                        ) =>
+                          String(
+                            a.ign
+                          ).localeCompare(
+                            String(
+                              b.ign
+                            )
+                          )
+                      )
+                      .map(
+                        (
+                          player
+                        ) => (
+                          <tr
+                            key={
+                              player.id
+                            }
+                          >
+                            <td>
+                              <strong>
+                                {
+                                  player.ign
+                                }
+                              </strong>
+                            </td>
+
+                            <td>
+                              {
+                                player.class
+                              }
+                            </td>
+
+                            <td>
+                              {player.preferredWeapon ||
+                                "—"}
+                            </td>
+
+                            <td>
+                              {formatScore(
+                                getPlayerScore(
+                                  player,
+                                  histories,
+                                  ledger
+                                )
+                              )}
+                            </td>
+
+                            <td>
+                              {formatDateTime(
+                                player.updatedAt
+                              )}
+                            </td>
+
+                            <td>
+                              <div className="table-actions">
+                                <button
+                                  className="small-button"
+                                  onClick={() =>
+                                    onEditPlayer(
+                                      player
+                                    )
+                                  }
+                                >
+                                  EDIT
+                                </button>
+
+                                <button
+                                  className="small-button"
+                                  onClick={() =>
+                                    onHistory(
+                                      player
+                                    )
+                                  }
+                                >
+                                  HISTORY
+                                </button>
+
+                                <button
+                                  className="small-button"
+                                  onClick={() =>
+                                    onClaim(
+                                      player
+                                    )
+                                  }
+                                >
+                                  CLAIM
+                                </button>
+
+                                <button
+                                  className="small-button"
+                                  onClick={() =>
+                                    onOverride(
+                                      player
+                                    )
+                                  }
+                                >
+                                  SCORE
+                                </button>
+
+                                <button
+                                  className="small-danger-button"
+                                  onClick={() =>
+                                    onDeletePlayer(
+                                      player
+                                    )
+                                  }
+                                >
+                                  DELETE
+                                </button>
+
+                                <button
+                                  className="small-danger-button"
+                                  onClick={() =>
+                                    onPurgePlayer(
+                                      player
+                                    )
+                                  }
+                                >
+                                  PURGE
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      {tab ===
+        "ledger" && (
+          <div className="admin-content-card">
+            <div className="content-card-header">
+              <div>
+                <h2>
+                  Score Ledger
+                </h2>
+
+                <p>
+                  Every claim and manual
+                  score adjustment.
+                </p>
+              </div>
+            </div>
+
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      Date
+                    </th>
+
+                    <th>
+                      IGN
+                    </th>
+
+                    <th>
+                      Type
+                    </th>
+
+                    <th>
+                      Delta
+                    </th>
+
+                    <th>
+                      Old
+                    </th>
+
+                    <th>
+                      New
+                    </th>
+
+                    <th>
+                      Weapon
+                    </th>
+
+                    <th>
+                      Reason
+                    </th>
+
+                    <th>
+                      Admin
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {ledger.length ===
+                    0 ? (
+                    <tr>
+                      <td
+                        colSpan="9"
+                        className="empty-cell"
+                      >
+                        No ledger records.
+                      </td>
+                    </tr>
+                  ) : (
+                    ledger
+                      .slice()
+                      .sort(
+                        (
+                          a,
+                          b
+                        ) =>
+                          (
+                            timestampToDate(
+                              b.createdAt
+                            )?.getTime() ||
+                            0
+                          ) -
+                          (
+                            timestampToDate(
+                              a.createdAt
+                            )?.getTime() ||
+                            0
+                          )
+                      )
+                      .map(
+                        (
+                          item
+                        ) => (
+                          <tr
+                            key={
+                              item.id
+                            }
+                          >
+                            <td>
+                              {formatDateTime(
+                                item.createdAt
+                              )}
+                            </td>
+
+                            <td>
+                              {
+                                item.ign
+                              }
+                            </td>
+
+                            <td>
+                              <span className="ledger-type">
+                                {
+                                  item.type
+                                }
+                              </span>
+                            </td>
+
+                            <td
+                              className={
+                                Number(
+                                  item.delta
+                                ) >=
+                                  0
+                                  ? "positive-value"
+                                  : "negative-value"
+                              }
+                            >
+                              {Number(
+                                item.delta
+                              ) >=
+                                0
+                                ? "+"
+                                : ""}
+
+                              {formatScore(
+                                item.delta
+                              )}
+                            </td>
+
+                            <td>
+                              {formatScore(
+                                item.oldScore
+                              )}
+                            </td>
+
+                            <td>
+                              {formatScore(
+                                item.newScore
+                              )}
+                            </td>
+
+                            <td>
+                              {
+                                item.weapon ||
+                                "—"
+                              }
+                            </td>
+
+                            <td>
+                              {
+                                item.reason ||
+                                "—"
+                              }
+                            </td>
+
+                            <td>
+                              {
+                                item.admin ||
+                                "—"
+                              }
+                            </td>
+                          </tr>
+                        )
+                      )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      {tab ===
+        "scoring" && (
+          <SettingsPanel
+            settings={
+              settings
+            }
+            user={user}
+            onSave={
+              onSaveSettings
+            }
+          />
+        )}
+
+      {tab ===
+        "history" && (
+          <SettingsHistoryPanel
+            settingsHistory={
+              settingsHistory
+            }
+          />
+        )}
+
+      {tab ===
+        "backup" && (
+          <BackupPanel
+            players={
+              players
+            }
+            histories={
+              histories
+            }
+            ledger={ledger}
+            settings={
+              settings
+            }
+            settingsHistory={
+              settingsHistory
+            }
+            onExport={
+              onExport
+            }
+            onImport={
+              onImport
+            }
+          />
+        )}
+    </section>
+  );
+}
+
+/* =========================================================
    APP
 ========================================================= */
 
 export default function App() {
-  const [page, setPage] = useState("raid");
+  const [page, setPage] =
+    useState("raid");
 
   const [timezone, setTimezone] =
-    useState(getStoredTimezone());
+    useState(
+      getStoredTimezone()
+    );
 
-  function handleTimezoneChange(value) {
+  function handleTimezoneChange(
+    value
+  ) {
     setTimezone(value);
-    saveTimezonePreference(value);
+    saveTimezonePreference(
+      value
+    );
   }
 
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] =
+    useState(null);
 
-  const [showLogin, setShowLogin] = useState(false);
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
-  const [raids, setRaids] = useState(
-    BOSSES.map(getDefaultRaid)
-  );
+  const [isAdmin, setIsAdmin] =
+    useState(false);
 
-  const [players, setPlayers] = useState([]);
-  const [histories, setHistories] = useState([]);
-  const [ledger, setLedger] = useState([]);
-  const [settings, setSettings] = useState(
-    DEFAULT_SETTINGS
-  );
+  const [showLogin, setShowLogin] =
+    useState(false);
+
+  const [raids, setRaids] =
+    useState(
+      BOSSES.map(
+        getDefaultRaid
+      )
+    );
+
+  const [players, setPlayers] =
+    useState([]);
+
+  const [histories, setHistories] =
+    useState([]);
+
+  const [ledger, setLedger] =
+    useState([]);
+
+  const [settings, setSettings] =
+    useState(
+      DEFAULT_SETTINGS
+    );
+
   const [settingsHistory, setSettingsHistory] =
     useState([]);
 
-  const [raidEditor, setRaidEditor] = useState(null);
-  const [playerEditor, setPlayerEditor] = useState(null);
-  const [historyPlayer, setHistoryPlayer] = useState(null);
-  const [claimPlayer, setClaimPlayer] = useState(null);
+  const [raidEditor, setRaidEditor] =
+    useState(null);
+
+  const [playerEditor, setPlayerEditor] =
+    useState(null);
+
+  const [historyPlayer, setHistoryPlayer] =
+    useState(null);
+
+  const [claimPlayer, setClaimPlayer] =
+    useState(null);
+
   const [overridePlayer, setOverridePlayer] =
     useState(null);
 
@@ -3199,36 +6002,58 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (firebaseUser) => {
-        try {
-          setUser(firebaseUser);
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        async (
+          firebaseUser
+        ) => {
+          try {
+            setUser(
+              firebaseUser
+            );
 
-          if (!firebaseUser) {
+            if (
+              !firebaseUser
+            ) {
+              setIsAdmin(false);
+              setAuthLoading(
+                false
+              );
+
+              return;
+            }
+
+            const adminSnap =
+              await getDoc(
+                doc(
+                  db,
+                  "admins",
+                  firebaseUser.uid
+                )
+              );
+
+            setIsAdmin(
+              adminSnap.exists() &&
+              adminSnap.data()
+                ?.active === true
+            );
+          } catch (error) {
+            console.error(
+              error
+            );
+
             setIsAdmin(false);
-            setAuthLoading(false);
-            return;
+          } finally {
+            setAuthLoading(
+              false
+            );
           }
-
-          const adminSnap = await getDoc(
-            doc(db, "admins", firebaseUser.uid)
-          );
-
-          setIsAdmin(
-            adminSnap.exists() &&
-            adminSnap.data()?.active === true
-          );
-        } catch (error) {
-          console.error(error);
-          setIsAdmin(false);
-        } finally {
-          setAuthLoading(false);
         }
-      }
-    );
+      );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3236,38 +6061,70 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      doc(db, "settings", "raidSchedule"),
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          setRaids(BOSSES.map(getDefaultRaid));
-          return;
-        }
+    const unsubscribe =
+      onSnapshot(
+        doc(
+          db,
+          "settings",
+          "raidSchedule"
+        ),
+        (snapshot) => {
+          if (
+            !snapshot.exists()
+          ) {
+            setRaids(
+              BOSSES.map(
+                getDefaultRaid
+              )
+            );
 
-        const data = snapshot.data();
+            return;
+          }
 
-        const loaded = BOSSES.map((boss) => {
-          const raid = Array.isArray(data.raids)
-            ? data.raids.find(
-              (item) => item.id === boss.id
+          const data =
+            snapshot.data();
+
+          const loaded =
+            BOSSES.map(
+              (boss) => {
+                const raid =
+                  Array.isArray(
+                    data.raids
+                  )
+                    ? data.raids.find(
+                      (item) =>
+                        item.id ===
+                        boss.id
+                    )
+                    : null;
+
+                return sanitizeRaid(
+                  raid,
+                  boss
+                );
+              }
+            );
+
+          setRaids(
+            loaded
+          );
+        },
+        (error) => {
+          console.error(
+            "Raid schedule listener:",
+            error
+          );
+
+          setRaids(
+            BOSSES.map(
+              getDefaultRaid
             )
-            : null;
+          );
+        }
+      );
 
-          return sanitizeRaid(raid, boss);
-        });
-
-        setRaids(loaded);
-      },
-      (error) => {
-        console.error(
-          "Raid schedule listener:",
-          error
-        );
-        setRaids(BOSSES.map(getDefaultRaid));
-      }
-    );
-
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3275,25 +6132,33 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "attendancePlayers"),
-      (snapshot) => {
-        const rows = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+    const unsubscribe =
+      onSnapshot(
+        collection(
+          db,
+          "attendancePlayers"
+        ),
+        (snapshot) => {
+          const rows =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-        setPlayers(rows);
-      },
-      (error) => {
-        console.error(
-          "Player listener:",
-          error
-        );
-      }
-    );
+          setPlayers(rows);
+        },
+        (error) => {
+          console.error(
+            "Player listener:",
+            error
+          );
+        }
+      );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3301,25 +6166,33 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "attendanceHistory"),
-      (snapshot) => {
-        const rows = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+    const unsubscribe =
+      onSnapshot(
+        collection(
+          db,
+          "attendanceHistory"
+        ),
+        (snapshot) => {
+          const rows =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-        setHistories(rows);
-      },
-      (error) => {
-        console.error(
-          "Attendance listener:",
-          error
-        );
-      }
-    );
+          setHistories(rows);
+        },
+        (error) => {
+          console.error(
+            "Attendance listener:",
+            error
+          );
+        }
+      );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3327,25 +6200,33 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "scoreLedger"),
-      (snapshot) => {
-        const rows = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+    const unsubscribe =
+      onSnapshot(
+        collection(
+          db,
+          "scoreLedger"
+        ),
+        (snapshot) => {
+          const rows =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-        setLedger(rows);
-      },
-      (error) => {
-        console.error(
-          "Ledger listener:",
-          error
-        );
-      }
-    );
+          setLedger(rows);
+        },
+        (error) => {
+          console.error(
+            "Ledger listener:",
+            error
+          );
+        }
+      );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3353,28 +6234,39 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      doc(db, "settings", "attendance"),
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          setSettings(DEFAULT_SETTINGS);
-          return;
+    const unsubscribe =
+      onSnapshot(
+        doc(
+          db,
+          "settings",
+          "attendance"
+        ),
+        (snapshot) => {
+          if (
+            !snapshot.exists()
+          ) {
+            setSettings(
+              DEFAULT_SETTINGS
+            );
+
+            return;
+          }
+
+          setSettings({
+            ...DEFAULT_SETTINGS,
+            ...snapshot.data(),
+          });
+        },
+        (error) => {
+          console.error(
+            "Settings listener:",
+            error
+          );
         }
+      );
 
-        setSettings({
-          ...DEFAULT_SETTINGS,
-          ...snapshot.data(),
-        });
-      },
-      (error) => {
-        console.error(
-          "Settings listener:",
-          error
-        );
-      }
-    );
-
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
@@ -3382,85 +6274,114 @@ export default function App() {
   ======================================================= */
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "settingsHistory"),
-      (snapshot) => {
-        const rows = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+    const unsubscribe =
+      onSnapshot(
+        collection(
+          db,
+          "settingsHistory"
+        ),
+        (snapshot) => {
+          const rows =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-        setSettingsHistory(rows);
-      },
-      (error) => {
-        console.error(
-          "Settings history listener:",
-          error
-        );
-      }
-    );
+          setSettingsHistory(
+            rows
+          );
+        },
+        (error) => {
+          console.error(
+            "Settings history listener:",
+            error
+          );
+        }
+      );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
   }, []);
 
   /* =======================================================
-     PLAYER OPERATIONS
+     PLAYER DELETE
   ======================================================= */
 
-  async function deletePlayerProfile(player) {
+  async function deletePlayerProfile(
+    player
+  ) {
     if (!isAdmin) {
-      throw new Error("Administrator access required.");
+      throw new Error(
+        "Administrator access required."
+      );
     }
 
     await deleteDoc(
-      doc(db, "attendancePlayers", player.id)
+      doc(
+        db,
+        "attendancePlayers",
+        player.id
+      )
     );
   }
 
-  /*
-   * COMPLETE IGN PURGE
-   *
-   * This is intentionally different from DELETE.
-   *
-   * DELETE:
-   *   Removes profile only.
-   *
-   * PURGE:
-   *   Removes profile + ALL attendance + ALL ledger records.
-   *
-   * Therefore, when the IGN is added again, its calculated
-   * score is zero.
-   */
-  async function completelyPurgeIgn(player) {
+  /* =======================================================
+     COMPLETE IGN PURGE
+  ======================================================= */
+
+  async function completelyPurgeIgn(
+    player
+  ) {
     if (!isAdmin) {
       throw new Error(
         "Administrator access is required."
       );
     }
 
-    if (!player?.id || !player?.ign) {
-      throw new Error("Invalid player.");
+    if (
+      !player?.id ||
+      !player?.ign
+    ) {
+      throw new Error(
+        "Invalid player."
+      );
     }
 
-    const ign = String(player.ign).trim();
+    const ign =
+      String(
+        player.ign
+      ).trim();
 
-    const typed = window.prompt(
-      `PERMANENTLY PURGE "${ign}"?\n\n` +
-      `This removes ALL information connected to this IGN:\n\n` +
-      `• Player profile\n` +
-      `• Attendance history\n` +
-      `• Weapon claims\n` +
-      `• Score deductions\n` +
-      `• Manual score overrides\n\n` +
-      `This cannot be undone.\n\n` +
-      `Type the IGN exactly to continue:`
-    );
+    const typed =
+      window.prompt(
+        `PERMANENTLY PURGE "${ign}"?\n\n` +
+        `This removes ALL information connected to this IGN:\n\n` +
+        `• Player profile\n` +
+        `• Attendance history\n` +
+        `• Weapon claims\n` +
+        `• Score deductions\n` +
+        `• Manual score overrides\n\n` +
+        `This cannot be undone.\n\n` +
+        `Type the IGN exactly to continue:`
+      );
 
-    if (typed === null) {
+    if (
+      typed ===
+      null
+    ) {
       return;
     }
 
-    if (normalizeIgn(typed) !== normalizeIgn(ign)) {
+    if (
+      normalizeIgn(
+        typed
+      ) !==
+      normalizeIgn(
+        ign
+      )
+    ) {
       window.alert(
         "The IGN did not match exactly.\n\nNothing was deleted."
       );
@@ -3468,62 +6389,85 @@ export default function App() {
       return;
     }
 
-    const finalConfirm = window.confirm(
-      `FINAL CONFIRMATION\n\n` +
-      `Completely delete "${ign}" and make it a clean NEW USER?\n\n` +
-      `After this operation, adding "${ign}" again will start at 0 points.`
-    );
+    const finalConfirm =
+      window.confirm(
+        `FINAL CONFIRMATION\n\n` +
+        `Completely delete "${ign}" and make it a clean NEW USER?\n\n` +
+        `After this operation, adding "${ign}" again will start at 0 points.`
+      );
 
-    if (!finalConfirm) {
+    if (
+      !finalConfirm
+    ) {
       return;
     }
 
     try {
-      const attendanceSnapshot = await getDocs(
-        collection(db, "attendanceHistory")
-      );
+      const attendanceSnapshot =
+        await getDocs(
+          collection(
+            db,
+            "attendanceHistory"
+          )
+        );
 
-      const ledgerSnapshot = await getDocs(
-        collection(db, "scoreLedger")
-      );
+      const ledgerSnapshot =
+        await getDocs(
+          collection(
+            db,
+            "scoreLedger"
+          )
+        );
 
-      /*
-       * Match by playerId FIRST.
-       *
-       * IGN fallback is included for older records that may not
-       * contain playerId.
-       */
       const attendanceRefs =
         attendanceSnapshot.docs
-          .filter((snap) => {
-            const data = snap.data();
+          .filter(
+            (snap) => {
+              const data =
+                snap.data();
 
-            return (
-              data.playerId === player.id ||
-              (
-                !data.playerId &&
-                normalizeIgn(data.ign) ===
-                normalizeIgn(ign)
-              )
-            );
-          })
-          .map((snap) => snap.ref);
+              return (
+                data.playerId ===
+                player.id ||
+                (!data.playerId &&
+                  normalizeIgn(
+                    data.ign
+                  ) ===
+                  normalizeIgn(
+                    ign
+                  ))
+              );
+            }
+          )
+          .map(
+            (snap) =>
+              snap.ref
+          );
 
       const ledgerRefs =
         ledgerSnapshot.docs
-          .filter((snap) => {
-            const data = snap.data();
+          .filter(
+            (snap) => {
+              const data =
+                snap.data();
 
-            return (
-              data.playerId === player.id ||
-              (
-                !data.playerId &&
-                normalizeIgn(data.ign) ===
-                normalizeIgn(ign)
-              )
-            );
-          })
-          .map((snap) => snap.ref);
+              return (
+                data.playerId ===
+                player.id ||
+                (!data.playerId &&
+                  normalizeIgn(
+                    data.ign
+                  ) ===
+                  normalizeIgn(
+                    ign
+                  ))
+              );
+            }
+          )
+          .map(
+            (snap) =>
+              snap.ref
+          );
 
       const allRefs = [
         ...attendanceRefs,
@@ -3535,62 +6479,94 @@ export default function App() {
         ),
       ];
 
-      /*
-       * Firestore batch limit is 500.
-       * Keep batches below that limit.
-       */
       for (
         let start = 0;
-        start < allRefs.length;
+        start <
+        allRefs.length;
         start += 450
       ) {
-        const batch = writeBatch(db);
+        const batch =
+          writeBatch(db);
 
         allRefs
-          .slice(start, start + 450)
-          .forEach((ref) => batch.delete(ref));
+          .slice(
+            start,
+            start + 450
+          )
+          .forEach(
+            (ref) =>
+              batch.delete(
+                ref
+              )
+          );
 
         await batch.commit();
       }
 
-      /*
-       * Immediately clean local state too.
-       * Firestore listeners will also synchronize afterwards.
-       */
-      setPlayers((current) =>
-        current.filter(
-          (item) => item.id !== player.id
-        )
+      setPlayers(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              player.id
+          )
       );
 
-      setHistories((current) =>
-        current.filter(
-          (item) =>
-            item.playerId !== player.id &&
-            normalizeIgn(item.ign) !==
-            normalizeIgn(ign)
-        )
+      setHistories(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.playerId !==
+              player.id &&
+              normalizeIgn(
+                item.ign
+              ) !==
+              normalizeIgn(
+                ign
+              )
+          )
       );
 
-      setLedger((current) =>
-        current.filter(
-          (item) =>
-            item.playerId !== player.id &&
-            normalizeIgn(item.ign) !==
-            normalizeIgn(ign)
-        )
+      setLedger(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.playerId !==
+              player.id &&
+              normalizeIgn(
+                item.ign
+              ) !==
+              normalizeIgn(
+                ign
+              )
+          )
       );
 
-      if (historyPlayer?.id === player.id) {
-        setHistoryPlayer(null);
+      if (
+        historyPlayer?.id ===
+        player.id
+      ) {
+        setHistoryPlayer(
+          null
+        );
       }
 
-      if (claimPlayer?.id === player.id) {
-        setClaimPlayer(null);
+      if (
+        claimPlayer?.id ===
+        player.id
+      ) {
+        setClaimPlayer(
+          null
+        );
       }
 
-      if (overridePlayer?.id === player.id) {
-        setOverridePlayer(null);
+      if (
+        overridePlayer?.id ===
+        player.id
+      ) {
+        setOverridePlayer(
+          null
+        );
       }
 
       window.alert(
@@ -3615,7 +6591,9 @@ export default function App() {
      SETTINGS SAVE
   ======================================================= */
 
-  async function saveSettings(nextSettings) {
+  async function saveSettings(
+    nextSettings
+  ) {
     if (!isAdmin) {
       throw new Error(
         "Administrator access required."
@@ -3623,35 +6601,49 @@ export default function App() {
     }
 
     const adminName =
-      auth.currentUser?.email ||
-      auth.currentUser?.uid ||
+      auth.currentUser
+        ?.email ||
+      auth.currentUser
+        ?.uid ||
       "Admin";
 
-    const settingsRef = doc(
-      db,
-      "settings",
-      "attendance"
-    );
+    const settingsRef =
+      doc(
+        db,
+        "settings",
+        "attendance"
+      );
 
-    const currentSnap = await getDoc(settingsRef);
+    const currentSnap =
+      await getDoc(
+        settingsRef
+      );
 
-    const current = currentSnap.exists()
-      ? {
-        ...DEFAULT_SETTINGS,
-        ...currentSnap.data(),
-      }
-      : DEFAULT_SETTINGS;
+    const current =
+      currentSnap.exists()
+        ? {
+          ...DEFAULT_SETTINGS,
+          ...currentSnap.data(),
+        }
+        : DEFAULT_SETTINGS;
 
-    const batch = writeBatch(db);
+    const batch =
+      writeBatch(db);
 
     batch.set(
       settingsRef,
       {
         ...nextSettings,
-        updatedAt: serverTimestamp(),
-        updatedBy: adminName,
+
+        updatedAt:
+          serverTimestamp(),
+
+        updatedBy:
+          adminName,
       },
-      { merge: true }
+      {
+        merge: true,
+      }
     );
 
     const settingKeys = [
@@ -3663,21 +6655,40 @@ export default function App() {
     ];
 
     for (const key of settingKeys) {
-      const oldValue = Number(current[key]);
-      const newValue = Number(nextSettings[key]);
-
-      if (oldValue !== newValue) {
-        const historyRef = doc(
-          collection(db, "settingsHistory")
+      const oldValue =
+        Number(
+          current[key]
         );
 
-        batch.set(historyRef, {
-          setting: key,
-          oldValue,
-          newValue,
-          changedBy: adminName,
-          changedAt: serverTimestamp(),
-        });
+      const newValue =
+        Number(
+          nextSettings[key]
+        );
+
+      if (
+        oldValue !==
+        newValue
+      ) {
+        const historyRef =
+          doc(
+            collection(
+              db,
+              "settingsHistory"
+            )
+          );
+
+        batch.set(
+          historyRef,
+          {
+            setting: key,
+            oldValue,
+            newValue,
+            changedBy:
+              adminName,
+            changedAt:
+              serverTimestamp(),
+          }
+        );
       }
     }
 
@@ -3689,138 +6700,329 @@ export default function App() {
   ======================================================= */
 
   async function exportFullBackup() {
-    const raidSchedule = raids.map((raid) => ({
-      id: raid.id,
-      name: raid.name,
-      type: raid.type,
-      frequency: raid.frequency,
-      day:
-        raid.day === null
-          ? ""
-          : raid.day,
-      hour: raid.hour,
-      minute: raid.minute,
-      time12: formatTime12(
-        raid.hour,
-        raid.minute
-      ),
-      image: raid.image || "",
-      updatedAt: safeRow(raid.updatedAt),
-      updatedBy: raid.updatedBy || "",
-    }));
+    const raidSchedule =
+      raids.map(
+        (raid) => ({
+          id: raid.id,
+          name: raid.name,
+          type: raid.type,
+          frequency:
+            raid.frequency,
 
-    const playersSheet = players.map((item) => ({
-      id: item.id,
-      ign: item.ign || "",
-      class: item.class || "",
-      preferredWeapon:
-        item.preferredWeapon || "",
-      createdAt: safeRow(item.createdAt),
-      updatedAt: safeRow(item.updatedAt),
-      createdBy: item.createdBy || "",
-      updatedBy: item.updatedBy || "",
-    }));
+          day:
+            raid.day ===
+              null
+              ? ""
+              : raid.day,
 
-    const historySheet = histories.map((item) => ({
-      id: item.id,
-      playerId: item.playerId || "",
-      ign: item.ign || "",
-      bossId: item.bossId || "",
-      bossName: item.bossName || "",
-      points: Number(item.points || 0),
-      attendanceDate:
-        item.attendanceDate || "",
-      createdAt: safeRow(item.createdAt),
-      createdBy: item.createdBy || "",
-    }));
+          hour:
+            raid.hour,
 
-    const ledgerSheet = ledger.map((item) => ({
-      id: item.id,
-      playerId: item.playerId || "",
-      ign: item.ign || "",
-      type: item.type || "",
-      delta: Number(item.delta || 0),
-      oldScore: Number(item.oldScore || 0),
-      newScore: Number(item.newScore || 0),
-      weapon: item.weapon || "",
-      reason: item.reason || "",
-      admin: item.admin || "",
-      createdAt: safeRow(item.createdAt),
-    }));
+          minute:
+            raid.minute,
 
-    const settingsSheet = [
-      {
-        id: "attendance",
-        sonyaPoints: Number(
-          settings.sonyaPoints
-        ),
-        geomancerPoints: Number(
-          settings.geomancerPoints
-        ),
-        reflectorPoints: Number(
-          settings.reflectorPoints
-        ),
-        giantHawkPoints: Number(
-          settings.giantHawkPoints
-        ),
-        eligibilityScore: Number(
-          settings.eligibilityScore
-        ),
-        updatedAt: safeRow(settings.updatedAt),
-        updatedBy: settings.updatedBy || "",
-      },
-    ];
+          time12:
+            formatTime12(
+              raid.hour,
+              raid.minute
+            ),
+
+          intervalHours:
+            raid.intervalHours ||
+            "",
+
+          anchorDate:
+            raid.anchorDate ||
+            "",
+
+          cycleStartPH:
+            raid.frequency ===
+              "Every 10 Hours" &&
+              raid.anchorDate
+              ? `${raid.anchorDate} ${formatTime12(
+                raid.hour,
+                raid.minute
+              )}`
+              : "",
+
+          image:
+            raid.image || "",
+
+          updatedAt:
+            safeRow(
+              raid.updatedAt
+            ),
+
+          updatedBy:
+            raid.updatedBy ||
+            "",
+        })
+      );
+
+    const playersSheet =
+      players.map(
+        (item) => ({
+          id: item.id,
+
+          ign:
+            item.ign || "",
+
+          class:
+            item.class || "",
+
+          preferredWeapon:
+            item.preferredWeapon ||
+            "",
+
+          createdAt:
+            safeRow(
+              item.createdAt
+            ),
+
+          updatedAt:
+            safeRow(
+              item.updatedAt
+            ),
+
+          createdBy:
+            item.createdBy ||
+            "",
+
+          updatedBy:
+            item.updatedBy ||
+            "",
+        })
+      );
+
+    const historySheet =
+      histories.map(
+        (item) => ({
+          id: item.id,
+
+          playerId:
+            item.playerId ||
+            "",
+
+          ign:
+            item.ign || "",
+
+          bossId:
+            item.bossId ||
+            "",
+
+          bossName:
+            item.bossName ||
+            "",
+
+          points:
+            Number(
+              item.points || 0
+            ),
+
+          attendanceDate:
+            item.attendanceDate ||
+            "",
+
+          createdAt:
+            safeRow(
+              item.createdAt
+            ),
+
+          createdBy:
+            item.createdBy ||
+            "",
+        })
+      );
+
+    const ledgerSheet =
+      ledger.map(
+        (item) => ({
+          id: item.id,
+
+          playerId:
+            item.playerId ||
+            "",
+
+          ign:
+            item.ign || "",
+
+          type:
+            item.type || "",
+
+          delta:
+            Number(
+              item.delta || 0
+            ),
+
+          oldScore:
+            Number(
+              item.oldScore || 0
+            ),
+
+          newScore:
+            Number(
+              item.newScore || 0
+            ),
+
+          weapon:
+            item.weapon || "",
+
+          reason:
+            item.reason || "",
+
+          admin:
+            item.admin || "",
+
+          createdAt:
+            safeRow(
+              item.createdAt
+            ),
+        })
+      );
+
+    const settingsSheet =
+      [
+        {
+          id: "attendance",
+
+          sonyaPoints:
+            Number(
+              settings.sonyaPoints
+            ),
+
+          geomancerPoints:
+            Number(
+              settings.geomancerPoints
+            ),
+
+          reflectorPoints:
+            Number(
+              settings.reflectorPoints
+            ),
+
+          giantHawkPoints:
+            Number(
+              settings.giantHawkPoints
+            ),
+
+          eligibilityScore:
+            Number(
+              settings.eligibilityScore
+            ),
+
+          updatedAt:
+            safeRow(
+              settings.updatedAt
+            ),
+
+          updatedBy:
+            settings.updatedBy ||
+            "",
+        },
+      ];
 
     const settingsHistorySheet =
-      settingsHistory.map((item) => ({
-        id: item.id,
-        setting: item.setting || "",
-        oldValue: safeRow(item.oldValue),
-        newValue: safeRow(item.newValue),
-        changedBy: item.changedBy || "",
-        changedAt: safeRow(item.changedAt),
-      }));
+      settingsHistory.map(
+        (item) => ({
+          id: item.id,
 
-    const backupInfo = [
-      {
-        exportedAt: new Date().toISOString(),
-        application:
-          "RAN Online EP7 BH Attendance",
-        version: "2.0",
-        players: players.length,
-        attendanceHistory:
-          histories.length,
-        scoreLedger: ledger.length,
-        settingsHistory:
-          settingsHistory.length,
-        raidSchedule: raids.length,
-        restoreMode: "MERGE / UPSERT",
-      },
-    ];
+          setting:
+            item.setting || "",
 
-    const workbook = XLSX.utils.book_new();
+          oldValue:
+            safeRow(
+              item.oldValue
+            ),
+
+          newValue:
+            safeRow(
+              item.newValue
+            ),
+
+          changedBy:
+            item.changedBy ||
+            "",
+
+          changedAt:
+            safeRow(
+              item.changedAt
+            ),
+        })
+      );
+
+    const backupInfo =
+      [
+        {
+          exportedAt:
+            new Date().toISOString(),
+
+          application:
+            "RAN Online EP7 BH Attendance",
+
+          version:
+            "2.1",
+
+          players:
+            players.length,
+
+          attendanceHistory:
+            histories.length,
+
+          scoreLedger:
+            ledger.length,
+
+          settingsHistory:
+            settingsHistory.length,
+
+          raidSchedule:
+            raids.length,
+
+          geomancerSchedule:
+            "Every 10 Hours",
+
+          geomancerCycleSpan:
+            "3 Days / 72 Hours",
+
+          geomancerUpcomingSpawns:
+            "8",
+
+          restoreMode:
+            "MERGE / UPSERT",
+        },
+      ];
+
+    const workbook =
+      XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(playersSheet),
+      XLSX.utils.json_to_sheet(
+        playersSheet
+      ),
       "Players"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(historySheet),
+      XLSX.utils.json_to_sheet(
+        historySheet
+      ),
       "Attendance History"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(ledgerSheet),
+      XLSX.utils.json_to_sheet(
+        ledgerSheet
+      ),
       "Score Ledger"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(settingsSheet),
+      XLSX.utils.json_to_sheet(
+        settingsSheet
+      ),
       "Scoring Settings"
     );
 
@@ -3834,19 +7036,27 @@ export default function App() {
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(raidSchedule),
+      XLSX.utils.json_to_sheet(
+        raidSchedule
+      ),
       "Raid Schedule"
     );
 
     XLSX.utils.book_append_sheet(
       workbook,
-      XLSX.utils.json_to_sheet(backupInfo),
+      XLSX.utils.json_to_sheet(
+        backupInfo
+      ),
       "Backup Info"
     );
 
-    const stamp = new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-");
+    const stamp =
+      new Date()
+        .toISOString()
+        .replace(
+          /[:.]/g,
+          "-"
+        );
 
     XLSX.writeFile(
       workbook,
@@ -3858,281 +7068,557 @@ export default function App() {
      XLSX IMPORT
   ======================================================= */
 
-  async function importFullBackup(file) {
+  async function importFullBackup(
+    file
+  ) {
     if (!isAdmin) {
       throw new Error(
         "Administrator access required."
       );
     }
 
-    const buffer = await file.arrayBuffer();
+    const buffer =
+      await file.arrayBuffer();
 
-    const workbook = XLSX.read(buffer, {
-      type: "array",
-      cellDates: true,
-    });
+    const workbook =
+      XLSX.read(
+        buffer,
+        {
+          type: "array",
+          cellDates: true,
+        }
+      );
 
-    function readSheet(name) {
-      const sheet = workbook.Sheets[name];
+    function readSheet(
+      name
+    ) {
+      const sheet =
+        workbook.Sheets[
+        name
+        ];
 
-      if (!sheet) return [];
+      if (!sheet) {
+        return [];
+      }
 
-      return XLSX.utils.sheet_to_json(sheet, {
-        defval: "",
-      });
+      return XLSX.utils.sheet_to_json(
+        sheet,
+        {
+          defval: "",
+        }
+      );
     }
 
-    const playersRows = readSheet("Players");
-    const historyRows =
-      readSheet("Attendance History");
-    const ledgerRows =
-      readSheet("Score Ledger");
-    const settingsRows =
-      readSheet("Scoring Settings");
-    const settingsHistoryRows =
-      readSheet("Settings History");
-    const raidRows =
-      readSheet("Raid Schedule");
+    const playersRows =
+      readSheet(
+        "Players"
+      );
 
-    /*
-     * Restore in chunks to respect Firestore batch limits.
-     */
+    const historyRows =
+      readSheet(
+        "Attendance History"
+      );
+
+    const ledgerRows =
+      readSheet(
+        "Score Ledger"
+      );
+
+    const settingsRows =
+      readSheet(
+        "Scoring Settings"
+      );
+
+    const settingsHistoryRows =
+      readSheet(
+        "Settings History"
+      );
+
+    const raidRows =
+      readSheet(
+        "Raid Schedule"
+      );
+
     const operations = [];
 
-    playersRows.forEach((row) => {
-      if (!row.id) return;
+    playersRows.forEach(
+      (row) => {
+        if (!row.id) return;
 
-      operations.push({
-        ref: doc(
-          db,
-          "attendancePlayers",
-          String(row.id)
-        ),
-        data: {
-          ign: String(row.ign || ""),
-          class: String(row.class || ""),
-          preferredWeapon: String(
-            row.preferredWeapon || ""
+        operations.push({
+          ref: doc(
+            db,
+            "attendancePlayers",
+            String(row.id)
           ),
-          createdAt:
-            excelDateToJS(row.createdAt)
-              ?.toISOString() ||
-            row.createdAt ||
-            null,
-          updatedAt:
-            excelDateToJS(row.updatedAt)
-              ?.toISOString() ||
-            row.updatedAt ||
-            null,
-          createdBy:
-            String(row.createdBy || ""),
-          updatedBy:
-            String(row.updatedBy || ""),
-        },
-      });
-    });
 
-    historyRows.forEach((row) => {
-      if (!row.id) return;
+          data: {
+            ign:
+              String(
+                row.ign || ""
+              ),
 
-      operations.push({
-        ref: doc(
-          db,
-          "attendanceHistory",
-          String(row.id)
-        ),
-        data: {
-          playerId:
-            String(row.playerId || ""),
-          ign: String(row.ign || ""),
-          bossId: String(row.bossId || ""),
-          bossName: String(
-            row.bossName || ""
-          ),
-          points: Number(row.points || 0),
-          attendanceDate:
-            String(row.attendanceDate || ""),
-          createdAt:
-            excelDateToJS(row.createdAt)
-              ?.toISOString() ||
-            row.createdAt ||
-            null,
-          createdBy:
-            String(row.createdBy || ""),
-        },
-      });
-    });
+            class:
+              String(
+                row.class || ""
+              ),
 
-    ledgerRows.forEach((row) => {
-      if (!row.id) return;
+            preferredWeapon:
+              String(
+                row.preferredWeapon ||
+                ""
+              ),
 
-      operations.push({
-        ref: doc(
-          db,
-          "scoreLedger",
-          String(row.id)
-        ),
-        data: {
-          playerId:
-            String(row.playerId || ""),
-          ign: String(row.ign || ""),
-          type: String(row.type || ""),
-          delta: Number(row.delta || 0),
-          oldScore: Number(
-            row.oldScore || 0
-          ),
-          newScore: Number(
-            row.newScore || 0
-          ),
-          weapon: String(
-            row.weapon || ""
-          ),
-          reason: String(
-            row.reason || ""
-          ),
-          admin: String(
-            row.admin || ""
-          ),
-          createdAt:
-            excelDateToJS(row.createdAt)
-              ?.toISOString() ||
-            row.createdAt ||
-            null,
-        },
-      });
-    });
+            createdAt:
+              excelDateToJS(
+                row.createdAt
+              )?.toISOString() ||
+              row.createdAt ||
+              null,
 
-    settingsHistoryRows.forEach((row) => {
-      if (!row.id) return;
+            updatedAt:
+              excelDateToJS(
+                row.updatedAt
+              )?.toISOString() ||
+              row.updatedAt ||
+              null,
 
-      operations.push({
-        ref: doc(
-          db,
-          "settingsHistory",
-          String(row.id)
-        ),
-        data: {
-          setting: String(
-            row.setting || ""
+            createdBy:
+              String(
+                row.createdBy ||
+                ""
+              ),
+
+            updatedBy:
+              String(
+                row.updatedBy ||
+                ""
+              ),
+          },
+        });
+      }
+    );
+
+    historyRows.forEach(
+      (row) => {
+        if (!row.id) return;
+
+        operations.push({
+          ref: doc(
+            db,
+            "attendanceHistory",
+            String(row.id)
           ),
-          oldValue: row.oldValue,
-          newValue: row.newValue,
-          changedBy: String(
-            row.changedBy || ""
+
+          data: {
+            playerId:
+              String(
+                row.playerId ||
+                ""
+              ),
+
+            ign:
+              String(
+                row.ign || ""
+              ),
+
+            bossId:
+              String(
+                row.bossId || ""
+              ),
+
+            bossName:
+              String(
+                row.bossName ||
+                ""
+              ),
+
+            points:
+              Number(
+                row.points || 0
+              ),
+
+            attendanceDate:
+              String(
+                row.attendanceDate ||
+                ""
+              ),
+
+            createdAt:
+              excelDateToJS(
+                row.createdAt
+              )?.toISOString() ||
+              row.createdAt ||
+              null,
+
+            createdBy:
+              String(
+                row.createdBy ||
+                ""
+              ),
+          },
+        });
+      }
+    );
+
+    ledgerRows.forEach(
+      (row) => {
+        if (!row.id) return;
+
+        operations.push({
+          ref: doc(
+            db,
+            "scoreLedger",
+            String(row.id)
           ),
-          changedAt:
-            excelDateToJS(row.changedAt)
-              ?.toISOString() ||
-            row.changedAt ||
-            null,
-        },
-      });
-    });
+
+          data: {
+            playerId:
+              String(
+                row.playerId ||
+                ""
+              ),
+
+            ign:
+              String(
+                row.ign || ""
+              ),
+
+            type:
+              String(
+                row.type || ""
+              ),
+
+            delta:
+              Number(
+                row.delta || 0
+              ),
+
+            oldScore:
+              Number(
+                row.oldScore || 0
+              ),
+
+            newScore:
+              Number(
+                row.newScore || 0
+              ),
+
+            weapon:
+              String(
+                row.weapon ||
+                ""
+              ),
+
+            reason:
+              String(
+                row.reason ||
+                ""
+              ),
+
+            admin:
+              String(
+                row.admin || ""
+              ),
+
+            createdAt:
+              excelDateToJS(
+                row.createdAt
+              )?.toISOString() ||
+              row.createdAt ||
+              null,
+          },
+        });
+      }
+    );
+
+    settingsHistoryRows.forEach(
+      (row) => {
+        if (!row.id) return;
+
+        operations.push({
+          ref: doc(
+            db,
+            "settingsHistory",
+            String(row.id)
+          ),
+
+          data: {
+            setting:
+              String(
+                row.setting ||
+                ""
+              ),
+
+            oldValue:
+              row.oldValue,
+
+            newValue:
+              row.newValue,
+
+            changedBy:
+              String(
+                row.changedBy ||
+                ""
+              ),
+
+            changedAt:
+              excelDateToJS(
+                row.changedAt
+              )?.toISOString() ||
+              row.changedAt ||
+              null,
+          },
+        });
+      }
+    );
 
     for (
       let start = 0;
-      start < operations.length;
+      start <
+      operations.length;
       start += 450
     ) {
-      const batch = writeBatch(db);
+      const batch =
+        writeBatch(db);
 
       operations
-        .slice(start, start + 450)
-        .forEach((operation) => {
-          batch.set(
-            operation.ref,
-            operation.data,
-            { merge: true }
-          );
-        });
+        .slice(
+          start,
+          start + 450
+        )
+        .forEach(
+          (
+            operation
+          ) => {
+            batch.set(
+              operation.ref,
+              operation.data,
+              {
+                merge: true,
+              }
+            );
+          }
+        );
 
       await batch.commit();
     }
 
-    if (settingsRows.length > 0) {
-      const row = settingsRows[0];
+    if (
+      settingsRows.length >
+      0
+    ) {
+      const row =
+        settingsRows[0];
 
       await setDoc(
-        doc(db, "settings", "attendance"),
+        doc(
+          db,
+          "settings",
+          "attendance"
+        ),
         {
-          sonyaPoints: Number(
-            row.sonyaPoints || 0
-          ),
-          geomancerPoints: Number(
-            row.geomancerPoints || 0
-          ),
-          reflectorPoints: Number(
-            row.reflectorPoints || 0
-          ),
-          giantHawkPoints: Number(
-            row.giantHawkPoints || 0
-          ),
-          eligibilityScore: Number(
-            row.eligibilityScore || 0
-          ),
+          sonyaPoints:
+            Number(
+              row.sonyaPoints ||
+              0
+            ),
+
+          geomancerPoints:
+            Number(
+              row.geomancerPoints ||
+              0
+            ),
+
+          reflectorPoints:
+            Number(
+              row.reflectorPoints ||
+              0
+            ),
+
+          giantHawkPoints:
+            Number(
+              row.giantHawkPoints ||
+              0
+            ),
+
+          eligibilityScore:
+            Number(
+              row.eligibilityScore ||
+              0
+            ),
+
           updatedAt:
-            excelDateToJS(row.updatedAt)
-              ?.toISOString() ||
+            excelDateToJS(
+              row.updatedAt
+            )?.toISOString() ||
             row.updatedAt ||
             null,
+
           updatedBy:
-            String(row.updatedBy || ""),
+            String(
+              row.updatedBy ||
+              ""
+            ),
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
     }
 
-    if (raidRows.length > 0) {
+    /* =====================================================
+       RESTORE RAID SCHEDULE
+    ===================================================== */
+
+    if (
+      raidRows.length >
+      0
+    ) {
       const importedRaids =
-        BOSSES.map((boss) => {
-          const row = raidRows.find(
-            (item) =>
-              String(item.id) ===
-              String(boss.id)
-          );
+        BOSSES.map(
+          (boss) => {
+            const row =
+              raidRows.find(
+                (item) =>
+                  String(
+                    item.id
+                  ) ===
+                  String(
+                    boss.id
+                  )
+              );
 
-          if (!row) {
-            return getDefaultRaid(boss);
-          }
+            if (!row) {
+              return getDefaultRaid(
+                boss
+              );
+            }
 
-          return sanitizeRaid(
+            const importedRaid =
             {
-              id: boss.id,
-              name: row.name,
-              type: row.type,
-              frequency: row.frequency,
+              id:
+                boss.id,
+
+              name:
+                row.name ||
+                boss.name,
+
+              type:
+                row.type ||
+                boss.type,
+
+              frequency:
+                boss.id ===
+                  "geomancer"
+                  ? "Every 10 Hours"
+                  : row.frequency ||
+                  boss.frequency,
+
               day:
-                row.day === ""
+                boss.id ===
+                  "geomancer"
                   ? null
-                  : Number(row.day),
-              hour: Number(row.hour),
-              minute: Number(row.minute),
-              image: row.image || "",
+                  : row.day ===
+                    ""
+                    ? null
+                    : Number(
+                      row.day
+                    ),
+
+              hour:
+                Number.isFinite(
+                  Number(
+                    row.hour
+                  )
+                )
+                  ? Number(
+                    row.hour
+                  )
+                  : boss.defaultHour,
+
+              minute:
+                Number.isFinite(
+                  Number(
+                    row.minute
+                  )
+                )
+                  ? Number(
+                    row.minute
+                  )
+                  : boss.defaultMinute,
+
+              intervalHours:
+                boss.id ===
+                  "geomancer"
+                  ? Number(
+                    row.intervalHours ||
+                    GEOMANCER_INTERVAL_HOURS
+                  )
+                  : undefined,
+
+              anchorDate:
+                boss.id ===
+                  "geomancer"
+                  ? /^\d{4}-\d{2}-\d{2}$/.test(
+                    String(
+                      row.anchorDate ||
+                      ""
+                    )
+                  )
+                    ? String(
+                      row.anchorDate
+                    )
+                    : getTodayPhilippines()
+                  : undefined,
+
+              image:
+                row.image ||
+                boss.image ||
+                "",
+
               updatedAt:
                 excelDateToJS(
                   row.updatedAt
                 )?.toISOString() ||
                 row.updatedAt ||
                 null,
+
               updatedBy:
-                row.updatedBy || "",
-            },
-            boss
-          );
-        });
+                row.updatedBy ||
+                "",
+            };
+
+            return sanitizeRaid(
+              importedRaid,
+              boss
+            );
+          }
+        );
 
       await setDoc(
-        doc(db, "settings", "raidSchedule"),
+        doc(
+          db,
+          "settings",
+          "raidSchedule"
+        ),
         {
-          raiders: importedRaids,
-          raids: importedRaids,
-          updatedAt: serverTimestamp(),
+          raids:
+            importedRaids,
+
+          updatedAt:
+            serverTimestamp(),
+
           updatedBy:
-            auth.currentUser?.email ||
-            auth.currentUser?.uid ||
+            auth.currentUser
+              ?.email ||
+            auth.currentUser
+              ?.uid ||
             "Admin",
         },
-        { merge: true }
+        {
+          merge: true,
+        }
       );
     }
   }
@@ -4144,11 +7630,17 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="loading-screen">
-        <div className="loading-logo">RAN</div>
+        <div className="loading-logo">
+          RAN
+        </div>
+
         <div className="loading-bar">
           <span />
         </div>
-        <p>LOADING DATABASE...</p>
+
+        <p>
+          LOADING DATABASE...
+        </p>
       </div>
     );
   }
@@ -4161,31 +7653,49 @@ export default function App() {
     <div className="app">
       <header className="main-header">
         <div className="brand">
-          <div className="brand-mark">R</div>
+          <div className="brand-mark">
+            R
+          </div>
 
           <div>
-            <strong>RAN EP7</strong>
-            <span>BH ATTENDANCE</span>
+            <strong>
+              RAN EP7
+            </strong>
+
+            <span>
+              BH ATTENDANCE
+            </span>
           </div>
         </div>
 
         <nav className="main-nav">
           <button
             className={
-              page === "raid" ? "nav-active" : ""
+              page === "raid"
+                ? "nav-active"
+                : ""
             }
-            onClick={() => setPage("raid")}
+            onClick={() =>
+              setPage(
+                "raid"
+              )
+            }
           >
             RAID SCHEDULE
           </button>
 
           <button
             className={
-              page === "attendance"
+              page ===
+                "attendance"
                 ? "nav-active"
                 : ""
             }
-            onClick={() => setPage("attendance")}
+            onClick={() =>
+              setPage(
+                "attendance"
+              )
+            }
           >
             ATTENDANCE
           </button>
@@ -4193,11 +7703,16 @@ export default function App() {
           {isAdmin && (
             <button
               className={
-                page === "admin"
+                page ===
+                  "admin"
                   ? "nav-active"
                   : ""
               }
-              onClick={() => setPage("admin")}
+              onClick={() =>
+                setPage(
+                  "admin"
+                )
+              }
             >
               ADMIN
             </button>
@@ -4213,7 +7728,11 @@ export default function App() {
 
               <button
                 className="logout-button"
-                onClick={() => signOut(auth)}
+                onClick={() =>
+                  signOut(
+                    auth
+                  )
+                }
               >
                 LOG OUT
               </button>
@@ -4221,7 +7740,11 @@ export default function App() {
           ) : (
             <button
               className="admin-login-button"
-              onClick={() => setShowLogin(true)}
+              onClick={() =>
+                setShowLogin(
+                  true
+                )
+              }
             >
               ADMIN LOGIN
             </button>
@@ -4230,85 +7753,175 @@ export default function App() {
       </header>
 
       <main>
-        {page === "raid" && (
-          <RaidPage
-            raids={raids}
-            timezone={timezone}
-            onTimezoneChange={handleTimezoneChange}
-            onEdit={setRaidEditor}
-          />
-        )}
+        {page ===
+          "raid" && (
+            <RaidPage
+              raids={
+                raids
+              }
+              timezone={
+                timezone
+              }
+              onTimezoneChange={
+                handleTimezoneChange
+              }
+              onEdit={
+                setRaidEditor
+              }
+            />
+          )}
 
-        {page === "attendance" && (
-          <AttendancePage
-            players={players}
-            histories={histories}
-            ledger={ledger}
-            settings={settings}
-            isAdmin={isAdmin}
-            onAddPlayer={() =>
-              setPlayerEditor({ mode: "new" })
-            }
-            onEditPlayer={(player) =>
-              setPlayerEditor(player)
-            }
-            onDeletePlayer={deletePlayerProfile}
-            onPurgePlayer={completelyPurgeIgn}
-            onHistory={setHistoryPlayer}
-            onClaim={setClaimPlayer}
-            onOverride={setOverridePlayer}
-          />
-        )}
+        {page ===
+          "attendance" && (
+            <AttendancePage
+              players={
+                players
+              }
+              histories={
+                histories
+              }
+              ledger={
+                ledger
+              }
+              settings={
+                settings
+              }
+              isAdmin={
+                isAdmin
+              }
+              onAddPlayer={() =>
+                setPlayerEditor(
+                  {
+                    mode: "new",
+                  }
+                )
+              }
+              onEditPlayer={(
+                player
+              ) =>
+                setPlayerEditor(
+                  player
+                )
+              }
+              onDeletePlayer={
+                deletePlayerProfile
+              }
+              onPurgePlayer={
+                completelyPurgeIgn
+              }
+              onHistory={
+                setHistoryPlayer
+              }
+              onClaim={
+                setClaimPlayer
+              }
+              onOverride={
+                setOverridePlayer
+              }
+            />
+          )}
 
-        {page === "admin" && isAdmin && (
-          <AdminPage
-            players={players}
-            histories={histories}
-            ledger={ledger}
-            settings={settings}
-            settingsHistory={settingsHistory}
-            user={user}
-            onAddPlayer={() =>
-              setPlayerEditor({ mode: "new" })
-            }
-            onEditPlayer={(player) =>
-              setPlayerEditor(player)
-            }
-            onHistory={setHistoryPlayer}
-            onClaim={setClaimPlayer}
-            onOverride={setOverridePlayer}
-            onPurgePlayer={completelyPurgeIgn}
-            onDeletePlayer={deletePlayerProfile}
-            onSaveSettings={saveSettings}
-            onExport={exportFullBackup}
-            onImport={importFullBackup}
-          />
-        )}
+        {page ===
+          "admin" &&
+          isAdmin && (
+            <AdminPage
+              players={
+                players
+              }
+              histories={
+                histories
+              }
+              ledger={
+                ledger
+              }
+              settings={
+                settings
+              }
+              settingsHistory={
+                settingsHistory
+              }
+              user={
+                user
+              }
+              onAddPlayer={() =>
+                setPlayerEditor(
+                  {
+                    mode: "new",
+                  }
+                )
+              }
+              onEditPlayer={(
+                player
+              ) =>
+                setPlayerEditor(
+                  player
+                )
+              }
+              onHistory={
+                setHistoryPlayer
+              }
+              onClaim={
+                setClaimPlayer
+              }
+              onOverride={
+                setOverridePlayer
+              }
+              onPurgePlayer={
+                completelyPurgeIgn
+              }
+              onDeletePlayer={
+                deletePlayerProfile
+              }
+              onSaveSettings={
+                saveSettings
+              }
+              onExport={
+                exportFullBackup
+              }
+              onImport={
+                importFullBackup
+              }
+            />
+          )}
       </main>
 
       <footer className="main-footer">
         <div>
-          <strong>RAN ONLINE EP7 BH ATTENDANCE</strong>
+          <strong>
+            RAN ONLINE EP7 BH ATTENDANCE
+          </strong>
+
           <span>
-            Attendance • Raid Schedule • Scoring
+            Attendance • Raid
+            Schedule • Scoring
           </span>
         </div>
 
         <span>
-          © {new Date().getFullYear()} BH Guild
+          ©{" "}
+          {new Date().getFullYear()}{" "}
+          BH Guild
         </span>
       </footer>
 
       {showLogin && (
         <AdminLogin
-          onClose={() => setShowLogin(false)}
+          onClose={() =>
+            setShowLogin(false)
+          }
         />
       )}
 
       {raidEditor && (
         <RaidEditor
-          raid={raidEditor}
-          onClose={() => setRaidEditor(null)}
+          raid={
+            raidEditor
+          }
+          onClose={() =>
+            setRaidEditor(
+              null
+            )
+          }
           onSaved={() => { }}
         />
       )}
@@ -4316,32 +7929,49 @@ export default function App() {
       {playerEditor && (
         <PlayerFormModal
           player={
-            playerEditor.mode === "new"
+            playerEditor.mode ===
+              "new"
               ? null
               : playerEditor
           }
-          onClose={() => setPlayerEditor(null)}
+          onClose={() =>
+            setPlayerEditor(
+              null
+            )
+          }
           onSaved={() => { }}
         />
       )}
 
       {historyPlayer && (
         <PlayerHistoryModal
-          player={historyPlayer}
-          histories={histories}
-          ledger={ledger}
+          player={
+            historyPlayer
+          }
+          histories={
+            histories
+          }
+          ledger={
+            ledger
+          }
           score={getPlayerScore(
             historyPlayer,
             histories,
             ledger
           )}
-          onClose={() => setHistoryPlayer(null)}
+          onClose={() =>
+            setHistoryPlayer(
+              null
+            )
+          }
         />
       )}
 
       {claimPlayer && (
         <ClaimModal
-          player={claimPlayer}
+          player={
+            claimPlayer
+          }
           currentScore={getPlayerScore(
             claimPlayer,
             histories,
@@ -4350,20 +7980,28 @@ export default function App() {
           eligibilityScore={Number(
             settings.eligibilityScore
           )}
-          onClose={() => setClaimPlayer(null)}
+          onClose={() =>
+            setClaimPlayer(
+              null
+            )
+          }
         />
       )}
 
       {overridePlayer && (
         <OverrideModal
-          player={overridePlayer}
+          player={
+            overridePlayer
+          }
           currentScore={getPlayerScore(
             overridePlayer,
             histories,
             ledger
           )}
           onClose={() =>
-            setOverridePlayer(null)
+            setOverridePlayer(
+              null
+            )
           }
         />
       )}

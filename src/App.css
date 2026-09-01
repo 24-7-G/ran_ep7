@@ -2631,3 +2631,406 @@ tbody tr:last-child td {
     font-size: 13px;
   }
 }
+
+/* =========================================================
+   GEOMANCER 10-HOUR CYCLE
+========================================================= */
+
+.geomancer-cycle-info {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.geomancer-cycle-info span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.geomancer-cycle-info strong {
+  display: block;
+  margin-top: 5px;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.geomancer-cycle-editor {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg,
+      rgba(30, 41, 59, 0.9),
+      rgba(15, 23, 42, 0.95));
+}
+
+.geomancer-cycle-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.geomancer-cycle-heading>div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.geomancer-cycle-heading span {
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.geomancer-cycle-heading strong {
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.geomancer-cycle-badge {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 999px;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.1);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.geomancer-cycle-description {
+  margin: 0 0 16px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.geomancer-occurrence-label {
+  margin-top: 16px;
+}
+
+.geomancer-cycle-list {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+
+.geomancer-cycle-list-title {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #64748b;
+  background: rgba(2, 6, 23, 0.5);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+}
+
+.geomancer-cycle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.geomancer-cycle-row:last-child {
+  border-bottom: 0;
+}
+
+.geomancer-cycle-row>span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.geomancer-cycle-row strong {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .geomancer-cycle-editor {
+    padding: 14px;
+  }
+
+  .geomancer-cycle-heading {
+    align-items: flex-start;
+  }
+
+  .geomancer-cycle-heading strong {
+    font-size: 13px;
+  }
+
+  .geomancer-cycle-row strong {
+    font-size: 11px;
+  }
+}
+
+/* =========================================================
+   GEOMANCER PUBLIC 3-DAY SCHEDULE
+========================================================= */
+
+.geomancer-cycle {
+  margin-top: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.geomancer-cycle summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.geomancer-cycle summary:hover {
+  background: rgba(96, 165, 250, 0.07);
+}
+
+.geomancer-cycle summary::-webkit-details-marker {
+  display: none;
+}
+
+.geomancer-cycle summary::after {
+  content: "▼";
+  color: #60a5fa;
+  font-size: 13px;
+  transition: transform 0.2s ease;
+}
+
+.geomancer-cycle[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.geomancer-summary-text {
+  min-width: 0;
+}
+
+.geomancer-cycle summary span {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+}
+
+.geomancer-cycle summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.geomancer-cycle-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.geomancer-cycle-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.geomancer-cycle-item:hover {
+  background: rgba(96, 165, 250, 0.07);
+}
+
+.geomancer-cycle-item.next-spawn {
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.geomancer-cycle-number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  background: rgba(96, 165, 250, 0.13);
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.geomancer-cycle-time {
+  min-width: 0;
+  flex: 1;
+}
+
+.geomancer-cycle-time strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.geomancer-cycle-time small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.geomancer-next-badge {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+/* =========================================================
+   GEOMANCER EDITOR
+========================================================= */
+
+.geomancer-cycle-editor {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.geomancer-cycle-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.geomancer-cycle-heading span {
+  display: block;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.geomancer-cycle-heading strong {
+  display: block;
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.geomancer-cycle-badge {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.geomancer-cycle-description {
+  margin: 12px 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.geomancer-occurrence-label {
+  margin-top: 14px;
+}
+
+.geomancer-cycle-list-title {
+  margin-bottom: 7px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.geomancer-cycle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  margin-top: 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.geomancer-cycle-row span {
+  width: 25px;
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.geomancer-cycle-row strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 600px) {
+  .geomancer-cycle summary {
+    padding: 12px;
+  }
+
+  .geomancer-cycle-item {
+    padding: 9px;
+  }
+
+  .geomancer-cycle-time strong {
+    font-size: 12px;
+  }
+
+  .geomancer-cycle-time small {
+    font-size: 9px;
+  }
+
+  .geomancer-next-badge {
+    display: none;
+  }
+
+  .geomancer-cycle-heading {
+    align-items: flex-start;
+  }
+}
