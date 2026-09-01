@@ -1,68 +1,256 @@
-
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
-import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
-  orderBy,
-  query,
   serverTimestamp,
   setDoc,
-  updateDoc,
-  addDoc,
+  writeBatch,
 } from "firebase/firestore";
-
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-
 import * as XLSX from "xlsx";
 
-import {
-  auth,
-  db,
-} from "./firebase";
+import { auth, db } from "./firebase";
+import "./App.css";
 
-/* ============================================================
+/* =========================================================
    CONSTANTS
-============================================================ */
+========================================================= */
 
 const PH_TIMEZONE = "Asia/Manila";
 
-const TIMEZONES = [
-  ["America/Los_Angeles", "Seattle / Los Angeles", "🇺🇸"],
-  ["America/Denver", "Denver", "🇺🇸"],
-  ["America/Chicago", "Chicago", "🇺🇸"],
-  ["America/New_York", "New York", "🇺🇸"],
-  ["America/Vancouver", "Vancouver", "🇨🇦"],
-  ["America/Toronto", "Toronto", "🇨🇦"],
-  ["Asia/Tokyo", "Japan", "🇯🇵"],
-  ["Asia/Seoul", "South Korea", "🇰🇷"],
-  ["Asia/Singapore", "Singapore", "🇸🇬"],
-  ["Asia/Hong_Kong", "Hong Kong", "🇭🇰"],
-  ["Asia/Taipei", "Taiwan", "🇹🇼"],
-  ["Asia/Bangkok", "Thailand", "🇹🇭"],
-  ["Asia/Ho_Chi_Minh", "Vietnam", "🇻🇳"],
-  ["Asia/Kolkata", "India", "🇮🇳"],
-  ["Asia/Dubai", "Dubai", "🇦🇪"],
-  ["Australia/Sydney", "Sydney", "🇦🇺"],
-  ["Australia/Perth", "Perth", "🇦🇺"],
-  ["Pacific/Auckland", "New Zealand", "🇳🇿"],
-  ["Europe/London", "London", "🇬🇧"],
-  ["Europe/Paris", "Paris", "🇫🇷"],
-  ["Europe/Berlin", "Berlin", "🇩🇪"],
+const TIMEZONE_OPTIONS = [
+  {
+    value: "auto",
+    label: "Automatic — My Browser",
+  },
+  {
+    value: "Asia/Manila",
+    label: "Philippines — Manila",
+  },
+  {
+    value: "America/Los_Angeles",
+    label: "US Pacific — Los Angeles / Seattle",
+  },
+  {
+    value: "America/Denver",
+    label: "US Mountain — Denver",
+  },
+  {
+    value: "America/Chicago",
+    label: "US Central — Chicago",
+  },
+  {
+    value: "America/New_York",
+    label: "US Eastern — New York",
+  },
+  {
+    value: "America/Anchorage",
+    label: "US Alaska — Anchorage",
+  },
+  {
+    value: "Pacific/Honolulu",
+    label: "US Hawaii — Honolulu",
+  },
+  {
+    value: "Asia/Tokyo",
+    label: "Japan — Tokyo",
+  },
+  {
+    value: "Asia/Seoul",
+    label: "South Korea — Seoul",
+  },
+  {
+    value: "Asia/Singapore",
+    label: "Singapore",
+  },
+  {
+    value: "Asia/Hong_Kong",
+    label: "Hong Kong",
+  },
+  {
+    value: "Australia/Sydney",
+    label: "Australia — Sydney",
+  },
+  {
+    value: "Europe/London",
+    label: "United Kingdom — London",
+  },
+  {
+    value: "Europe/Paris",
+    label: "Central Europe — Paris",
+  },
+  {
+    value: "UTC",
+    label: "UTC",
+  },
 ];
 
-const CLASSES = [
+function getBrowserTimezone() {
+  try {
+    return (
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+      "UTC"
+    );
+  } catch {
+    return "UTC";
+  }
+}
+
+function getStoredTimezone() {
+  try {
+    return (
+      localStorage.getItem(
+        "ranAttendanceTimezone"
+      ) || "auto"
+    );
+  } catch {
+    return "auto";
+  }
+}
+
+function saveTimezonePreference(timezone) {
+  try {
+    localStorage.setItem(
+      "ranAttendanceTimezone",
+      timezone
+    );
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+function getDisplayTimezone(selectedTimezone) {
+  if (
+    !selectedTimezone ||
+    selectedTimezone === "auto"
+  ) {
+    return getBrowserTimezone();
+  }
+
+  return selectedTimezone;
+}
+
+function getTimezoneLabel(selectedTimezone) {
+  if (selectedTimezone === "auto") {
+    return `Automatic — ${getBrowserTimezone()}`;
+  }
+
+  const option = TIMEZONE_OPTIONS.find(
+    (item) => item.value === selectedTimezone
+  );
+
+  return option?.label || selectedTimezone;
+}
+
+function formatRaidDateTime(value, timezone) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
+function formatRaidTime(value, timezone) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
+function formatRaidDateOnly(value, timezone) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+const BOSSES = [
+  {
+    id: "sonya",
+    name: "Sonya",
+    type: "BOSS RAID",
+    frequency: "Every Wednesday",
+    day: 3,
+    pointsKey: "sonyaPoints",
+    defaultHour: 21,
+    defaultMinute: 0,
+    image: "",
+  },
+  {
+    id: "geomancer",
+    name: "Geomancer",
+    type: "MINI BOSS",
+    frequency: "Every Day",
+    day: null,
+    pointsKey: "geomancerPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image: "",
+  },
+  {
+    id: "reflector",
+    name: "Reflector",
+    type: "MINI BOSS",
+    frequency: "Every Day",
+    day: null,
+    pointsKey: "reflectorPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image:
+      "https://www.deviantart.com/michaelxgamingph/art/Reflector-01-Ran-Online-1026072917",
+  },
+  {
+    id: "giantHawk",
+    name: "Giant Hawk",
+    type: "MINI BOSS",
+    frequency: "Every Day",
+    day: null,
+    pointsKey: "giantHawkPoints",
+    defaultHour: 12,
+    defaultMinute: 0,
+    image:
+      "https://www.deviantart.com/michaelxgamingph/art/Giant-Hawk-Ran-Online-PH-01-982873311",
+  },
+];
+
+const DEFAULT_SETTINGS = {
+  sonyaPoints: 1,
+  geomancerPoints: 0.2,
+  reflectorPoints: 0.2,
+  giantHawkPoints: 0.2,
+  eligibilityScore: 6,
+};
+
+const CLASS_OPTIONS = [
   "Swordman",
   "Archer",
   "Gunner",
@@ -71,2967 +259,900 @@ const CLASSES = [
   "Brawler",
 ];
 
-const DEFAULT_RAIDS = [
-  {
-    id: "sonya",
-    name: "Sonya",
-    type: "BOSS RAID",
-    schedule: "Every Wednesday",
-    day: 3,
-    hour: 21,
-    minute: 0,
-    updatedAt: null,
-  },
-  {
-    id: "geomancer",
-    name: "Geomancer",
-    type: "MINI BOSS",
-    schedule: "Every Day",
-    day: null,
-    hour: 12,
-    minute: 0,
-    updatedAt: null,
-  },
-  {
-    id: "reflector",
-    name: "Reflector",
-    type: "MINI BOSS",
-    schedule: "Every Day",
-    day: null,
-    hour: 12,
-    minute: 0,
-    updatedAt: null,
-  },
-  {
-    id: "giant-hawk",
-    name: "Giant Hawk",
-    type: "MINI BOSS",
-    schedule: "Every Day",
-    day: null,
-    hour: 12,
-    minute: 0,
-    updatedAt: null,
-  },
+const WEAPON_OPTIONS = [
+
 ];
 
-const DEFAULT_SETTINGS = {
-  sonyaPoints: 1,
-  miniBossPoints: 0.2,
-  eligibilityScore: 6,
-};
+/* =========================================================
+   HELPERS
+========================================================= */
 
-/* ============================================================
-   TIME HELPERS
-============================================================ */
-
-function getLocalTimezone() {
-  return (
-    Intl.DateTimeFormat().resolvedOptions().timeZone ||
-    "America/Los_Angeles"
-  );
+function normalizeIgn(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
-function getTimezoneLabel(timezone) {
-  const found = TIMEZONES.find(
-    ([zone]) => zone === timezone
-  );
-
-  return found ? found[1] : timezone;
+function roundScore(value) {
+  const n = Number(value || 0);
+  return Math.round(n * 100) / 100;
 }
 
-function getTimezoneFlag(timezone) {
-  const found = TIMEZONES.find(
-    ([zone]) => zone === timezone
-  );
-
-  return found ? found[2] : "🌎";
+function formatScore(value) {
+  return roundScore(value).toFixed(2).replace(/\.00$/, "");
 }
 
-function pad(value) {
-  return String(value).padStart(2, "0");
-}
+function timestampToDate(value) {
+  if (!value) return null;
 
-function get12Hour(hour) {
-  if (hour === 0) return 12;
-  if (hour > 12) return hour - 12;
-  return hour;
-}
-
-function getPeriod(hour) {
-  return hour >= 12 ? "PM" : "AM";
-}
-
-function to24Hour(hour, period) {
-  let h = Number(hour);
-
-  if (!Number.isFinite(h)) {
-    h = 12;
+  if (value?.toDate) {
+    return value.toDate();
   }
 
-  h = Math.max(
-    1,
-    Math.min(12, Math.trunc(h))
-  );
-
-  if (period === "AM") {
-    return h === 12 ? 0 : h;
+  if (value instanceof Date) {
+    return value;
   }
 
-  return h === 12 ? 12 : h + 12;
-}
-
-function getTimezoneOffset(timezone, date) {
-  const parts =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hourCycle: "h23",
-      }
-    ).formatToParts(date);
-
-  const values = {};
-
-  parts.forEach((part) => {
-    if (part.type !== "literal") {
-      values[part.type] = Number(part.value);
-    }
-  });
-
-  const asUTC = Date.UTC(
-    values.year,
-    values.month - 1,
-    values.day,
-    values.hour,
-    values.minute,
-    values.second
-  );
-
-  return Math.round(
-    (asUTC - date.getTime()) / 60000
-  );
-}
-
-function philippinesDateToUTC(
-  year,
-  month,
-  day,
-  hour,
-  minute
-) {
-  let guess = new Date(
-    Date.UTC(
-      year,
-      month - 1,
-      day,
-      hour,
-      minute,
-      0
-    )
-  );
-
-  for (let i = 0; i < 4; i++) {
-    const offset =
-      getTimezoneOffset(
-        PH_TIMEZONE,
-        guess
-      );
-
-    guess = new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day,
-        hour,
-        minute,
-        0
-      ) -
-        offset * 60000
-    );
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  return guess;
+  if (typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
 }
 
-function getTodayPhilippines() {
-  const parts =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: PH_TIMEZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }
-    ).formatToParts(new Date());
+function formatDateTime(value) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
+function formatDateOnly(value) {
+  const date = timestampToDate(value);
+
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(date);
+}
+
+function formatTime12(hour24, minute) {
+  let h = Number(hour24);
+  const m = Number(minute);
+
+  if (!Number.isFinite(h) || !Number.isFinite(m)) {
+    return "—";
+  }
+
+  h = ((h % 24) + 24) % 24;
+
+  const period = h >= 12 ? "PM" : "AM";
+
+  let h12 = h % 12;
+
+  if (h12 === 0) {
+    h12 = 12;
+  }
+
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+function normalize12HourTo24(hour12, minute, period) {
+  let h = parseInt(hour12, 10);
+  const m = parseInt(minute, 10);
+
+  if (!Number.isFinite(h) || h < 1 || h > 12) {
+    throw new Error("Hour must be between 1 and 12.");
+  }
+
+  if (!Number.isFinite(m) || m < 0 || m > 59) {
+    throw new Error("Minute must be between 0 and 59.");
+  }
+
+  h = h % 12;
+
+  if (String(period).toUpperCase() === "PM") {
+    h += 12;
+  }
+
+  return {
+    hour: h,
+    minute: m,
+  };
+}
+
+function from24Hour(hour24) {
+  const h = Number(hour24) || 0;
+
+  return {
+    hour: String(h % 12 || 12),
+    period: h >= 12 ? "PM" : "AM",
+  };
+}
+
+function getPhilippinesDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PH_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
 
   const result = {};
 
   parts.forEach((part) => {
     if (part.type !== "literal") {
-      result[part.type] = Number(part.value);
+      result[part.type] = part.value;
+    }
+  });
+
+  return {
+    year: Number(result.year),
+    month: Number(result.month),
+    day: Number(result.day),
+    hour: Number(result.hour),
+    minute: Number(result.minute),
+  };
+}
+
+function getTodayPhilippines() {
+  const p = getPhilippinesDateParts();
+
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(
+    p.day
+  ).padStart(2, "0")}`;
+}
+
+/*
+  Philippines is UTC+8 year-round.
+*/
+function philippinesDateToUTC(year, month, day, hour, minute) {
+  return new Date(
+    Date.UTC(year, month - 1, day, hour, minute) - 8 * 60 * 60 * 1000
+  );
+}
+
+function getNextRaidOccurrence(raid) {
+  const now = new Date();
+  const today = getPhilippinesDateParts(now);
+
+  const base = new Date(
+    Date.UTC(today.year, today.month - 1, today.day)
+  );
+
+  for (let i = 0; i <= 14; i++) {
+    const candidate = new Date(base);
+    candidate.setUTCDate(candidate.getUTCDate() + i);
+
+    const year = candidate.getUTCFullYear();
+    const month = candidate.getUTCMonth() + 1;
+    const day = candidate.getUTCDate();
+    const weekday = candidate.getUTCDay();
+
+    if (raid.day !== null && raid.day !== weekday) {
+      continue;
+    }
+
+    const occurrence = philippinesDateToUTC(
+      year,
+      month,
+      day,
+      Number(raid.hour || 0),
+      Number(raid.minute || 0)
+    );
+
+    if (occurrence > now) {
+      return occurrence;
+    }
+  }
+
+  return null;
+}
+
+function getDefaultRaid(boss) {
+  return {
+    id: boss.id,
+    name: boss.name,
+    type: boss.type,
+    frequency: boss.frequency,
+    day: boss.day,
+    hour: boss.defaultHour,
+    minute: boss.defaultMinute,
+    image: boss.image || "",
+    updatedAt: null,
+    updatedBy: "",
+  };
+}
+
+function sanitizeRaid(raid, boss) {
+  return {
+    id: boss.id,
+    name: boss.name,
+    type: boss.type,
+    frequency: raid?.frequency || boss.frequency,
+    day:
+      raid?.day === null || raid?.day === undefined
+        ? boss.day
+        : Number(raid.day),
+    hour: Number.isFinite(Number(raid?.hour))
+      ? Number(raid.hour)
+      : boss.defaultHour,
+    minute: Number.isFinite(Number(raid?.minute))
+      ? Number(raid.minute)
+      : boss.defaultMinute,
+    image: raid?.image || boss.image || "",
+    updatedAt: raid?.updatedAt || null,
+    updatedBy: raid?.updatedBy || "",
+  };
+}
+
+function safeRow(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (value?.toDate) {
+    return value.toDate().toISOString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return value;
+}
+
+function excelDateToJS(value) {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return new Date(
+      Date.UTC(1899, 11, 30) + value * 24 * 60 * 60 * 1000
+    );
+  }
+
+  if (typeof value === "string") {
+    const d = new Date(value);
+
+    if (!Number.isNaN(d.getTime())) {
+      return d;
+    }
+  }
+
+  return null;
+}
+
+function convertFirestoreObjectForImport(obj) {
+  const result = { ...obj };
+
+  Object.keys(result).forEach((key) => {
+    const value = result[key];
+
+    if (
+      key.toLowerCase().includes("at") ||
+      key.toLowerCase().includes("date")
+    ) {
+      const parsed = excelDateToJS(value);
+
+      if (parsed) {
+        result[key] = parsed.toISOString();
+      }
     }
   });
 
   return result;
 }
 
-function getNextOccurrence(raid) {
-  const today = getTodayPhilippines();
+/* =========================================================
+   MODAL
+========================================================= */
 
-  let {
-    year,
-    month,
-    day,
-  } = today;
-
-  if (raid.day === null) {
-    const todayOccurrence =
-      philippinesDateToUTC(
-        year,
-        month,
-        day,
-        Number(raid.hour),
-        Number(raid.minute)
-      );
-
-    if (
-      todayOccurrence.getTime() >=
-      Date.now()
-    ) {
-      return todayOccurrence;
-    }
-
-    return philippinesDateToUTC(
-      year,
-      month,
-      day + 1,
-      Number(raid.hour),
-      Number(raid.minute)
-    );
-  }
-
-  const todayUTC = new Date(
-    Date.UTC(
-      year,
-      month - 1,
-      day
-    )
-  );
-
-  const currentDay =
-    todayUTC.getUTCDay();
-
-  let daysUntil =
-    Number(raid.day) - currentDay;
-
-  if (daysUntil < 0) {
-    daysUntil += 7;
-  }
-
-  let occurrence =
-    philippinesDateToUTC(
-      year,
-      month,
-      day + daysUntil,
-      Number(raid.hour),
-      Number(raid.minute)
-    );
-
-  if (
-    occurrence.getTime() <
-    Date.now()
-  ) {
-    occurrence =
-      philippinesDateToUTC(
-        year,
-        month,
-        day + daysUntil + 7,
-        Number(raid.hour),
-        Number(raid.minute)
-      );
-  }
-
-  return occurrence;
-}
-
-function convertRaidTime(
-  raid,
-  timezone
-) {
-  const utcDate =
-    getNextOccurrence(raid);
-
-  const dateString =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone,
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }
-    ).format(utcDate);
-
-  const timeString =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone,
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      }
-    ).format(utcDate);
-
-  const day =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone,
-        weekday: "long",
-      }
-    ).format(utcDate);
-
-  return {
-    date: dateString,
-    time: timeString,
-    day,
-  };
-}
-
-function getPhilippinesDisplay(raid) {
-  return `${get12Hour(
-    Number(raid.hour)
-  )}:${pad(
-    Number(raid.minute)
-  )} ${getPeriod(
-    Number(raid.hour)
-  )}`;
-}
-
-function formatTimestamp(value) {
-  if (!value) return "—";
-
-  let date;
-
-  if (
-    typeof value?.toDate ===
-    "function"
-  ) {
-    date = value.toDate();
-  } else {
-    date = new Date(value);
-  }
-
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return date.toLocaleString();
-}
-
-function getDateKey() {
-  const parts =
-    new Intl.DateTimeFormat(
-      "en-CA",
-      {
-        timeZone: PH_TIMEZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }
-    ).formatToParts(new Date());
-
-  const values = {};
-
-  parts.forEach((part) => {
-    if (part.type !== "literal") {
-      values[part.type] = part.value;
-    }
-  });
-
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-/* ============================================================
-   LOGIN
-============================================================ */
-
-function AdminLogin() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function login(event) {
-    event.preventDefault();
-
-    setError("");
-    setLoading(true);
-
-    try {
-      await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password
-      );
-    } catch (err) {
-      console.error(err);
-
-      let message =
-        "Invalid admin login.";
-
-      if (
-        err.code ===
-        "auth/invalid-credential"
-      ) {
-        message =
-          "Invalid email or password.";
-      }
-
-      if (
-        err.code ===
-        "auth/user-not-found"
-      ) {
-        message =
-          "Admin account does not exist.";
-      }
-
-      if (
-        err.code ===
-        "auth/wrong-password"
-      ) {
-        message =
-          "Incorrect password.";
-      }
-
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function Modal({ title, children, onClose, wide = false }) {
   return (
-    <div className="login-screen">
-      <form
-        className="login-card"
-        onSubmit={login}
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div
+        className={`modal-card ${wide ? "modal-wide" : ""}`}
+        onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="eyebrow">
-          RAN ONLINE EP7
-        </div>
-
-        <h1>
-          Attendance
-          <span> Admin</span>
-        </h1>
-
-        <p>
-          Administrator access is required
-          to modify attendance records.
-        </p>
-
-        <label>
-          EMAIL
-          <input
-            type="email"
-            value={email}
-            onChange={(e) =>
-              setEmail(e.target.value)
-            }
-            autoComplete="username"
-            required
-          />
-        </label>
-
-        <label>
-          PASSWORD
-          <input
-            type="password"
-            value={password}
-            onChange={(e) =>
-              setPassword(e.target.value)
-            }
-            autoComplete="current-password"
-            required
-          />
-        </label>
-
-        {error && (
-          <div className="error-message">
-            {error}
+        <div className="modal-header">
+          <div>
+            <div className="modal-kicker">ADMIN PANEL</div>
+            <h2>{title}</h2>
           </div>
-        )}
 
-        <button
-          className="primary-button full"
-          disabled={loading}
-        >
-          {loading
-            ? "SIGNING IN..."
-            : "ADMIN LOGIN"}
-        </button>
-
-        <div className="login-note">
-          Firebase admin authentication.
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
         </div>
-      </form>
+
+        <div className="modal-body">{children}</div>
+      </div>
     </div>
   );
 }
 
-/* ============================================================
-   RAID CARD
-   PUBLIC EDITING
-============================================================ */
-
-function RaidCard({
-  raid,
-  targetTimezone,
-  onUpdate,
-}) {
-  const converted = useMemo(
-    () =>
-      convertRaidTime(
-        raid,
-        targetTimezone
-      ),
-    [raid, targetTimezone]
-  );
-
-  const [
-    hourInput,
-    setHourInput,
-  ] = useState(
-    String(
-      get12Hour(
-        Number(raid.hour)
-      )
-    ).padStart(2, "0")
-  );
-
-  const [
-    minuteInput,
-    setMinuteInput,
-  ] = useState(
-    String(
-      Number(raid.minute)
-    ).padStart(2, "0")
-  );
-
-  const [
-    period,
-    setPeriod,
-  ] = useState(
-    getPeriod(
-      Number(raid.hour)
-    )
-  );
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState("");
-
-  useEffect(() => {
-    setHourInput(
-      String(
-        get12Hour(
-          Number(raid.hour)
-        )
-      ).padStart(2, "0")
-    );
-
-    setMinuteInput(
-      String(
-        Number(raid.minute)
-      ).padStart(2, "0")
-    );
-
-    setPeriod(
-      getPeriod(
-        Number(raid.hour)
-      )
-    );
-  }, [
-    raid.hour,
-    raid.minute,
-  ]);
-
-  async function save() {
-    let h = Number(hourInput);
-    let m = Number(minuteInput);
-
-    if (!Number.isFinite(h)) h = 12;
-    if (!Number.isFinite(m)) m = 0;
-
-    h = Math.max(
-      1,
-      Math.min(12, Math.trunc(h))
-    );
-
-    m = Math.max(
-      0,
-      Math.min(59, Math.trunc(m))
-    );
-
-    const updatedRaid = {
-      ...raid,
-      hour: to24Hour(
-        h,
-        period
-      ),
-      minute: m,
-      updatedAt:
-        new Date().toISOString(),
-    };
-
-    setSaving(true);
-    setMessage("");
-
-    try {
-      await onUpdate(
-        raid.id,
-        updatedRaid
-      );
-
-      setMessage(
-        "Raid time saved."
-      );
-    } catch (error) {
-      console.error(error);
-
-      setMessage(
-        "Unable to save raid time. Check your Firebase Firestore rules."
-      );
-    } finally {
-      setSaving(false);
-
-      setTimeout(
-        () => setMessage(""),
-        3000
-      );
-    }
-  }
-
-  return (
-    <article className="raid-card">
-      <div className="boss-art">
-        <div className="tbd">
-          {raid.name}
-        </div>
-
-        <div className="boss-art-bottom">
-          RAN ONLINE EP7
-        </div>
-      </div>
-
-      <div className="raid-main">
-        <div className="raid-type">
-          {raid.type}
-        </div>
-
-        <h2>{raid.name}</h2>
-
-        <div className="raid-frequency">
-          {raid.schedule}
-        </div>
-
-        <div className="conversion-grid">
-          <div className="time-panel">
-            <div className="panel-label">
-              🇵🇭 PHILIPPINES
-              <small>RAID TIME</small>
-            </div>
-
-            <div className="big-time">
-              {getPhilippinesDisplay(
-                raid
-              )}
-            </div>
-
-            <div className="time-sub">
-              Asia / Manila
-            </div>
-          </div>
-
-          <div className="time-panel local">
-            <div className="panel-label">
-              {getTimezoneFlag(
-                targetTimezone
-              )}{" "}
-              YOUR LOCAL TIME
-              <small>CONVERTED</small>
-            </div>
-
-            <div className="big-time">
-              {converted.time}
-            </div>
-
-            <div className="time-sub">
-              {getTimezoneLabel(
-                targetTimezone
-              )}{" "}
-              •{" "}
-              {converted.day}
-            </div>
-          </div>
-        </div>
-
-        <div className="edit-area">
-          <div className="edit-label">
-            EDIT PHILIPPINES RAID TIME
-            <small>
-              No login required
-            </small>
-          </div>
-
-          <div className="edit-controls">
-            <div className="number-control">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={hourInput}
-                onChange={(e) => {
-                  const value =
-                    e.target.value.replace(
-                      /\D/g,
-                      ""
-                    );
-
-                  if (
-                    value.length <= 2
-                  ) {
-                    setHourInput(
-                      value
-                    );
-                  }
-                }}
-              />
-
-              <span>:</span>
-
-              <input
-                type="text"
-                inputMode="numeric"
-                value={minuteInput}
-                onChange={(e) => {
-                  const value =
-                    e.target.value.replace(
-                      /\D/g,
-                      ""
-                    );
-
-                  if (
-                    value.length <= 2
-                  ) {
-                    setMinuteInput(
-                      value
-                    );
-                  }
-                }}
-              />
-
-              <select
-                value={period}
-                onChange={(e) =>
-                  setPeriod(
-                    e.target.value
-                  )
-                }
-              >
-                <option value="AM">
-                  AM
-                </option>
-
-                <option value="PM">
-                  PM
-                </option>
-              </select>
-            </div>
-
-            <button
-              className="primary-button"
-              onClick={save}
-              disabled={saving}
-            >
-              {saving
-                ? "SAVING..."
-                : "SAVE"}
-            </button>
-          </div>
-
-          {message && (
-            <div className="raid-save-message">
-              {message}
-            </div>
-          )}
-
-          <div className="raid-updated">
-            <strong>
-              LAST UPDATED
-            </strong>
-
-            <span>
-              {formatTimestamp(
-                raid.updatedAt
-              )}
-            </span>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-/* ============================================================
-   RAID PAGE
-============================================================ */
-
-function RaidPage({
-  raids,
-  onUpdateRaid,
-}) {
-  const localTimezone =
-    getLocalTimezone();
-
-  const [
-    customLocations,
-    setCustomLocations,
-  ] = useState(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem(
-          "ran-bh-locations"
-        ) || "[]"
-      );
-    } catch {
-      return [];
-    }
-  });
-
-  const [
-    selectedLocation,
-    setSelectedLocation,
-  ] = useState("");
-
-  function addLocation() {
-    if (
-      !selectedLocation ||
-      customLocations.includes(
-        selectedLocation
-      )
-    ) {
-      return;
-    }
-
-    const next = [
-      ...customLocations,
-      selectedLocation,
-    ];
-
-    setCustomLocations(next);
-
-    localStorage.setItem(
-      "ran-bh-locations",
-      JSON.stringify(next)
-    );
-
-    setSelectedLocation("");
-  }
-
-  function removeLocation(zone) {
-    const next =
-      customLocations.filter(
-        (x) => x !== zone
-      );
-
-    setCustomLocations(next);
-
-    localStorage.setItem(
-      "ran-bh-locations",
-      JSON.stringify(next)
-    );
-  }
-
-  return (
-    <main className="page">
-      <div className="notice">
-        <div className="notice-icon">
-          🇵🇭
-        </div>
-
-        <div>
-          <strong>
-            All raid schedules use
-            Philippines time.
-          </strong>
-
-          <span>
-            Anyone can update the raid
-            schedule. No login required.
-          </span>
-        </div>
-      </div>
-
-      <div className="section-heading">
-        <div>
-          <div className="section-label">
-            BOSS HUNT
-          </div>
-
-          <h2>
-            Raid Schedule
-          </h2>
-
-          <p className="subtext">
-            Each boss has its own last
-            updated timestamp.
-          </p>
-        </div>
-      </div>
-
-      <div className="raid-list">
-        {raids.map((raid) => (
-          <RaidCard
-            key={raid.id}
-            raid={raid}
-            targetTimezone={
-              localTimezone
-            }
-            onUpdate={
-              onUpdateRaid
-            }
-          />
-        ))}
-      </div>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <div className="section-label">
-              OPTIONAL
-            </div>
-
-            <h2>
-              Custom Raid Locations
-            </h2>
-
-            <p>
-              Add additional locations to
-              compare the raid schedule.
-            </p>
-          </div>
-
-          <div className="location-add">
-            <select
-              value={
-                selectedLocation
-              }
-              onChange={(e) =>
-                setSelectedLocation(
-                  e.target.value
-                )
-              }
-            >
-              <option value="">
-                Select location
-              </option>
-
-              {TIMEZONES.map(
-                ([
-                  zone,
-                  name,
-                  flag,
-                ]) => (
-                  <option
-                    key={zone}
-                    value={zone}
-                  >
-                    {flag} {name}
-                  </option>
-                )
-              )}
-            </select>
-
-            <button
-              className="secondary-button"
-              onClick={
-                addLocation
-              }
-            >
-              + ADD
-            </button>
-          </div>
-        </div>
-
-        <div className="location-list">
-          {customLocations.map(
-            (zone) => (
-              <div
-                className="location-chip"
-                key={zone}
-              >
-                <span>
-                  {getTimezoneFlag(
-                    zone
-                  )}
-                </span>
-
-                <div>
-                  <strong>
-                    {getTimezoneLabel(
-                      zone
-                    )}
-                  </strong>
-
-                  <small>
-                    {zone}
-                  </small>
-                </div>
-
-                <button
-                  onClick={() =>
-                    removeLocation(
-                      zone
-                    )
-                  }
-                >
-                  ×
-                </button>
-              </div>
-            )
-          )}
-        </div>
-      </section>
-
-      {customLocations.length >
-        0 && (
-        <section className="panel">
-          <div className="section-label">
-            CUSTOM VIEW
-          </div>
-
-          <h2>
-            Raid Times by Location
-          </h2>
-
-          <div className="table-scroll">
-            <table className="schedule-table">
-              <thead>
-                <tr>
-                  <th>BOSS</th>
-                  <th>
-                    🇵🇭 PHILIPPINES
-                  </th>
-
-                  {customLocations.map(
-                    (zone) => (
-                      <th key={zone}>
-                        {
-                          getTimezoneFlag(
-                            zone
-                          )
-                        }{" "}
-                        {
-                          getTimezoneLabel(
-                            zone
-                          )
-                        }
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-
-              <tbody>
-                {raids.map(
-                  (raid) => (
-                    <tr
-                      key={
-                        raid.id
-                      }
-                    >
-                      <td>
-                        <strong>
-                          {
-                            raid.name
-                          }
-                        </strong>
-
-                        <small>
-                          {
-                            raid.schedule
-                          }
-                        </small>
-                      </td>
-
-                      <td>
-                        <strong>
-                          {getPhilippinesDisplay(
-                            raid
-                          )}
-                        </strong>
-                      </td>
-
-                      {customLocations.map(
-                        (zone) => {
-                          const converted =
-                            convertRaidTime(
-                              raid,
-                              zone
-                            );
-
-                          return (
-                            <td
-                              key={
-                                zone
-                              }
-                            >
-                              <strong>
-                                {
-                                  converted.time
-                                }
-                              </strong>
-
-                              <small>
-                                {
-                                  converted.day
-                                }
-                              </small>
-                            </td>
-                          );
-                        }
-                      )}
-                    </tr>
-                  )
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-    </main>
-  );
-}
-
-/* ============================================================
-   ATTENDANCE
-============================================================ */
-
-function AttendancePage({
-  players,
-  history,
-  settings,
-  admin,
-  onAddPlayer,
-  onUpdatePlayer,
-  onDeletePlayer,
-  onAddAttendance,
-  onDeleteHistory,
-}) {
-  const [search, setSearch] =
-    useState("");
-
-  const [classFilter, setClassFilter] =
-    useState("");
-
-  const [weaponFilter, setWeaponFilter] =
-    useState("");
-
-  const [claimFilter, setClaimFilter] =
-    useState("");
-
-  const [selectedPlayer, setSelectedPlayer] =
-    useState(null);
-
-  const [selectedBosses, setSelectedBosses] =
-    useState([]);
-
-  const [showLogin, setShowLogin] =
-    useState(false);
-
-  const [newIGN, setNewIGN] =
-    useState("");
-
-  const [newClass, setNewClass] =
-    useState("Swordman");
-
-  const [newWeapon, setNewWeapon] =
-    useState("");
-
-  const [message, setMessage] =
-    useState("");
-
-  const [
-    sonyaPoints,
-    setSonyaPoints,
-  ] = useState(
-    String(settings.sonyaPoints)
-  );
-
-  const [
-    miniPoints,
-    setMiniPoints,
-  ] = useState(
-    String(settings.miniBossPoints)
-  );
-
-  const [
-    eligibility,
-    setEligibility,
-  ] = useState(
-    String(
-      settings.eligibilityScore
-    )
-  );
-
-  useEffect(() => {
-    setSonyaPoints(
-      String(settings.sonyaPoints)
-    );
-
-    setMiniPoints(
-      String(settings.miniBossPoints)
-    );
-
-    setEligibility(
-      String(
-        settings.eligibilityScore
-      )
-    );
-  }, [settings]);
-
-  /* ----------------------------------------------------------
-     WEAPON LIST
-  ---------------------------------------------------------- */
-
-  const availableWeapons =
-    useMemo(() => {
-      const values =
-        players
-          .map(
-            (player) =>
-              player.weapon
-          )
-          .filter(Boolean)
-          .map((weapon) =>
-            String(
-              weapon
-            ).trim()
-          )
-          .filter(Boolean);
-
-      return [
-        ...new Set(values),
-      ].sort((a, b) =>
-        a.localeCompare(b)
-      );
-    }, [players]);
-
-  /* ----------------------------------------------------------
-     FILTERED PLAYERS
-  ---------------------------------------------------------- */
-
-  const filteredPlayers =
-    useMemo(() => {
-      const term =
-        search
-          .trim()
-          .toLowerCase();
-
-      return players.filter(
-        (player) => {
-          if (
-            term &&
-            !String(
-              player.ign || ""
-            )
-              .toLowerCase()
-              .includes(term)
-          ) {
-            return false;
-          }
-
-          if (
-            classFilter &&
-            player.className !==
-              classFilter
-          ) {
-            return false;
-          }
-
-          if (
-            weaponFilter &&
-            player.weapon !==
-              weaponFilter
-          ) {
-            return false;
-          }
-
-          const eligible =
-            Number(
-              player.totalScore || 0
-            ) >=
-            Number(
-              settings.eligibilityScore
-            );
-
-          if (
-            claimFilter ===
-            "eligible" &&
-            !eligible
-          ) {
-            return false;
-          }
-
-          if (
-            claimFilter ===
-            "not-eligible" &&
-            eligible
-          ) {
-            return false;
-          }
-
-          return true;
-        }
-      );
-    }, [
-      players,
-      search,
-      classFilter,
-      weaponFilter,
-      claimFilter,
-      settings,
-    ]);
-
-  function selectPlayer(player) {
-    setSelectedPlayer(player);
-    setSelectedBosses([]);
-  }
-
-  function toggleBoss(id) {
-    setSelectedBosses(
-      (current) =>
-        current.includes(id)
-          ? current.filter(
-              (x) => x !== id
-            )
-          : [
-              ...current,
-              id,
-            ]
-    );
-  }
-
-  /* ----------------------------------------------------------
-     SAVE ATTENDANCE
-  ---------------------------------------------------------- */
-
-  async function saveAttendance() {
-    if (
-      !admin ||
-      !selectedPlayer ||
-      selectedBosses.length ===
-        0
-    ) {
-      return;
-    }
-
-    const bosses =
-      selectedBosses.map(
-        (id) => {
-          const boss =
-            DEFAULT_RAIDS.find(
-              (x) =>
-                x.id === id
-            );
-
-          const points =
-            id === "sonya"
-              ? Number(
-                  settings.sonyaPoints
-                )
-              : Number(
-                  settings.miniBossPoints
-                );
-
-          return {
-            id,
-            name:
-              boss?.name || id,
-            points,
-          };
-        }
-      );
-
-    const points =
-      bosses.reduce(
-        (sum, boss) =>
-          sum +
-          Number(
-            boss.points
-          ),
-        0
-      );
-
-    try {
-      await onAddAttendance(
-        selectedPlayer,
-        bosses,
-        points
-      );
-
-      setSelectedBosses([]);
-
-      setMessage(
-        `${selectedPlayer.ign} attendance saved. +${points.toFixed(
-          2
-        )} points.`
-      );
-    } catch (error) {
-      console.error(error);
-
-      setMessage(
-        "Unable to save attendance."
-      );
-    }
-
-    setTimeout(
-      () => setMessage(""),
-      3000
-    );
-  }
-
-  /* ----------------------------------------------------------
-     ADD PLAYER
-  ---------------------------------------------------------- */
-
-  async function addPlayer() {
-    if (!admin) return;
-
-    const ign =
-      newIGN.trim();
-
-    if (!ign) return;
-
-    try {
-      await onAddPlayer({
-        ign,
-        className: newClass,
-        weapon: newWeapon.trim(),
-      });
-
-      setNewIGN("");
-      setNewWeapon("");
-
-      setMessage(
-        `${ign} added successfully.`
-      );
-    } catch (error) {
-      console.error(error);
-
-      setMessage(
-        "Unable to add player."
-      );
-    }
-
-    setTimeout(
-      () => setMessage(""),
-      3000
-    );
-  }
-
-  /* ----------------------------------------------------------
-     SETTINGS
-  ---------------------------------------------------------- */
-
-  async function saveSettings() {
-    if (!admin) return;
-
-    const values = {
-      sonyaPoints:
-        Number(sonyaPoints),
-      miniBossPoints:
-        Number(miniPoints),
-      eligibilityScore:
-        Number(eligibility),
-    };
-
-    if (
-      !Number.isFinite(
-        values.sonyaPoints
-      ) ||
-      !Number.isFinite(
-        values.miniBossPoints
-      ) ||
-      !Number.isFinite(
-        values.eligibilityScore
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await setDoc(
-        doc(
-          db,
-          "settings",
-          "attendance"
-        ),
-        {
-          ...values,
-          updatedAt:
-            serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
-
-      setMessage(
-        "Attendance settings saved."
-      );
-    } catch (error) {
-      console.error(error);
-
-      setMessage(
-        "Unable to save settings."
-      );
-    }
-
-    setTimeout(
-      () => setMessage(""),
-      3000
-    );
-  }
-
-  /* ----------------------------------------------------------
-     EXPORT
-  ---------------------------------------------------------- */
-
-  function exportXLSX() {
-    const playerRows =
-      players.map(
-        (player) => ({
-          IGN: player.ign,
-          Class:
-            player.className,
-          "Preferred Weapon":
-            player.weapon,
-          Score: Number(
-            player.totalScore || 0
-          ),
-          Eligible:
-            Number(
-              player.totalScore || 0
-            ) >=
-            Number(
-              settings.eligibilityScore
-            )
-              ? "YES"
-              : "NO",
-          "Last Updated":
-            formatTimestamp(
-              player.updatedAt
-            ),
-        })
-      );
-
-    const historyRows =
-      history.map(
-        (item) => ({
-          IGN: item.ign,
-          Date: item.dateKey,
-          Bosses:
-            item.bosses
-              ?.map(
-                (b) =>
-                  b.name
-              )
-              .join(", "),
-          Points: Number(
-            item.points || 0
-          ),
-          "Recorded At":
-            formatTimestamp(
-              item.createdAt
-            ),
-        })
-      );
-
-    const wb =
-      XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(
-        playerRows
-      ),
-      "Attendance"
-    );
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(
-        historyRows
-      ),
-      "History"
-    );
-
-    XLSX.writeFile(
-      wb,
-      `RAN_EP7_Attendance_Backup_${getDateKey()}.xlsx`
-    );
-  }
-
-  /* ----------------------------------------------------------
-     IMPORT
-  ---------------------------------------------------------- */
-
-  async function importXLSX(event) {
-    if (!admin) return;
-
-    const file =
-      event.target.files?.[0];
-
-    if (!file) return;
-
-    try {
-      const buffer =
-        await file.arrayBuffer();
-
-      const workbook =
-        XLSX.read(buffer, {
-          type: "array",
-        });
-
-      const sheet =
-        workbook.Sheets[
-          "Attendance"
-        ] ||
-        workbook.Sheets[
-          workbook.SheetNames[0]
-        ];
-
-      if (!sheet) return;
-
-      const rows =
-        XLSX.utils.sheet_to_json(
-          sheet
-        );
-
-      for (const row of rows) {
-        const ign =
-          String(
-            row.IGN || ""
-          ).trim();
-
-        if (!ign) continue;
-
-        const existing =
-          players.find(
-            (p) =>
-              String(
-                p.ign || ""
-              ).toLowerCase() ===
-              ign.toLowerCase()
-          );
-
-        const score =
-          Number(
-            row.Score || 0
-          );
-
-        const data = {
-          ign,
-          className:
-            String(
-              row.Class || ""
-            ),
-          weapon:
-            String(
-              row[
-                "Preferred Weapon"
-              ] || ""
-            ),
-          totalScore:
-            Number.isFinite(score)
-              ? score
-              : 0,
-          updatedAt:
-            serverTimestamp(),
-        };
-
-        if (existing) {
-          await updateDoc(
-            doc(
-              db,
-              "attendancePlayers",
-              existing.id
-            ),
-            data
-          );
-        } else {
-          await addDoc(
-            collection(
-              db,
-              "attendancePlayers"
-            ),
-            {
-              ...data,
-              createdAt:
-                serverTimestamp(),
-            }
-          );
-        }
-      }
-
-      event.target.value = "";
-
-      setMessage(
-        "XLSX attendance backup imported."
-      );
-    } catch (error) {
-      console.error(error);
-
-      setMessage(
-        "Unable to import XLSX."
-      );
-    }
-
-    setTimeout(
-      () => setMessage(""),
-      3000
-    );
-  }
-
-  const selectedHistory =
-    selectedPlayer
-      ? history.filter(
-          (item) =>
-            item.playerId ===
-            selectedPlayer.id
-        )
-      : [];
-
-  return (
-    <main className="page attendance-page">
-      <div className="page-title-row">
-        <div>
-          <div className="section-label">
-            BH ATTENDANCE
-          </div>
-
-          <h2>
-            Attendance Sheet
-          </h2>
-
-          <p>
-            {admin
-              ? "Administrator mode • attendance changes are protected by Firebase."
-              : "View-only mode • only administrators can modify attendance."}
-          </p>
-        </div>
-
-        <div className="admin-actions">
-          {admin ? (
-            <>
-              <span className="admin-badge">
-                🔐 ADMIN
-              </span>
-
-              <button
-                className="secondary-button"
-                onClick={() =>
-                  signOut(auth)
-                }
-              >
-                LOGOUT
-              </button>
-            </>
-          ) : (
-            <button
-              className="primary-button"
-              onClick={() =>
-                setShowLogin(true)
-              }
-            >
-              ADMIN LOGIN
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="score-summary">
-        <div>
-          <span>PLAYERS</span>
-          <strong>
-            {players.length}
-          </strong>
-        </div>
-
-        <div>
-          <span>ELIGIBLE</span>
-          <strong>
-            {
-              players.filter(
-                (p) =>
-                  Number(
-                    p.totalScore || 0
-                  ) >=
-                  Number(
-                    settings.eligibilityScore
-                  )
-              ).length
-            }
-          </strong>
-        </div>
-
-        <div>
-          <span>SONYA</span>
-          <strong>
-            {settings.sonyaPoints}
-          </strong>
-        </div>
-
-        <div>
-          <span>MINI BOSS</span>
-          <strong>
-            {
-              settings.miniBossPoints
-            }
-          </strong>
-        </div>
-
-        <div>
-          <span>REQUIRED</span>
-          <strong>
-            {
-              settings.eligibilityScore
-            }
-          </strong>
-        </div>
-      </div>
-
-      {/* ======================================================
-          ADMIN ADD PLAYER
-      ====================================================== */}
-
-      {admin && (
-        <section className="panel attendance-form">
-          <div className="panel-heading">
-            <div>
-              <div className="section-label">
-                ADMIN
-              </div>
-
-              <h3>
-                Add IGN
-              </h3>
-
-              <p>
-                Add the player first, then
-                record attendance.
-              </p>
-            </div>
-          </div>
-
-          <div className="form-grid compact">
-            <label>
-              IGN
-              <input
-                value={newIGN}
-                onChange={(e) =>
-                  setNewIGN(
-                    e.target.value
-                  )
-                }
-                placeholder="Player IGN"
-              />
-            </label>
-
-            <label>
-              CLASS
-              <select
-                value={newClass}
-                onChange={(e) =>
-                  setNewClass(
-                    e.target.value
-                  )
-                }
-              >
-                {CLASSES.map(
-                  (item) => (
-                    <option
-                      key={item}
-                      value={item}
-                    >
-                      {item}
-                    </option>
-                  )
-                )}
-              </select>
-            </label>
-
-            <label>
-              PREFERRED WEAPON
-              <input
-                list="weapon-options"
-                value={newWeapon}
-                onChange={(e) =>
-                  setNewWeapon(
-                    e.target.value
-                  )
-                }
-                placeholder="Type or select weapon"
-              />
-
-              <datalist id="weapon-options">
-                {availableWeapons.map(
-                  (weapon) => (
-                    <option
-                      key={weapon}
-                      value={weapon}
-                    />
-                  )
-                )}
-              </datalist>
-            </label>
-
-            <button
-              className="primary-button"
-              onClick={
-                addPlayer
-              }
-            >
-              + ADD IGN
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ======================================================
-          SETTINGS
-      ====================================================== */}
-
-      {admin && (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <div className="section-label">
-                SETTINGS
-              </div>
-
-              <h3>
-                Attendance Points
-              </h3>
-            </div>
-          </div>
-
-          <div className="settings-grid">
-            <label>
-              SONYA POINTS
-              <input
-                type="number"
-                step="0.1"
-                value={sonyaPoints}
-                onChange={(e) =>
-                  setSonyaPoints(
-                    e.target.value
-                  )
-                }
-              />
-            </label>
-
-            <label>
-              MINI BOSS POINTS
-              <input
-                type="number"
-                step="0.1"
-                value={miniPoints}
-                onChange={(e) =>
-                  setMiniPoints(
-                    e.target.value
-                  )
-                }
-              />
-            </label>
-
-            <label>
-              ELIGIBILITY SCORE
-              <input
-                type="number"
-                step="0.1"
-                value={eligibility}
-                onChange={(e) =>
-                  setEligibility(
-                    e.target.value
-                  )
-                }
-              />
-            </label>
-
-            <button
-              className="primary-button"
-              onClick={
-                saveSettings
-              }
-            >
-              SAVE SETTINGS
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ======================================================
-          RECORD ATTENDANCE
-      ====================================================== */}
-
-      <section className="attendance-entry panel">
-        <div className="panel-heading">
-          <div>
-            <div className="section-label">
-              RECORD ATTENDANCE
-            </div>
-
-            <h3>
-              Find Player
-            </h3>
-
-            <p>
-              Search the attendance table,
-              select an IGN, choose bosses,
-              then save.
-            </p>
-          </div>
-        </div>
-
-        <div className="filter-grid">
-          <input
-            value={search}
-            onChange={(e) =>
-              setSearch(
-                e.target.value
-              )
-            }
-            placeholder="Search IGN..."
-          />
-
-          <select
-            value={classFilter}
-            onChange={(e) =>
-              setClassFilter(
-                e.target.value
-              )
-            }
-          >
-            <option value="">
-              All Classes
-            </option>
-
-            {CLASSES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={weaponFilter}
-            onChange={(e) =>
-              setWeaponFilter(
-                e.target.value
-              )
-            }
-          >
-            <option value="">
-              All Weapons
-            </option>
-
-            {availableWeapons.map(
-              (weapon) => (
-                <option
-                  key={weapon}
-                  value={weapon}
-                >
-                  {weapon}
-                </option>
-              )
-            )}
-          </select>
-
-          <select
-            value={claimFilter}
-            onChange={(e) =>
-              setClaimFilter(
-                e.target.value
-              )
-            }
-          >
-            <option value="">
-              All Eligibility
-            </option>
-
-            <option value="eligible">
-              Eligible
-            </option>
-
-            <option value="not-eligible">
-              Not Eligible
-            </option>
-          </select>
-        </div>
-
-        {/* TABLE */}
-        <div className="table-scroll">
-          <table className="attendance-table record-table">
-            <thead>
-              <tr>
-                <th>IGN</th>
-                <th>CLASS</th>
-                <th>WEAPON</th>
-                <th>SCORE</th>
-                <th>CLAIM</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredPlayers.map(
-                (player) => (
-                  <tr
-                    key={
-                      player.id
-                    }
-                    className={
-                      selectedPlayer?.id ===
-                      player.id
-                        ? "selected-row"
-                        : ""
-                    }
-                    onClick={() =>
-                      selectPlayer(
-                        player
-                      )
-                    }
-                  >
-                    <td>
-                      <strong>
-                        {
-                          player.ign
-                        }
-                      </strong>
-                    </td>
-
-                    <td>
-                      {
-                        player.className
-                      }
-                    </td>
-
-                    <td>
-                      {
-                        player.weapon ||
-                        "—"
-                      }
-                    </td>
-
-                    <td>
-                      <strong>
-                        {Number(
-                          player.totalScore ||
-                            0
-                        ).toFixed(
-                          2
-                        )}
-                      </strong>
-                    </td>
-
-                    <td>
-                      {Number(
-                        player.totalScore ||
-                          0
-                      ) >=
-                      Number(
-                        settings.eligibilityScore
-                      ) ? (
-                        <span className="eligible-badge small">
-                          ✓ ELIGIBLE
-                        </span>
-                      ) : (
-                        <span className="not-eligible">
-                          NOT YET
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              )}
-
-              {filteredPlayers.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="empty-table"
-                  >
-                    No players found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* SELECTED PLAYER */}
-        {selectedPlayer && (
-          <div className="attendance-selector">
-            <div className="selected-player">
-              <div>
-                <span>
-                  SELECTED IGN
-                </span>
-
-                <strong>
-                  {
-                    selectedPlayer.ign
-                  }
-                </strong>
-
-                <small>
-                  {
-                    selectedPlayer.className
-                  }{" "}
-                  •{" "}
-                  {
-                    selectedPlayer.weapon ||
-                    "No weapon"
-                  }
-                </small>
-              </div>
-
-              <div className="score-large">
-                {Number(
-                  selectedPlayer.totalScore ||
-                    0
-                ).toFixed(2)}
-
-                {Number(
-                  selectedPlayer.totalScore ||
-                    0
-                ) >=
-                  Number(
-                    settings.eligibilityScore
-                  ) && (
-                  <small>
-                    SONYA WEAPON ELIGIBLE
-                  </small>
-                )}
-              </div>
-            </div>
-
-            <div className="boss-check-grid">
-              {DEFAULT_RAIDS.map(
-                (boss) => {
-                  const checked =
-                    selectedBosses.includes(
-                      boss.id
-                    );
-
-                  const points =
-                    boss.id ===
-                    "sonya"
-                      ? settings.sonyaPoints
-                      : settings.miniBossPoints;
-
-                  return (
-                    <label
-                      className={`boss-check ${
-                        checked
-                          ? "checked"
-                          : ""
-                      }`}
-                      key={
-                        boss.id
-                      }
-                    >
-                      <input
-                        type="checkbox"
-                        checked={
-                          checked
-                        }
-                        disabled={!admin}
-                        onChange={() =>
-                          toggleBoss(
-                            boss.id
-                          )
-                        }
-                      />
-
-                      <span className="check-box">
-                        {checked
-                          ? "✓"
-                          : ""}
-                      </span>
-
-                      <span>
-                        <strong>
-                          {
-                            boss.name
-                          }
-                        </strong>
-
-                        <small>
-                          +
-                          {Number(
-                            points
-                          ).toFixed(
-                            2
-                          )}{" "}
-                          points
-                        </small>
-                      </span>
-                    </label>
-                  );
-                }
-              )}
-            </div>
-
-            <div className="save-attendance-row">
-              <div>
-                <span>
-                  THIS SAVE
-                </span>
-
-                <strong>
-                  +
-                  {selectedBosses
-                    .reduce(
-                      (
-                        total,
-                        id
-                      ) =>
-                        total +
-                        (id ===
-                        "sonya"
-                          ? Number(
-                              settings.sonyaPoints
-                            )
-                          : Number(
-                              settings.miniBossPoints
-                            )),
-                      0
-                    )
-                    .toFixed(2)}
-                </strong>
-              </div>
-
-              {admin ? (
-                <button
-                  className="primary-button"
-                  disabled={
-                    selectedBosses.length ===
-                    0
-                  }
-                  onClick={
-                    saveAttendance
-                  }
-                >
-                  SAVE ATTENDANCE
-                </button>
-              ) : (
-                <span className="public-note">
-                  Login required to
-                  record attendance.
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* ======================================================
-          PLAYER HISTORY
-      ====================================================== */}
-
-      {selectedPlayer && (
-        <section className="panel history-panel">
-          <div className="panel-heading">
-            <div>
-              <div className="section-label">
-                PLAYER HISTORY
-              </div>
-
-              <h3>
-                {
-                  selectedPlayer.ign
-                }
-              </h3>
-
-              <p>
-                Every attendance save is
-                stored permanently in
-                Firestore.
-              </p>
-            </div>
-          </div>
-
-          <div className="table-scroll">
-            <table className="history-table">
-              <thead>
-                <tr>
-                  <th>DATE</th>
-                  <th>BOSSES</th>
-                  <th>POINTS</th>
-                  <th>RECORDED</th>
-
-                  {admin && (
-                    <th>ACTION</th>
-                  )}
-                </tr>
-              </thead>
-
-              <tbody>
-                {selectedHistory.length ===
-                0 ? (
-                  <tr>
-                    <td
-                      colSpan={
-                        admin ? 5 : 4
-                      }
-                      className="empty-table"
-                    >
-                      No attendance
-                      history yet.
-                    </td>
-                  </tr>
-                ) : (
-                  selectedHistory.map(
-                    (item) => (
-                      <tr
-                        key={
-                          item.id
-                        }
-                      >
-                        <td>
-                          {
-                            item.dateKey
-                          }
-                        </td>
-
-                        <td>
-                          {item.bosses
-                            ?.map(
-                              (
-                                b
-                              ) =>
-                                b.name
-                            )
-                            .join(
-                              ", "
-                            )}
-                        </td>
-
-                        <td className="points-cell">
-                          +
-                          {Number(
-                            item.points ||
-                              0
-                          ).toFixed(
-                            2
-                          )}
-                        </td>
-
-                        <td>
-                          {formatTimestamp(
-                            item.createdAt
-                          )}
-                        </td>
-
-                        {admin && (
-                          <td>
-                            <button
-                              className="danger-button"
-                              onClick={() =>
-                                onDeleteHistory(
-                                  item.id,
-                                  selectedPlayer.id
-                                )
-                              }
-                            >
-                              DELETE
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    )
-                  )
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* ======================================================
-          DATABASE
-      ====================================================== */}
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <div className="section-label">
-              ATTENDANCE DATABASE
-            </div>
-
-            <h3>
-              Current Scores
-            </h3>
-
-            <p>
-              Administrators can edit player
-              information directly.
-            </p>
-          </div>
-
-          {admin && (
-            <div className="backup-actions">
-              <button
-                className="secondary-button"
-                onClick={
-                  exportXLSX
-                }
-              >
-                EXPORT XLSX
-              </button>
-
-              <label className="secondary-button file-button">
-                IMPORT XLSX
-
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={
-                    importXLSX
-                  }
-                  hidden
-                />
-              </label>
-            </div>
-          )}
-        </div>
-
-        <div className="table-scroll">
-          <table className="attendance-table">
-            <thead>
-              <tr>
-                <th>IGN</th>
-                <th>CLASS</th>
-                <th>WEAPON</th>
-                <th>SCORE</th>
-                <th>CLAIM</th>
-                <th>LAST UPDATED</th>
-
-                {admin && (
-                  <th>ACTIONS</th>
-                )}
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredPlayers.map(
-                (player) => (
-                  <AttendanceRow
-                    key={
-                      player.id
-                    }
-                    player={
-                      player
-                    }
-                    admin={
-                      admin
-                    }
-                    eligibility={
-                      settings.eligibilityScore
-                    }
-                    availableWeapons={
-                      availableWeapons
-                    }
-                    onSelect={
-                      selectPlayer
-                    }
-                    onUpdate={
-                      onUpdatePlayer
-                    }
-                    onDelete={
-                      onDeletePlayer
-                    }
-                  />
-                )
-              )}
-
-              {filteredPlayers.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={
-                      admin ? 7 : 6
-                    }
-                    className="empty-table"
-                  >
-                    No players found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {message && (
-        <div className="success-message">
-          ✓ {message}
-        </div>
-      )}
-
-      {showLogin && (
-        <LoginModal
-          onClose={() =>
-            setShowLogin(false)
-          }
-        />
-      )}
-    </main>
-  );
-}
-
-/* ============================================================
-   ATTENDANCE ROW
-============================================================ */
-
-function AttendanceRow({
-  player,
-  admin,
-  eligibility,
-  availableWeapons,
-  onSelect,
-  onUpdate,
-  onDelete,
-}) {
-  const [ign, setIgn] =
-    useState(player.ign);
-
-  const [className, setClassName] =
-    useState(
-      player.className
-    );
-
-  const [weapon, setWeapon] =
-    useState(
-      player.weapon || ""
-    );
-
-  useEffect(() => {
-    setIgn(player.ign);
-
-    setClassName(
-      player.className
-    );
-
-    setWeapon(
-      player.weapon || ""
-    );
-  }, [
-    player.ign,
-    player.className,
-    player.weapon,
-  ]);
-
-  async function save() {
-    const cleanIGN =
-      ign.trim();
-
-    if (!cleanIGN) return;
-
-    await onUpdate(
-      player.id,
-      {
-        ign: cleanIGN,
-        className,
-        weapon:
-          weapon.trim(),
-      }
-    );
-  }
-
-  const score =
-    Number(
-      player.totalScore || 0
-    );
-
-  const eligible =
-    score >=
-    Number(eligibility);
-
-  return (
-    <tr>
-      <td>
-        {admin ? (
-          <input
-            className="table-input ign-input"
-            value={ign}
-            onChange={(e) =>
-              setIgn(
-                e.target.value
-              )
-            }
-          />
-        ) : (
-          <button
-            className="ign-link"
-            onClick={() =>
-              onSelect(
-                player
-              )
-            }
-          >
-            {player.ign}
-          </button>
-        )}
-      </td>
-
-      <td>
-        {admin ? (
-          <select
-            className="table-select"
-            value={className}
-            onChange={(e) =>
-              setClassName(
-                e.target.value
-              )
-            }
-          >
-            {CLASSES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
-        ) : (
-          player.className
-        )}
-      </td>
-
-      <td>
-        {admin ? (
-          <>
-            <input
-              className="table-input"
-              list={`weapon-list-${player.id}`}
-              value={weapon}
-              onChange={(e) =>
-                setWeapon(
-                  e.target.value
-                )
-              }
-              placeholder="Type or select"
-            />
-
-            <datalist
-              id={`weapon-list-${player.id}`}
-            >
-              {availableWeapons.map(
-                (item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  />
-                )
-              )}
-            </datalist>
-          </>
-        ) : (
-          player.weapon ||
-          "—"
-        )}
-      </td>
-
-      <td>
-        <strong className="score-value">
-          {score.toFixed(2)}
-        </strong>
-      </td>
-
-      <td>
-        {eligible ? (
-          <span className="eligible-badge small">
-            ✓ ELIGIBLE
-          </span>
-        ) : (
-          <span className="not-eligible">
-            NOT YET
-          </span>
-        )}
-      </td>
-
-      <td className="updated-cell">
-        {formatTimestamp(
-          player.updatedAt
-        )}
-      </td>
-
-      {admin && (
-        <td>
-          <div className="row-actions">
-            <button
-              className="mini-button"
-              onClick={
-                save
-              }
-            >
-              SAVE
-            </button>
-
-            <button
-              className="danger-button"
-              onClick={() =>
-                onDelete(
-                  player.id
-                )
-              }
-            >
-              DELETE
-            </button>
-
-            <button
-              className="mini-button"
-              onClick={() =>
-                onSelect(
-                  player
-                )
-              }
-            >
-              HISTORY
-            </button>
-          </div>
-        </td>
-      )}
-    </tr>
-  );
-}
-
-/* ============================================================
-   LOGIN MODAL
-============================================================ */
-
-function LoginModal({
-  onClose,
-}) {
-  const [email, setEmail] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(false);
-
-  async function submit(event) {
+/* =========================================================
+   ADMIN LOGIN
+========================================================= */
+
+function AdminLogin({ onClose }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function login(event) {
     event.preventDefault();
 
+    setBusy(true);
     setError("");
-    setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(
+      const credential = await signInWithEmailAndPassword(
         auth,
         email.trim(),
         password
       );
+
+      const adminRef = doc(db, "admins", credential.user.uid);
+      const adminSnap = await getDoc(adminRef);
+
+      if (!adminSnap.exists() || adminSnap.data()?.active !== true) {
+        await signOut(auth);
+        throw new Error("This account is not an active administrator.");
+      }
 
       onClose();
     } catch (err) {
       console.error(err);
 
       setError(
-        "Invalid email or password."
+        err?.message || "Unable to sign in. Check your credentials."
       );
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div
-      className="modal-backdrop"
-      onClick={onClose}
-    >
-      <form
-        className="modal-card"
-        onSubmit={submit}
-        onClick={(e) =>
-          e.stopPropagation()
-        }
-      >
-        <div className="section-label">
-          ADMIN ACCESS
-        </div>
+    <Modal title="Administrator Login" onClose={onClose}>
+      <form className="login-form" onSubmit={login}>
+        <div className="login-icon">⚡</div>
 
-        <h2>
-          Attendance Admin
-        </h2>
+        <p className="modal-description">
+          Administrator access is required for attendance, players,
+          scoring, claims, settings, and backup operations.
+        </p>
 
-        <input
-          type="email"
-          placeholder="Admin email"
-          value={email}
-          onChange={(e) =>
-            setEmail(
-              e.target.value
-            )
-          }
-          required
-        />
+        {error && <div className="error-box">{error}</div>}
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) =>
-            setPassword(
-              e.target.value
-            )
-          }
-          required
-        />
+        <label>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="admin@email.com"
+            autoComplete="username"
+            required
+          />
+        </label>
 
-        {error && (
-          <div className="error-message">
-            {error}
+        <label>
+          Password
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password"
+            autoComplete="current-password"
+            required
+          />
+        </label>
+
+        <button className="primary-button full-button" disabled={busy}>
+          {busy ? "SIGNING IN..." : "SIGN IN"}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   RAID CARD
+========================================================= */
+
+function RaidCard({
+  raid,
+  onEdit,
+  timezone,
+}) {
+  const displayTimezone =
+    getDisplayTimezone(timezone);
+
+  const next = getNextRaidOccurrence(raid);
+
+  return (
+    <article className="raid-card">
+      <div className="raid-image">
+        {raid.image ? (
+          <img
+            src={raid.image}
+            alt={raid.name}
+            onError={(event) => {
+              event.currentTarget.style.display =
+                "none";
+            }}
+          />
+        ) : (
+          <div className="boss-placeholder">
+            <span>RAN</span>
+            <strong>
+              {raid.name.slice(0, 1)}
+            </strong>
           </div>
         )}
+
+        <div className="raid-type">
+          {raid.type}
+        </div>
+      </div>
+
+      <div className="raid-content">
+        <div className="raid-title-row">
+          <div>
+            <h2>{raid.name}</h2>
+            <p>{raid.frequency}</p>
+          </div>
+
+          <div className="raid-status">
+            <span className="status-dot" />
+            ACTIVE
+          </div>
+        </div>
+
+        <div className="raid-time-box timezone-aware">
+          <span>NEXT RAID</span>
+
+          {next ? (
+            <>
+              <strong>
+                {formatRaidTime(
+                  next,
+                  displayTimezone
+                )}
+              </strong>
+
+              <div className="raid-local-date">
+                {formatRaidDateOnly(
+                  next,
+                  displayTimezone
+                )}
+              </div>
+
+              <small>
+                {getTimezoneLabel(timezone)}
+              </small>
+
+              <div className="raid-ph-time">
+                Philippines Time:{" "}
+                {formatTime12(
+                  raid.hour,
+                  raid.minute
+                )}
+              </div>
+            </>
+          ) : (
+            <strong>
+              No occurrence found
+            </strong>
+          )}
+        </div>
+
+        <div className="raid-meta">
+          <div>
+            <span>Schedule</span>
+
+            <strong>
+              {raid.frequency}
+              <br />
+              {formatTime12(
+                raid.hour,
+                raid.minute
+              )}
+            </strong>
+          </div>
+
+          <div>
+            <span>Last Updated</span>
+
+            <strong>
+              {raid.updatedAt
+                ? formatDateTime(
+                  raid.updatedAt
+                )
+                : "Default schedule"}
+            </strong>
+          </div>
+        </div>
+
+        <button
+          className="outline-button"
+          onClick={() => onEdit(raid)}
+        >
+          EDIT SCHEDULE
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/* =========================================================
+   RAID EDITOR
+========================================================= */
+
+function RaidEditor({ raid, onClose, onSaved }) {
+  const initial = from24Hour(raid.hour);
+
+  const [hour, setHour] = useState(initial.hour);
+  const [minute, setMinute] = useState(
+    String(raid.minute ?? 0).padStart(2, "0")
+  );
+  const [period, setPeriod] = useState(initial.period);
+  const [frequency, setFrequency] = useState(
+    raid.day === null ? "daily" : "weekly"
+  );
+  const [day, setDay] = useState(
+    raid.day === null ? "0" : String(raid.day)
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setBusy(true);
+    setError("");
+
+    try {
+      const converted = normalize12HourTo24(
+        hour,
+        minute,
+        period
+      );
+
+      const updatedRaid = {
+        ...raid,
+        frequency:
+          frequency === "daily"
+            ? "Every Day"
+            : `Every ${[
+              "Sunday",
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+            ][Number(day)]
+            }`,
+        day:
+          frequency === "daily"
+            ? null
+            : Number(day),
+        hour: converted.hour,
+        minute: converted.minute,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth.currentUser?.email || auth.currentUser?.uid || "Admin",
+      };
+
+      const currentRef = doc(db, "settings", "raidSchedule");
+      const currentSnap = await getDoc(currentRef);
+
+      const currentData = currentSnap.exists()
+        ? currentSnap.data()
+        : {};
+
+      const currentRaids = Array.isArray(currentData.raids)
+        ? currentData.raids
+        : BOSSES.map(getDefaultRaid);
+
+      const nextRaids = BOSSES.map((boss) => {
+        if (boss.id === raid.id) {
+          return sanitizeRaid(updatedRaid, boss);
+        }
+
+        const existing = currentRaids.find(
+          (item) => item.id === boss.id
+        );
+
+        return sanitizeRaid(existing, boss);
+      });
+
+      await setDoc(
+        currentRef,
+        {
+          raids: nextRaids,
+          updatedAt: serverTimestamp(),
+          updatedBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+        },
+        { merge: true }
+      );
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Unable to save schedule.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Edit ${raid.name} Schedule`} onClose={onClose}>
+      <div className="editor-grid">
+        <div className="editor-preview">
+          <span className="editor-preview-label">CURRENT TIME</span>
+          <strong>{formatTime12(raid.hour, raid.minute)}</strong>
+          <small>Philippines Time</small>
+        </div>
+
+        <div className="editor-section">
+          <label>
+            Frequency
+            <select
+              value={frequency}
+              onChange={(event) => setFrequency(event.target.value)}
+            >
+              <option value="daily">Every Day</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </label>
+
+          {frequency === "weekly" && (
+            <label>
+              Day
+              <select
+                value={day}
+                onChange={(event) => setDay(event.target.value)}
+              >
+                <option value="0">Sunday</option>
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+              </select>
+            </label>
+          )}
+
+          <div className="time-controls">
+            <label>
+              Hour
+              <select
+                value={hour}
+                onChange={(event) => setHour(event.target.value)}
+              >
+                {Array.from({ length: 12 }, (_, index) => {
+                  const value = String(index + 1);
+
+                  return (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <label>
+              Minute
+              <select
+                value={minute}
+                onChange={(event) => setMinute(event.target.value)}
+              >
+                {Array.from({ length: 60 }, (_, index) => {
+                  const value = String(index).padStart(2, "0");
+
+                  return (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <label>
+              AM / PM
+              <select
+                value={period}
+                onChange={(event) => setPeriod(event.target.value)}
+              >
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {error && <div className="error-box">{error}</div>}
+
+      <div className="modal-actions">
+        <button className="secondary-button" onClick={onClose}>
+          CANCEL
+        </button>
+
+        <button className="primary-button" onClick={save} disabled={busy}>
+          {busy ? "SAVING..." : "SAVE SCHEDULE"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   PLAYER FORM
+========================================================= */
+
+function PlayerFormModal({
+  player,
+  onClose,
+  onSaved,
+}) {
+  const [ign, setIgn] = useState(player?.ign || "");
+  const [playerClass, setPlayerClass] = useState(
+    player?.class || ""
+  );
+  const [weapon, setWeapon] = useState(
+    player?.preferredWeapon || ""
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const editing = Boolean(player);
+
+  async function savePlayer(event) {
+    event.preventDefault();
+
+    const cleanIgn = ign.trim();
+
+    if (!cleanIgn) {
+      setError("IGN is required.");
+      return;
+    }
+
+    if (!playerClass.trim()) {
+      setError("Class is required.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      if (editing) {
+        await setDoc(
+          doc(db, "attendancePlayers", player.id),
+          {
+            ign: cleanIgn,
+            class: playerClass.trim(),
+            preferredWeapon: weapon.trim(),
+            updatedAt: serverTimestamp(),
+            updatedBy:
+              auth.currentUser?.email ||
+              auth.currentUser?.uid ||
+              "Admin",
+          },
+          { merge: true }
+        );
+      } else {
+        await addDoc(collection(db, "attendancePlayers"), {
+          ign: cleanIgn,
+          class: playerClass.trim(),
+          preferredWeapon: weapon.trim(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+          updatedBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+        });
+      }
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Unable to save player.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={editing ? `Edit ${player.ign}` : "Add New Player"}
+      onClose={onClose}
+    >
+      <form className="player-form" onSubmit={savePlayer}>
+        {error && <div className="error-box">{error}</div>}
+
+        <label>
+          IGN
+          <input
+            value={ign}
+            onChange={(event) => setIgn(event.target.value)}
+            placeholder="Enter in-game name"
+            autoFocus
+            required
+          />
+        </label>
+
+        <label>
+          Class
+          <input
+            list="class-options"
+            value={playerClass}
+            onChange={(event) => setPlayerClass(event.target.value)}
+            placeholder="Type any class"
+            required
+          />
+          <datalist id="class-options">
+            {CLASS_OPTIONS.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+        </label>
+
+        <label>
+          Preferred Weapon
+          <input
+            list="weapon-options"
+            value={weapon}
+            onChange={(event) => setWeapon(event.target.value)}
+            placeholder="Type or select weapon"
+          />
+          <datalist id="weapon-options">
+            {WEAPON_OPTIONS.map((item) => (
+              <option key={item} value={item} />
+            ))}
+          </datalist>
+        </label>
 
         <div className="modal-actions">
           <button
@@ -3043,703 +1164,3209 @@ function LoginModal({
           </button>
 
           <button
-            className="primary-button"
             type="submit"
-            disabled={loading}
+            className="primary-button"
+            disabled={busy}
           >
-            {loading
-              ? "LOGIN..."
-              : "LOGIN"}
+            {busy
+              ? "SAVING..."
+              : editing
+                ? "SAVE CHANGES"
+                : "ADD PLAYER"}
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   SCORE CALCULATION
+========================================================= */
+
+function getPlayerScore(player, histories, ledger) {
+  let total = 0;
+
+  for (const record of histories) {
+    const samePlayer =
+      record.playerId === player.id ||
+      (
+        !record.playerId &&
+        normalizeIgn(record.ign) === normalizeIgn(player.ign)
+      );
+
+    if (samePlayer) {
+      total += Number(record.points || 0);
+    }
+  }
+
+  for (const record of ledger) {
+    const samePlayer =
+      record.playerId === player.id ||
+      (
+        !record.playerId &&
+        normalizeIgn(record.ign) === normalizeIgn(player.ign)
+      );
+
+    if (samePlayer) {
+      total += Number(record.delta || 0);
+    }
+  }
+
+  return roundScore(total);
+}
+
+/* =========================================================
+   HISTORY MODAL
+========================================================= */
+
+function PlayerHistoryModal({
+  player,
+  histories,
+  ledger,
+  score,
+  onClose,
+}) {
+  if (!player) return null;
+
+  const playerHistory = histories
+    .filter(
+      (item) =>
+        item.playerId === player.id ||
+        (
+          !item.playerId &&
+          normalizeIgn(item.ign) === normalizeIgn(player.ign)
+        )
+    )
+    .sort((a, b) => {
+      const ad = timestampToDate(a.createdAt)?.getTime() || 0;
+      const bd = timestampToDate(b.createdAt)?.getTime() || 0;
+
+      return bd - ad;
+    });
+
+  const playerLedger = ledger
+    .filter(
+      (item) =>
+        item.playerId === player.id ||
+        (
+          !item.playerId &&
+          normalizeIgn(item.ign) === normalizeIgn(player.ign)
+        )
+    )
+    .sort((a, b) => {
+      const ad = timestampToDate(a.createdAt)?.getTime() || 0;
+      const bd = timestampToDate(b.createdAt)?.getTime() || 0;
+
+      return bd - ad;
+    });
+
+  return (
+    <Modal title={`${player.ign} — Full History`} onClose={onClose} wide>
+      <div className="history-profile">
+        <div>
+          <span>IGN</span>
+          <strong>{player.ign}</strong>
+        </div>
+
+        <div>
+          <span>CLASS</span>
+          <strong>{player.class || "—"}</strong>
+        </div>
+
+        <div>
+          <span>WEAPON</span>
+          <strong>{player.preferredWeapon || "—"}</strong>
+        </div>
+
+        <div>
+          <span>CURRENT SCORE</span>
+          <strong className={score >= 6 ? "score-green" : ""}>
+            {formatScore(score)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="history-section">
+        <div className="section-title-row">
+          <h3>Attendance History</h3>
+          <span>{playerHistory.length} records</span>
+        </div>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Boss</th>
+                <th>Points</th>
+                <th>Saved By</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {playerHistory.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="empty-cell">
+                    No attendance history.
+                  </td>
+                </tr>
+              ) : (
+                playerHistory.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      {item.attendanceDate ||
+                        formatDateOnly(item.createdAt)}
+                    </td>
+                    <td>{item.bossName || item.bossId}</td>
+                    <td className="positive-value">
+                      +{formatScore(item.points)}
+                    </td>
+                    <td>
+                      {item.createdBy || "—"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="history-section">
+        <div className="section-title-row">
+          <h3>Score Ledger</h3>
+          <span>{playerLedger.length} records</span>
+        </div>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Delta</th>
+                <th>Old Score</th>
+                <th>New Score</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {playerLedger.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="empty-cell">
+                    No score ledger records.
+                  </td>
+                </tr>
+              ) : (
+                playerLedger.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDateTime(item.createdAt)}</td>
+                    <td>
+                      <span className="ledger-type">
+                        {item.type || "LEDGER"}
+                      </span>
+                    </td>
+                    <td
+                      className={
+                        Number(item.delta) >= 0
+                          ? "positive-value"
+                          : "negative-value"
+                      }
+                    >
+                      {Number(item.delta) >= 0 ? "+" : ""}
+                      {formatScore(item.delta)}
+                    </td>
+                    <td>{formatScore(item.oldScore)}</td>
+                    <td>{formatScore(item.newScore)}</td>
+                    <td>{item.reason || "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   CLAIM MODAL
+========================================================= */
+
+function ClaimModal({
+  player,
+  currentScore,
+  eligibilityScore,
+  onClose,
+}) {
+  const [weapon, setWeapon] = useState(player?.preferredWeapon || "");
+  const [reason, setReason] = useState("Weapon claim");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!player) return null;
+
+  const eligible = currentScore >= eligibilityScore;
+
+  async function claim() {
+    if (!eligible) {
+      setError("This player is not eligible.");
+      return;
+    }
+
+    if (!weapon.trim()) {
+      setError("Enter the weapon being claimed.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const oldScore = roundScore(currentScore);
+      const newScore = roundScore(
+        currentScore - eligibilityScore
+      );
+
+      await addDoc(collection(db, "scoreLedger"), {
+        playerId: player.id,
+        ign: player.ign,
+        type: "WEAPON_CLAIM",
+        delta: -Number(eligibilityScore),
+        oldScore,
+        newScore,
+        weapon: weapon.trim(),
+        reason: reason.trim() || "Weapon claim",
+        admin:
+          auth.currentUser?.email ||
+          auth.currentUser?.uid ||
+          "Admin",
+        createdAt: serverTimestamp(),
+      });
+
+      await setDoc(
+        doc(db, "attendancePlayers", player.id),
+        {
+          updatedAt: serverTimestamp(),
+          updatedBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+        },
+        { merge: true }
+      );
+
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Unable to claim weapon.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Claim Weapon — ${player.ign}`} onClose={onClose}>
+      <div className="claim-summary">
+        <div>
+          <span>CURRENT SCORE</span>
+          <strong>{formatScore(currentScore)}</strong>
+        </div>
+
+        <div>
+          <span>REQUIRED</span>
+          <strong>{formatScore(eligibilityScore)}</strong>
+        </div>
+
+        <div>
+          <span>AFTER CLAIM</span>
+          <strong>{formatScore(currentScore - eligibilityScore)}</strong>
+        </div>
+      </div>
+
+      {!eligible && (
+        <div className="warning-box">
+          This player needs {formatScore(eligibilityScore - currentScore)}{" "}
+          more points to claim.
+        </div>
+      )}
+
+      {error && <div className="error-box">{error}</div>}
+
+      <label>
+        Weapon
+        <input
+          list="claim-weapon-options"
+          value={weapon}
+          onChange={(event) => setWeapon(event.target.value)}
+          placeholder="Weapon being claimed"
+        />
+        <datalist id="claim-weapon-options">
+          {WEAPON_OPTIONS.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
+      </label>
+
+      <label>
+        Reason
+        <input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Reason"
+        />
+      </label>
+
+      <div className="modal-actions">
+        <button className="secondary-button" onClick={onClose}>
+          CANCEL
+        </button>
+
+        <button
+          className="danger-button"
+          onClick={claim}
+          disabled={busy || !eligible}
+        >
+          {busy ? "PROCESSING..." : "CONFIRM CLAIM"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   SCORE OVERRIDE MODAL
+========================================================= */
+
+function OverrideModal({
+  player,
+  currentScore,
+  onClose,
+}) {
+  const [newScore, setNewScore] = useState(String(currentScore));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!player) return null;
+
+  async function save() {
+    const target = Number(newScore);
+
+    if (!Number.isFinite(target) || target < 0) {
+      setError("Enter a valid score.");
+      return;
+    }
+
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+
+    const oldScore = roundScore(currentScore);
+    const finalScore = roundScore(target);
+    const delta = roundScore(finalScore - oldScore);
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await addDoc(collection(db, "scoreLedger"), {
+        playerId: player.id,
+        ign: player.ign,
+        type: "MANUAL_OVERRIDE",
+        delta,
+        oldScore,
+        newScore: finalScore,
+        reason: reason.trim(),
+        admin:
+          auth.currentUser?.email ||
+          auth.currentUser?.uid ||
+          "Admin",
+        createdAt: serverTimestamp(),
+      });
+
+      await setDoc(
+        doc(db, "attendancePlayers", player.id),
+        {
+          updatedAt: serverTimestamp(),
+          updatedBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+        },
+        { merge: true }
+      );
+
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Unable to override score.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Override Score — ${player.ign}`} onClose={onClose}>
+      <div className="override-current">
+        <span>CURRENT CALCULATED SCORE</span>
+        <strong>{formatScore(currentScore)}</strong>
+      </div>
+
+      {error && <div className="error-box">{error}</div>}
+
+      <label>
+        New Score
+        <input
+          type="number"
+          min="0"
+          step="0.1"
+          value={newScore}
+          onChange={(event) => setNewScore(event.target.value)}
+        />
+      </label>
+
+      <label>
+        Required Reason
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Explain why this score is being changed..."
+          rows="4"
+        />
+      </label>
+
+      <div className="modal-actions">
+        <button className="secondary-button" onClick={onClose}>
+          CANCEL
+        </button>
+
+        <button
+          className="primary-button"
+          onClick={save}
+          disabled={busy}
+        >
+          {busy ? "SAVING..." : "SAVE OVERRIDE"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   ATTENDANCE PAGE
+========================================================= */
+
+function AttendancePage({
+  players,
+  histories,
+  ledger,
+  settings,
+  isAdmin,
+  onAddPlayer,
+  onEditPlayer,
+  onDeletePlayer,
+  onPurgePlayer,
+  onHistory,
+  onClaim,
+  onOverride,
+}) {
+  const [search, setSearch] = useState("");
+  const [classFilter, setClassFilter] = useState("ALL");
+  const [weaponFilter, setWeaponFilter] = useState("ALL");
+  const [eligibilityFilter, setEligibilityFilter] = useState("ALL");
+
+  const [selectedPlayerId, setSelectedPlayerId] = useState("");
+  const [attendanceDate, setAttendanceDate] = useState(
+    getTodayPhilippines()
+  );
+  const [attendanceDraft, setAttendanceDraft] = useState([]);
+  const [savingAttendance, setSavingAttendance] = useState(false);
+  const [attendanceMessage, setAttendanceMessage] = useState("");
+
+  const classList = useMemo(() => {
+    return [
+      ...new Set(
+        players
+          .map((p) => p.class)
+          .filter(Boolean)
+      ),
+    ].sort();
+  }, [players]);
+
+  const weaponList = useMemo(() => {
+    return [
+      ...new Set(
+        players
+          .map((p) => p.preferredWeapon)
+          .filter(Boolean)
+      ),
+    ].sort();
+  }, [players]);
+
+  const selectedPlayer = players.find(
+    (player) => player.id === selectedPlayerId
+  );
+
+  const selectedScore = selectedPlayer
+    ? getPlayerScore(selectedPlayer, histories, ledger)
+    : 0;
+
+  const filteredPlayers = useMemo(() => {
+    const term = normalizeIgn(search);
+
+    return [...players]
+      .filter((player) => {
+        if (
+          term &&
+          !normalizeIgn(player.ign).includes(term)
+        ) {
+          return false;
+        }
+
+        if (
+          classFilter !== "ALL" &&
+          player.class !== classFilter
+        ) {
+          return false;
+        }
+
+        if (
+          weaponFilter !== "ALL" &&
+          player.preferredWeapon !== weaponFilter
+        ) {
+          return false;
+        }
+
+        const score = getPlayerScore(
+          player,
+          histories,
+          ledger
+        );
+
+        if (
+          eligibilityFilter === "ELIGIBLE" &&
+          score < Number(settings.eligibilityScore)
+        ) {
+          return false;
+        }
+
+        if (
+          eligibilityFilter === "NOT_ELIGIBLE" &&
+          score >= Number(settings.eligibilityScore)
+        ) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) =>
+        String(a.ign).localeCompare(String(b.ign))
+      );
+  }, [
+    players,
+    histories,
+    ledger,
+    search,
+    classFilter,
+    weaponFilter,
+    eligibilityFilter,
+    settings.eligibilityScore,
+  ]);
+
+  function toggleBoss(bossId) {
+    setAttendanceDraft((current) =>
+      current.includes(bossId)
+        ? current.filter((id) => id !== bossId)
+        : [...current, bossId]
+    );
+  }
+
+  async function saveAttendance() {
+    if (!isAdmin) return;
+
+    if (!selectedPlayer) {
+      setAttendanceMessage("Select a player first.");
+      return;
+    }
+
+    if (attendanceDraft.length === 0) {
+      setAttendanceMessage("Select at least one boss.");
+      return;
+    }
+
+    if (!attendanceDate) {
+      setAttendanceMessage("Select an attendance date.");
+      return;
+    }
+
+    setSavingAttendance(true);
+    setAttendanceMessage("");
+
+    try {
+      const selectedBosses = BOSSES.filter((boss) =>
+        attendanceDraft.includes(boss.id)
+      );
+
+      const adminName =
+        auth.currentUser?.email ||
+        auth.currentUser?.uid ||
+        "Admin";
+
+      for (const boss of selectedBosses) {
+        const points = Number(
+          settings[boss.pointsKey] || 0
+        );
+
+        await addDoc(collection(db, "attendanceHistory"), {
+          playerId: selectedPlayer.id,
+          ign: selectedPlayer.ign,
+          bossId: boss.id,
+          bossName: boss.name,
+          points,
+          attendanceDate,
+          createdAt: serverTimestamp(),
+          createdBy: adminName,
+        });
+      }
+
+      await setDoc(
+        doc(
+          db,
+          "attendancePlayers",
+          selectedPlayer.id
+        ),
+        {
+          updatedAt: serverTimestamp(),
+          updatedBy: adminName,
+        },
+        { merge: true }
+      );
+
+      setAttendanceDraft([]);
+      setAttendanceMessage(
+        `Attendance saved for ${selectedPlayer.ign}.`
+      );
+    } catch (err) {
+      console.error(err);
+      setAttendanceMessage(
+        err?.message || "Unable to save attendance."
+      );
+    } finally {
+      setSavingAttendance(false);
+    }
+  }
+
+  async function deletePlayer(player) {
+    if (!isAdmin) return;
+
+    const confirmed = window.confirm(
+      `Delete the player profile for "${player.ign}"?\n\n` +
+      `Their attendance history and score ledger will remain.\n\n` +
+      `Use NEW USER / PURGE if this is actually a completely different person.`
+    );
+
+    if (!confirmed) return;
+
+    await onDeletePlayer(player);
+  }
+
+  return (
+    <section className="page-section">
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">RAN ONLINE EP7</div>
+          <h1>Attendance</h1>
+          <p>
+            Track raid attendance, points, eligibility, claims,
+            and complete player history.
+          </p>
+        </div>
+
+        {isAdmin && (
+          <button
+            className="primary-button"
+            onClick={onAddPlayer}
+          >
+            + ADD PLAYER
+          </button>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="attendance-console">
+          <div className="console-header">
+            <div>
+              <span className="console-kicker">
+                ADMIN ATTENDANCE
+              </span>
+              <h2>Record Attendance</h2>
+            </div>
+
+            <div className="admin-badge">ADMIN</div>
+          </div>
+
+          <div className="console-grid">
+            <label>
+              Player
+              <select
+                value={selectedPlayerId}
+                onChange={(event) => {
+                  setSelectedPlayerId(event.target.value);
+                  setAttendanceDraft([]);
+                  setAttendanceMessage("");
+                }}
+              >
+                <option value="">Select IGN...</option>
+
+                {players
+                  .slice()
+                  .sort((a, b) =>
+                    a.ign.localeCompare(b.ign)
+                  )
+                  .map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.ign} — {player.class || "No Class"}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
+            <label>
+              Attendance Date
+              <input
+                type="date"
+                value={attendanceDate}
+                onChange={(event) =>
+                  setAttendanceDate(event.target.value)
+                }
+              />
+            </label>
+
+            <div className="console-score">
+              <span>CURRENT SCORE</span>
+              <strong>
+                {selectedPlayer
+                  ? formatScore(selectedScore)
+                  : "—"}
+              </strong>
+            </div>
+          </div>
+
+          <div className="boss-selector">
+            <span className="field-label">
+              Select Boss Attendance
+            </span>
+
+            <div className="boss-check-grid">
+              {BOSSES.map((boss) => {
+                const checked = attendanceDraft.includes(
+                  boss.id
+                );
+
+                return (
+                  <button
+                    type="button"
+                    key={boss.id}
+                    className={`boss-check ${checked ? "checked" : ""
+                      }`}
+                    onClick={() => toggleBoss(boss.id)}
+                  >
+                    <span className="checkbox">
+                      {checked ? "✓" : ""}
+                    </span>
+
+                    <span>
+                      <strong>{boss.name}</strong>
+                      <small>
+                        +{formatScore(settings[boss.pointsKey])}
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="console-footer">
+            {attendanceMessage && (
+              <span
+                className={
+                  attendanceMessage.includes("saved")
+                    ? "success-text"
+                    : "error-text"
+                }
+              >
+                {attendanceMessage}
+              </span>
+            )}
+
+            <button
+              className="primary-button"
+              onClick={saveAttendance}
+              disabled={savingAttendance}
+            >
+              {savingAttendance
+                ? "SAVING..."
+                : "SAVE ATTENDANCE"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="filter-panel">
+        <div className="filter-title">
+          <span>PLAYER DIRECTORY</span>
+          <strong>{filteredPlayers.length} players</strong>
+        </div>
+
+        <div className="filters">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search IGN..."
+          />
+
+          <select
+            value={classFilter}
+            onChange={(event) =>
+              setClassFilter(event.target.value)
+            }
+          >
+            <option value="ALL">All Classes</option>
+
+            {classList.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={weaponFilter}
+            onChange={(event) =>
+              setWeaponFilter(event.target.value)
+            }
+          >
+            <option value="ALL">All Weapons</option>
+
+            {weaponList.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={eligibilityFilter}
+            onChange={(event) =>
+              setEligibilityFilter(event.target.value)
+            }
+          >
+            <option value="ALL">All Scores</option>
+            <option value="ELIGIBLE">Eligible</option>
+            <option value="NOT_ELIGIBLE">
+              Not Eligible
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div className="attendance-table-card">
+        <div className="table-scroll">
+          <table className="attendance-table">
+            <thead>
+              <tr>
+                <th>IGN</th>
+                <th>Class</th>
+                <th>Preferred Weapon</th>
+
+                {BOSSES.map((boss) => (
+                  <th key={boss.id}>{boss.name}</th>
+                ))}
+
+                <th>Score</th>
+                <th>Eligibility</th>
+                <th>Last Updated</th>
+
+                {isAdmin && <th>Actions</th>}
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredPlayers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={isAdmin ? 12 : 11}
+                    className="empty-cell"
+                  >
+                    No players found.
+                  </td>
+                </tr>
+              ) : (
+                filteredPlayers.map((player) => {
+                  const score = getPlayerScore(
+                    player,
+                    histories,
+                    ledger
+                  );
+
+                  const eligible =
+                    score >=
+                    Number(settings.eligibilityScore);
+
+                  const playerHistory = histories.filter(
+                    (item) =>
+                      item.playerId === player.id ||
+                      (
+                        !item.playerId &&
+                        normalizeIgn(item.ign) ===
+                        normalizeIgn(player.ign)
+                      )
+                  );
+
+                  const attendedBosses = new Set(
+                    playerHistory.map(
+                      (item) => item.bossId
+                    )
+                  );
+
+                  return (
+                    <tr key={player.id}>
+                      <td>
+                        <button
+                          className="ign-button"
+                          onClick={() =>
+                            onHistory(player)
+                          }
+                        >
+                          {player.ign}
+                        </button>
+                      </td>
+
+                      <td>
+                        <span className="class-pill">
+                          {player.class || "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        {player.preferredWeapon || "—"}
+                      </td>
+
+                      {BOSSES.map((boss) => (
+                        <td key={boss.id}>
+                          <span
+                            className={`attendance-dot ${attendedBosses.has(boss.id)
+                              ? "present"
+                              : ""
+                              }`}
+                          >
+                            {attendedBosses.has(
+                              boss.id
+                            )
+                              ? "✓"
+                              : "—"}
+                          </span>
+                        </td>
+                      ))}
+
+                      <td>
+                        <strong
+                          className={`score-value ${eligible ? "score-green" : ""
+                            }`}
+                        >
+                          {formatScore(score)}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <span
+                          className={`eligibility ${eligible
+                            ? "eligible"
+                            : "not-eligible"
+                            }`}
+                        >
+                          {eligible
+                            ? "ELIGIBLE"
+                            : "NOT ELIGIBLE"}
+                        </span>
+                      </td>
+
+                      <td className="date-cell">
+                        {formatDateTime(
+                          player.updatedAt
+                        )}
+                      </td>
+
+                      {isAdmin && (
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              className="small-button"
+                              onClick={() =>
+                                onEditPlayer(player)
+                              }
+                            >
+                              EDIT
+                            </button>
+
+                            <button
+                              className="small-button"
+                              onClick={() =>
+                                onHistory(player)
+                              }
+                            >
+                              HISTORY
+                            </button>
+
+                            <button
+                              className="small-button claim-button"
+                              onClick={() =>
+                                onClaim(player)
+                              }
+                              disabled={!eligible}
+                            >
+                              CLAIM
+                            </button>
+
+                            <button
+                              className="small-button override-button"
+                              onClick={() =>
+                                onOverride(player)
+                              }
+                            >
+                              SCORE
+                            </button>
+
+                            <button
+                              className="small-button delete-button"
+                              onClick={() =>
+                                deletePlayer(player)
+                              }
+                            >
+                              DELETE
+                            </button>
+
+                            <button
+                              className="small-button purge-button"
+                              onClick={() =>
+                                onPurgePlayer(player)
+                              }
+                            >
+                              NEW USER / PURGE
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div className="danger-information">
+          <div className="danger-icon">!</div>
+
+          <div>
+            <strong>NEW USER / PURGE IGN</strong>
+            <p>
+              Use this only when the current IGN belongs to a
+              completely different person. It permanently removes
+              the player's profile, attendance records, weapon
+              claims, score deductions, and manual score changes.
+              Re-adding the IGN afterwards starts from 0.
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* =========================================================
+   RAID PAGE
+========================================================= */
+
+function RaidPage({
+  raids,
+  onEdit,
+  timezone,
+  onTimezoneChange,
+}) {
+  const displayTimezone =
+    getDisplayTimezone(timezone);
+
+  return (
+    <section className="page-section">
+      <div className="hero-heading">
+        <div>
+          <div className="eyebrow">
+            RAN ONLINE EP7 CLASSIC
+          </div>
+
+          <h1>Raid Schedule</h1>
+
+          <p>
+            Philippines raid schedule with automatic
+            timezone conversion.
+          </p>
+        </div>
+
+        <div className="timezone-badge">
+          <span>SCHEDULE SOURCE</span>
+          <strong>PHILIPPINES TIME</strong>
+        </div>
+      </div>
+
+      {/* =====================================================
+          TIMEZONE SELECTOR
+      ===================================================== */}
+
+      <div className="timezone-panel">
+        <div className="timezone-panel-info">
+          <div className="timezone-icon">
+            🌎
+          </div>
+
+          <div>
+            <div className="timezone-title">
+              Display Timezone
+            </div>
+
+            <div className="timezone-subtitle">
+              Raid schedules are stored in Philippines
+              Time (Asia/Manila). Choose how you want
+              the schedule displayed.
+            </div>
+          </div>
+        </div>
+
+        <div className="timezone-control">
+          <select
+            value={timezone}
+            onChange={(event) =>
+              onTimezoneChange(
+                event.target.value
+              )
+            }
+            className="timezone-select"
+          >
+            {TIMEZONE_OPTIONS.map(
+              (option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                >
+                  {option.label}
+                </option>
+              )
+            )}
+          </select>
+
+          <div className="timezone-current">
+            Showing raid times in{" "}
+            <strong>
+              {displayTimezone}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="raid-grid">
+        {raids.map((raid) => (
+          <RaidCard
+            key={raid.id}
+            raid={raid}
+            timezone={timezone}
+            onEdit={onEdit}
+          />
+        ))}
+      </div>
+
+      <div className="raid-note">
+        <div className="raid-note-icon">
+          ◷
+        </div>
+
+        <div>
+          <strong>
+            Timezone Conversion
+          </strong>
+
+          <p>
+            The official schedule is always saved in
+            Philippines Time (Asia/Manila). The displayed
+            time and date automatically convert to your
+            selected timezone, including when the conversion
+            crosses midnight into another day.
+          </p>
+
+          <p className="raid-note-example">
+            Example: 9:00 PM Philippines → 6:00 AM US
+            Pacific → 9:00 AM US Eastern → 10:00 PM Tokyo.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =========================================================
+   ADMIN DASHBOARD
+========================================================= */
+
+function AdminPage({
+  players,
+  histories,
+  ledger,
+  settings,
+  settingsHistory,
+  user,
+  onAddPlayer,
+  onEditPlayer,
+  onHistory,
+  onClaim,
+  onOverride,
+  onPurgePlayer,
+  onDeletePlayer,
+  onSaveSettings,
+  onExport,
+  onImport,
+}) {
+  const [tab, setTab] = useState("dashboard");
+
+  const totalScore = useMemo(() => {
+    return roundScore(
+      players.reduce(
+        (sum, player) =>
+          sum +
+          getPlayerScore(player, histories, ledger),
+        0
+      )
+    );
+  }, [players, histories, ledger]);
+
+  const eligibleCount = players.filter(
+    (player) =>
+      getPlayerScore(player, histories, ledger) >=
+      Number(settings.eligibilityScore)
+  ).length;
+
+  return (
+    <section className="page-section">
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">CONTROL CENTER</div>
+          <h1>Administrator</h1>
+          <p>
+            Manage players, scoring, history, settings, and
+            backups.
+          </p>
+        </div>
+
+        <div className="admin-user">
+          <span>SIGNED IN</span>
+          <strong>
+            {user?.email || user?.uid || "Administrator"}
+          </strong>
+        </div>
+      </div>
+
+      <div className="admin-tabs">
+        {[
+          ["dashboard", "Dashboard"],
+          ["players", "Players"],
+          ["ledger", "Score Ledger"],
+          ["settings", "Scoring"],
+          ["history", "Settings History"],
+          ["backup", "Backup / Restore"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            className={tab === id ? "admin-tab-active" : ""}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "dashboard" && (
+        <div className="admin-dashboard">
+          <div className="stat-grid">
+            <div className="stat-card">
+              <span>TOTAL PLAYERS</span>
+              <strong>{players.length}</strong>
+            </div>
+
+            <div className="stat-card">
+              <span>ELIGIBLE</span>
+              <strong>{eligibleCount}</strong>
+            </div>
+
+            <div className="stat-card">
+              <span>ATTENDANCE RECORDS</span>
+              <strong>{histories.length}</strong>
+            </div>
+
+            <div className="stat-card">
+              <span>LEDGER RECORDS</span>
+              <strong>{ledger.length}</strong>
+            </div>
+
+            <div className="stat-card">
+              <span>POINTS IN SYSTEM</span>
+              <strong>{formatScore(totalScore)}</strong>
+            </div>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="dashboard-card">
+              <div className="dashboard-card-title">
+                <span>ELIGIBILITY THRESHOLD</span>
+              </div>
+
+              <strong className="big-number">
+                {formatScore(settings.eligibilityScore)}
+              </strong>
+
+              <p>
+                Players at or above this score can claim a weapon.
+              </p>
+            </div>
+
+            <div className="dashboard-card">
+              <div className="dashboard-card-title">
+                <span>LAST SETTINGS UPDATE</span>
+              </div>
+
+              <strong>
+                {formatDateTime(settings.updatedAt)}
+              </strong>
+
+              <p>
+                Changed by{" "}
+                {settings.updatedBy || "Not recorded"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "players" && (
+        <div className="admin-content-card">
+          <div className="content-card-header">
+            <div>
+              <h2>Player Management</h2>
+              <p>
+                Manage player profiles without deleting historical
+                records.
+              </p>
+            </div>
+
+            <button
+              className="primary-button"
+              onClick={onAddPlayer}
+            >
+              + ADD PLAYER
+            </button>
+          </div>
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>IGN</th>
+                  <th>Class</th>
+                  <th>Weapon</th>
+                  <th>Score</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {players
+                  .slice()
+                  .sort((a, b) =>
+                    a.ign.localeCompare(b.ign)
+                  )
+                  .map((player) => {
+                    const score = getPlayerScore(
+                      player,
+                      histories,
+                      ledger
+                    );
+
+                    return (
+                      <tr key={player.id}>
+                        <td>
+                          <button
+                            className="ign-button"
+                            onClick={() =>
+                              onHistory(player)
+                            }
+                          >
+                            {player.ign}
+                          </button>
+                        </td>
+
+                        <td>{player.class || "—"}</td>
+                        <td>
+                          {player.preferredWeapon || "—"}
+                        </td>
+
+                        <td>
+                          <strong>
+                            {formatScore(score)}
+                          </strong>
+                        </td>
+
+                        <td>
+                          {formatDateTime(
+                            player.updatedAt
+                          )}
+                        </td>
+
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              className="small-button"
+                              onClick={() =>
+                                onEditPlayer(player)
+                              }
+                            >
+                              EDIT
+                            </button>
+
+                            <button
+                              className="small-button"
+                              onClick={() =>
+                                onHistory(player)
+                              }
+                            >
+                              HISTORY
+                            </button>
+
+                            <button
+                              className="small-button purge-button"
+                              onClick={() =>
+                                onPurgePlayer(player)
+                              }
+                            >
+                              NEW USER / PURGE
+                            </button>
+
+                            <button
+                              className="small-button delete-button"
+                              onClick={() =>
+                                onDeletePlayer(player)
+                              }
+                            >
+                              DELETE
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "ledger" && (
+        <div className="admin-content-card">
+          <div className="content-card-header">
+            <div>
+              <h2>Score Ledger</h2>
+              <p>
+                Every weapon claim and manual score adjustment is
+                recorded here.
+              </p>
+            </div>
+          </div>
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>IGN</th>
+                  <th>Type</th>
+                  <th>Delta</th>
+                  <th>Old</th>
+                  <th>New</th>
+                  <th>Weapon</th>
+                  <th>Reason</th>
+                  <th>Admin</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {ledger.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="empty-cell">
+                      No ledger records.
+                    </td>
+                  </tr>
+                ) : (
+                  ledger
+                    .slice()
+                    .sort((a, b) => {
+                      const ad =
+                        timestampToDate(
+                          a.createdAt
+                        )?.getTime() || 0;
+                      const bd =
+                        timestampToDate(
+                          b.createdAt
+                        )?.getTime() || 0;
+
+                      return bd - ad;
+                    })
+                    .map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          {formatDateTime(
+                            item.createdAt
+                          )}
+                        </td>
+
+                        <td>{item.ign || "—"}</td>
+
+                        <td>
+                          <span className="ledger-type">
+                            {item.type || "LEDGER"}
+                          </span>
+                        </td>
+
+                        <td
+                          className={
+                            Number(item.delta) >= 0
+                              ? "positive-value"
+                              : "negative-value"
+                          }
+                        >
+                          {Number(item.delta) >= 0
+                            ? "+"
+                            : ""}
+                          {formatScore(item.delta)}
+                        </td>
+
+                        <td>
+                          {formatScore(item.oldScore)}
+                        </td>
+
+                        <td>
+                          {formatScore(item.newScore)}
+                        </td>
+
+                        <td>{item.weapon || "—"}</td>
+                        <td>{item.reason || "—"}</td>
+                        <td>{item.admin || "—"}</td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "settings" && (
+        <SettingsPanel
+          settings={settings}
+          user={user}
+          onSave={onSaveSettings}
+        />
+      )}
+
+      {tab === "history" && (
+        <SettingsHistoryPanel
+          settingsHistory={settingsHistory}
+        />
+      )}
+
+      {tab === "backup" && (
+        <BackupPanel
+          players={players}
+          histories={histories}
+          ledger={ledger}
+          settings={settings}
+          settingsHistory={settingsHistory}
+          onExport={onExport}
+          onImport={onImport}
+        />
+      )}
+    </section>
+  );
+}
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+function SettingsPanel({ settings, user, onSave }) {
+  const [form, setForm] = useState({
+    sonyaPoints: settings.sonyaPoints,
+    geomancerPoints: settings.geomancerPoints,
+    reflectorPoints: settings.reflectorPoints,
+    giantHawkPoints: settings.giantHawkPoints,
+    eligibilityScore: settings.eligibilityScore,
+  });
+
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setForm({
+      sonyaPoints: settings.sonyaPoints,
+      geomancerPoints: settings.geomancerPoints,
+      reflectorPoints: settings.reflectorPoints,
+      giantHawkPoints: settings.giantHawkPoints,
+      eligibilityScore: settings.eligibilityScore,
+    });
+  }, [settings]);
+
+  function update(key, value) {
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function save() {
+    setBusy(true);
+    setMessage("");
+
+    try {
+      await onSave({
+        sonyaPoints: Number(form.sonyaPoints),
+        geomancerPoints: Number(form.geomancerPoints),
+        reflectorPoints: Number(form.reflectorPoints),
+        giantHawkPoints: Number(form.giantHawkPoints),
+        eligibilityScore: Number(form.eligibilityScore),
+      });
+
+      setMessage("Settings saved successfully.");
+    } catch (err) {
+      setMessage(err?.message || "Unable to save settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="settings-layout">
+      <div className="settings-card">
+        <div className="content-card-header">
+          <div>
+            <h2>Scoring Settings</h2>
+            <p>
+              These values affect new attendance records only.
+              Existing attendance keeps the points awarded when it
+              was saved.
+            </p>
+          </div>
+        </div>
+
+        <div className="settings-grid">
+          {BOSSES.map((boss) => (
+            <label key={boss.id}>
+              {boss.name} Points
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={form[boss.pointsKey]}
+                onChange={(event) =>
+                  update(
+                    boss.pointsKey,
+                    event.target.value
+                  )
+                }
+              />
+            </label>
+          ))}
+
+          <label>
+            Eligibility Score
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={form.eligibilityScore}
+              onChange={(event) =>
+                update(
+                  "eligibilityScore",
+                  event.target.value
+                )
+              }
+            />
+          </label>
+        </div>
+
+        {message && (
+          <div
+            className={
+              message.includes("successfully")
+                ? "success-box"
+                : "error-box"
+            }
+          >
+            {message}
+          </div>
+        )}
+
+        <div className="settings-footer">
+          <div>
+            <span>Last updated</span>
+            <strong>
+              {formatDateTime(settings.updatedAt)}
+            </strong>
+          </div>
+
+          <div>
+            <span>Changed by</span>
+            <strong>
+              {settings.updatedBy ||
+                user?.email ||
+                "—"}
+            </strong>
+          </div>
+
+          <button
+            className="primary-button"
+            onClick={save}
+            disabled={busy}
+          >
+            {busy ? "SAVING..." : "SAVE SETTINGS"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ============================================================
+/* =========================================================
+   SETTINGS HISTORY
+========================================================= */
+
+function SettingsHistoryPanel({ settingsHistory }) {
+  return (
+    <div className="admin-content-card">
+      <div className="content-card-header">
+        <div>
+          <h2>Settings History</h2>
+          <p>
+            Audit trail of every scoring setting change.
+          </p>
+        </div>
+      </div>
+
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Setting</th>
+              <th>Old Value</th>
+              <th>New Value</th>
+              <th>Changed By</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {settingsHistory.length === 0 ? (
+              <tr>
+                <td colSpan="5" className="empty-cell">
+                  No settings history.
+                </td>
+              </tr>
+            ) : (
+              settingsHistory
+                .slice()
+                .sort((a, b) => {
+                  const ad =
+                    timestampToDate(
+                      a.changedAt
+                    )?.getTime() || 0;
+
+                  const bd =
+                    timestampToDate(
+                      b.changedAt
+                    )?.getTime() || 0;
+
+                  return bd - ad;
+                })
+                .map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      {formatDateTime(item.changedAt)}
+                    </td>
+
+                    <td>
+                      <span className="ledger-type">
+                        {item.setting}
+                      </span>
+                    </td>
+
+                    <td>{safeRow(item.oldValue)}</td>
+                    <td>{safeRow(item.newValue)}</td>
+                    <td>{item.changedBy || "—"}</td>
+                  </tr>
+                ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   BACKUP / RESTORE
+========================================================= */
+
+function BackupPanel({
+  players,
+  histories,
+  ledger,
+  settings,
+  settingsHistory,
+  onExport,
+  onImport,
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function exportBackup() {
+    setBusy(true);
+    setMessage("");
+
+    try {
+      await onExport();
+      setMessage("Full backup created successfully.");
+    } catch (err) {
+      setMessage(err?.message || "Backup failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importBackup(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      await onImport(file);
+
+      setMessage(
+        "Backup restored. Existing matching records were updated."
+      );
+    } catch (err) {
+      console.error(err);
+      setMessage(
+        err?.message || "Unable to restore backup."
+      );
+    } finally {
+      setBusy(false);
+      event.target.value = "";
+    }
+  }
+
+  return (
+    <div className="backup-layout">
+      <div className="backup-card">
+        <div className="backup-icon">⇩</div>
+
+        <h2>Full Backup</h2>
+
+        <p>
+          Creates a complete Excel backup containing players,
+          attendance history, score ledger, scoring settings,
+          settings history, raid schedule, and backup information.
+        </p>
+
+        <div className="backup-counts">
+          <span>{players.length} Players</span>
+          <span>{histories.length} Attendance</span>
+          <span>{ledger.length} Ledger</span>
+          <span>{settingsHistory.length} Setting History</span>
+        </div>
+
+        <button
+          className="primary-button"
+          onClick={exportBackup}
+          disabled={busy}
+        >
+          {busy ? "CREATING..." : "EXPORT FULL XLSX BACKUP"}
+        </button>
+      </div>
+
+      <div className="backup-card">
+        <div className="backup-icon">⇧</div>
+
+        <h2>Restore Backup</h2>
+
+        <p>
+          Restores records from a previous full backup. Existing
+          records with matching IDs are updated. New records are
+          added.
+        </p>
+
+        <label className="file-upload">
+          <span>
+            {busy ? "PROCESSING..." : "SELECT XLSX BACKUP"}
+          </span>
+
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={importBackup}
+            disabled={busy}
+          />
+        </label>
+      </div>
+
+      {message && (
+        <div className="backup-message">
+          {message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
    APP
-============================================================ */
+========================================================= */
 
 export default function App() {
-  const [page, setPage] =
-    useState("raid");
+  const [page, setPage] = useState("raid");
 
-  const [user, setUser] =
+  const [timezone, setTimezone] =
+    useState(getStoredTimezone());
+
+  function handleTimezoneChange(value) {
+    setTimezone(value);
+    saveTimezonePreference(value);
+  }
+
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const [showLogin, setShowLogin] = useState(false);
+
+  const [raids, setRaids] = useState(
+    BOSSES.map(getDefaultRaid)
+  );
+
+  const [players, setPlayers] = useState([]);
+  const [histories, setHistories] = useState([]);
+  const [ledger, setLedger] = useState([]);
+  const [settings, setSettings] = useState(
+    DEFAULT_SETTINGS
+  );
+  const [settingsHistory, setSettingsHistory] =
+    useState([]);
+
+  const [raidEditor, setRaidEditor] = useState(null);
+  const [playerEditor, setPlayerEditor] = useState(null);
+  const [historyPlayer, setHistoryPlayer] = useState(null);
+  const [claimPlayer, setClaimPlayer] = useState(null);
+  const [overridePlayer, setOverridePlayer] =
     useState(null);
 
-  const [isAdmin, setIsAdmin] =
-    useState(false);
-
-  const [authLoading, setAuthLoading] =
-    useState(true);
-
-  const [raids, setRaids] =
-    useState(DEFAULT_RAIDS);
-
-  const [players, setPlayers] =
-    useState([]);
-
-  const [history, setHistory] =
-    useState([]);
-
-  const [settings, setSettings] =
-    useState(
-      DEFAULT_SETTINGS
-    );
-
-  /* ==========================================================
+  /* =======================================================
      AUTH
-  ========================================================== */
+  ======================================================= */
 
   useEffect(() => {
-    return onAuthStateChanged(
+    const unsubscribe = onAuthStateChanged(
       auth,
-      async (currentUser) => {
-        setUser(
-          currentUser
-        );
+      async (firebaseUser) => {
+        try {
+          setUser(firebaseUser);
 
-        if (!currentUser) {
+          if (!firebaseUser) {
+            setIsAdmin(false);
+            setAuthLoading(false);
+            return;
+          }
+
+          const adminSnap = await getDoc(
+            doc(db, "admins", firebaseUser.uid)
+          );
+
+          setIsAdmin(
+            adminSnap.exists() &&
+            adminSnap.data()?.active === true
+          );
+        } catch (error) {
+          console.error(error);
           setIsAdmin(false);
+        } finally {
           setAuthLoading(false);
+        }
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     RAID LISTENER
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "settings", "raidSchedule"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setRaids(BOSSES.map(getDefaultRaid));
           return;
         }
 
-        try {
-          const adminDoc =
-            await getDoc(
-              doc(
-                db,
-                "admins",
-                currentUser.uid
+        const data = snapshot.data();
+
+        const loaded = BOSSES.map((boss) => {
+          const raid = Array.isArray(data.raids)
+            ? data.raids.find(
+              (item) => item.id === boss.id
+            )
+            : null;
+
+          return sanitizeRaid(raid, boss);
+        });
+
+        setRaids(loaded);
+      },
+      (error) => {
+        console.error(
+          "Raid schedule listener:",
+          error
+        );
+        setRaids(BOSSES.map(getDefaultRaid));
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     PLAYERS
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "attendancePlayers"),
+      (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+
+        setPlayers(rows);
+      },
+      (error) => {
+        console.error(
+          "Player listener:",
+          error
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     ATTENDANCE HISTORY
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "attendanceHistory"),
+      (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+
+        setHistories(rows);
+      },
+      (error) => {
+        console.error(
+          "Attendance listener:",
+          error
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     SCORE LEDGER
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "scoreLedger"),
+      (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+
+        setLedger(rows);
+      },
+      (error) => {
+        console.error(
+          "Ledger listener:",
+          error
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     SETTINGS
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "settings", "attendance"),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSettings(DEFAULT_SETTINGS);
+          return;
+        }
+
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...snapshot.data(),
+        });
+      },
+      (error) => {
+        console.error(
+          "Settings listener:",
+          error
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     SETTINGS HISTORY
+  ======================================================= */
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "settingsHistory"),
+      (snapshot) => {
+        const rows = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+
+        setSettingsHistory(rows);
+      },
+      (error) => {
+        console.error(
+          "Settings history listener:",
+          error
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     PLAYER OPERATIONS
+  ======================================================= */
+
+  async function deletePlayerProfile(player) {
+    if (!isAdmin) {
+      throw new Error("Administrator access required.");
+    }
+
+    await deleteDoc(
+      doc(db, "attendancePlayers", player.id)
+    );
+  }
+
+  /*
+   * COMPLETE IGN PURGE
+   *
+   * This is intentionally different from DELETE.
+   *
+   * DELETE:
+   *   Removes profile only.
+   *
+   * PURGE:
+   *   Removes profile + ALL attendance + ALL ledger records.
+   *
+   * Therefore, when the IGN is added again, its calculated
+   * score is zero.
+   */
+  async function completelyPurgeIgn(player) {
+    if (!isAdmin) {
+      throw new Error(
+        "Administrator access is required."
+      );
+    }
+
+    if (!player?.id || !player?.ign) {
+      throw new Error("Invalid player.");
+    }
+
+    const ign = String(player.ign).trim();
+
+    const typed = window.prompt(
+      `PERMANENTLY PURGE "${ign}"?\n\n` +
+      `This removes ALL information connected to this IGN:\n\n` +
+      `• Player profile\n` +
+      `• Attendance history\n` +
+      `• Weapon claims\n` +
+      `• Score deductions\n` +
+      `• Manual score overrides\n\n` +
+      `This cannot be undone.\n\n` +
+      `Type the IGN exactly to continue:`
+    );
+
+    if (typed === null) {
+      return;
+    }
+
+    if (normalizeIgn(typed) !== normalizeIgn(ign)) {
+      window.alert(
+        "The IGN did not match exactly.\n\nNothing was deleted."
+      );
+
+      return;
+    }
+
+    const finalConfirm = window.confirm(
+      `FINAL CONFIRMATION\n\n` +
+      `Completely delete "${ign}" and make it a clean NEW USER?\n\n` +
+      `After this operation, adding "${ign}" again will start at 0 points.`
+    );
+
+    if (!finalConfirm) {
+      return;
+    }
+
+    try {
+      const attendanceSnapshot = await getDocs(
+        collection(db, "attendanceHistory")
+      );
+
+      const ledgerSnapshot = await getDocs(
+        collection(db, "scoreLedger")
+      );
+
+      /*
+       * Match by playerId FIRST.
+       *
+       * IGN fallback is included for older records that may not
+       * contain playerId.
+       */
+      const attendanceRefs =
+        attendanceSnapshot.docs
+          .filter((snap) => {
+            const data = snap.data();
+
+            return (
+              data.playerId === player.id ||
+              (
+                !data.playerId &&
+                normalizeIgn(data.ign) ===
+                normalizeIgn(ign)
               )
             );
+          })
+          .map((snap) => snap.ref);
 
-          const adminData =
-            adminDoc.exists()
-              ? adminDoc.data()
-              : null;
+      const ledgerRefs =
+        ledgerSnapshot.docs
+          .filter((snap) => {
+            const data = snap.data();
 
-          setIsAdmin(
-            adminData?.active ===
-              true
-          );
-        } catch (error) {
-          console.error(
-            "Admin lookup failed:",
-            error
-          );
-
-          setIsAdmin(false);
-        }
-
-        setAuthLoading(false);
-      }
-    );
-  }, []);
-
-  /* ==========================================================
-     RAID SCHEDULE
-  ========================================================== */
-
-  useEffect(() => {
-    return onSnapshot(
-      doc(
-        db,
-        "settings",
-        "raidSchedule"
-      ),
-      (snapshot) => {
-        if (
-          snapshot.exists()
-        ) {
-          const data =
-            snapshot.data();
-
-          const storedRaids =
-            Array.isArray(
-              data.raids
-            )
-              ? data.raids
-              : [];
-
-          const merged =
-            DEFAULT_RAIDS.map(
-              (defaultRaid) => {
-                const stored =
-                  storedRaids.find(
-                    (raid) =>
-                      raid.id ===
-                      defaultRaid.id
-                  );
-
-                return stored
-                  ? {
-                      ...defaultRaid,
-                      ...stored,
-                    }
-                  : defaultRaid;
-              }
+            return (
+              data.playerId === player.id ||
+              (
+                !data.playerId &&
+                normalizeIgn(data.ign) ===
+                normalizeIgn(ign)
+              )
             );
+          })
+          .map((snap) => snap.ref);
 
-          setRaids(merged);
-        } else {
-          setRaids(
-            DEFAULT_RAIDS
-          );
-        }
-      },
-      (error) => {
-        console.error(
-          "Raid schedule:",
-          error
-        );
-
-        setRaids(
-          DEFAULT_RAIDS
-        );
-      }
-    );
-  }, []);
-
-  /* ==========================================================
-     ATTENDANCE SETTINGS
-  ========================================================== */
-
-  useEffect(() => {
-    return onSnapshot(
-      doc(
-        db,
-        "settings",
-        "attendance"
-      ),
-      (snapshot) => {
-        if (
-          snapshot.exists()
-        ) {
-          setSettings({
-            ...DEFAULT_SETTINGS,
-            ...snapshot.data(),
-          });
-        } else {
-          setSettings(
-            DEFAULT_SETTINGS
-          );
-        }
-      },
-      (error) => {
-        console.error(
-          "Attendance settings:",
-          error
-        );
-      }
-    );
-  }, []);
-
-  /* ==========================================================
-     PLAYERS
-  ========================================================== */
-
-  useEffect(() => {
-    return onSnapshot(
-      query(
-        collection(
+      const allRefs = [
+        ...attendanceRefs,
+        ...ledgerRefs,
+        doc(
           db,
-          "attendancePlayers"
+          "attendancePlayers",
+          player.id
         ),
-        orderBy(
-          "ign",
-          "asc"
-        )
-      ),
-      (snapshot) => {
-        setPlayers(
-          snapshot.docs.map(
-            (item) => ({
-              id: item.id,
-              ...item.data(),
-            })
-          )
-        );
-      },
-      (error) => {
-        console.error(
-          "Attendance players:",
-          error
-        );
+      ];
+
+      /*
+       * Firestore batch limit is 500.
+       * Keep batches below that limit.
+       */
+      for (
+        let start = 0;
+        start < allRefs.length;
+        start += 450
+      ) {
+        const batch = writeBatch(db);
+
+        allRefs
+          .slice(start, start + 450)
+          .forEach((ref) => batch.delete(ref));
+
+        await batch.commit();
       }
-    );
-  }, []);
 
-  /* ==========================================================
-     HISTORY
-  ========================================================== */
-
-  useEffect(() => {
-    return onSnapshot(
-      query(
-        collection(
-          db,
-          "attendanceHistory"
-        ),
-        orderBy(
-          "createdAt",
-          "desc"
+      /*
+       * Immediately clean local state too.
+       * Firestore listeners will also synchronize afterwards.
+       */
+      setPlayers((current) =>
+        current.filter(
+          (item) => item.id !== player.id
         )
-      ),
-      (snapshot) => {
-        setHistory(
-          snapshot.docs.map(
-            (item) => ({
-              id: item.id,
-              ...item.data(),
-            })
-          )
-        );
-      },
-      (error) => {
-        console.error(
-          "Attendance history:",
-          error
-        );
-      }
-    );
-  }, []);
-
-  /* ==========================================================
-     PUBLIC RAID UPDATE
-  ========================================================== */
-
-  async function updateRaid(
-    id,
-    updatedRaid
-  ) {
-    const next =
-      raids.map((raid) =>
-        raid.id === id
-          ? updatedRaid
-          : raid
       );
 
-    await setDoc(
-      doc(
-        db,
-        "settings",
-        "raidSchedule"
-      ),
-      {
-        raids: next,
-        updatedAt:
-          serverTimestamp(),
-      },
-      {
-        merge: true,
+      setHistories((current) =>
+        current.filter(
+          (item) =>
+            item.playerId !== player.id &&
+            normalizeIgn(item.ign) !==
+            normalizeIgn(ign)
+        )
+      );
+
+      setLedger((current) =>
+        current.filter(
+          (item) =>
+            item.playerId !== player.id &&
+            normalizeIgn(item.ign) !==
+            normalizeIgn(ign)
+        )
+      );
+
+      if (historyPlayer?.id === player.id) {
+        setHistoryPlayer(null);
       }
-    );
+
+      if (claimPlayer?.id === player.id) {
+        setClaimPlayer(null);
+      }
+
+      if (overridePlayer?.id === player.id) {
+        setOverridePlayer(null);
+      }
+
+      window.alert(
+        `"${ign}" was completely purged.\n\n` +
+        `All profile, attendance, claim, and score information was removed.\n\n` +
+        `If you add this IGN again, it starts at 0 points.`
+      );
+    } catch (error) {
+      console.error(
+        "COMPLETE IGN PURGE FAILED:",
+        error
+      );
+
+      window.alert(
+        `Unable to completely purge "${ign}".\n\n` +
+        `${error?.message || error}`
+      );
+    }
   }
 
-  /* ==========================================================
-     ADD PLAYER
-  ========================================================== */
+  /* =======================================================
+     SETTINGS SAVE
+  ======================================================= */
 
-  async function addPlayer(
-    player
-  ) {
+  async function saveSettings(nextSettings) {
     if (!isAdmin) {
       throw new Error(
-        "Admin required."
+        "Administrator access required."
       );
     }
 
-    const duplicate =
-      players.some(
-        (existing) =>
-          String(
-            existing.ign || ""
-          ).toLowerCase() ===
-          String(
-            player.ign || ""
-          ).toLowerCase()
-      );
+    const adminName =
+      auth.currentUser?.email ||
+      auth.currentUser?.uid ||
+      "Admin";
 
-    if (duplicate) {
-      throw new Error(
-        "IGN already exists."
-      );
+    const settingsRef = doc(
+      db,
+      "settings",
+      "attendance"
+    );
+
+    const currentSnap = await getDoc(settingsRef);
+
+    const current = currentSnap.exists()
+      ? {
+        ...DEFAULT_SETTINGS,
+        ...currentSnap.data(),
+      }
+      : DEFAULT_SETTINGS;
+
+    const batch = writeBatch(db);
+
+    batch.set(
+      settingsRef,
+      {
+        ...nextSettings,
+        updatedAt: serverTimestamp(),
+        updatedBy: adminName,
+      },
+      { merge: true }
+    );
+
+    const settingKeys = [
+      "sonyaPoints",
+      "geomancerPoints",
+      "reflectorPoints",
+      "giantHawkPoints",
+      "eligibilityScore",
+    ];
+
+    for (const key of settingKeys) {
+      const oldValue = Number(current[key]);
+      const newValue = Number(nextSettings[key]);
+
+      if (oldValue !== newValue) {
+        const historyRef = doc(
+          collection(db, "settingsHistory")
+        );
+
+        batch.set(historyRef, {
+          setting: key,
+          oldValue,
+          newValue,
+          changedBy: adminName,
+          changedAt: serverTimestamp(),
+        });
+      }
     }
 
-    await addDoc(
-      collection(
-        db,
-        "attendancePlayers"
+    await batch.commit();
+  }
+
+  /* =======================================================
+     XLSX EXPORT
+  ======================================================= */
+
+  async function exportFullBackup() {
+    const raidSchedule = raids.map((raid) => ({
+      id: raid.id,
+      name: raid.name,
+      type: raid.type,
+      frequency: raid.frequency,
+      day:
+        raid.day === null
+          ? ""
+          : raid.day,
+      hour: raid.hour,
+      minute: raid.minute,
+      time12: formatTime12(
+        raid.hour,
+        raid.minute
       ),
+      image: raid.image || "",
+      updatedAt: safeRow(raid.updatedAt),
+      updatedBy: raid.updatedBy || "",
+    }));
+
+    const playersSheet = players.map((item) => ({
+      id: item.id,
+      ign: item.ign || "",
+      class: item.class || "",
+      preferredWeapon:
+        item.preferredWeapon || "",
+      createdAt: safeRow(item.createdAt),
+      updatedAt: safeRow(item.updatedAt),
+      createdBy: item.createdBy || "",
+      updatedBy: item.updatedBy || "",
+    }));
+
+    const historySheet = histories.map((item) => ({
+      id: item.id,
+      playerId: item.playerId || "",
+      ign: item.ign || "",
+      bossId: item.bossId || "",
+      bossName: item.bossName || "",
+      points: Number(item.points || 0),
+      attendanceDate:
+        item.attendanceDate || "",
+      createdAt: safeRow(item.createdAt),
+      createdBy: item.createdBy || "",
+    }));
+
+    const ledgerSheet = ledger.map((item) => ({
+      id: item.id,
+      playerId: item.playerId || "",
+      ign: item.ign || "",
+      type: item.type || "",
+      delta: Number(item.delta || 0),
+      oldScore: Number(item.oldScore || 0),
+      newScore: Number(item.newScore || 0),
+      weapon: item.weapon || "",
+      reason: item.reason || "",
+      admin: item.admin || "",
+      createdAt: safeRow(item.createdAt),
+    }));
+
+    const settingsSheet = [
       {
-        ign: player.ign,
-        className:
-          player.className,
-        weapon:
-          player.weapon || "",
-        totalScore: 0,
-        eligible: false,
-        createdAt:
-          serverTimestamp(),
-        updatedAt:
-          serverTimestamp(),
-      }
+        id: "attendance",
+        sonyaPoints: Number(
+          settings.sonyaPoints
+        ),
+        geomancerPoints: Number(
+          settings.geomancerPoints
+        ),
+        reflectorPoints: Number(
+          settings.reflectorPoints
+        ),
+        giantHawkPoints: Number(
+          settings.giantHawkPoints
+        ),
+        eligibilityScore: Number(
+          settings.eligibilityScore
+        ),
+        updatedAt: safeRow(settings.updatedAt),
+        updatedBy: settings.updatedBy || "",
+      },
+    ];
+
+    const settingsHistorySheet =
+      settingsHistory.map((item) => ({
+        id: item.id,
+        setting: item.setting || "",
+        oldValue: safeRow(item.oldValue),
+        newValue: safeRow(item.newValue),
+        changedBy: item.changedBy || "",
+        changedAt: safeRow(item.changedAt),
+      }));
+
+    const backupInfo = [
+      {
+        exportedAt: new Date().toISOString(),
+        application:
+          "RAN Online EP7 BH Attendance",
+        version: "2.0",
+        players: players.length,
+        attendanceHistory:
+          histories.length,
+        scoreLedger: ledger.length,
+        settingsHistory:
+          settingsHistory.length,
+        raidSchedule: raids.length,
+        restoreMode: "MERGE / UPSERT",
+      },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(playersSheet),
+      "Players"
     );
-  }
 
-  /* ==========================================================
-     UPDATE PLAYER
-  ========================================================== */
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(historySheet),
+      "Attendance History"
+    );
 
-  async function updatePlayer(
-    id,
-    changes
-  ) {
-    if (!isAdmin) return;
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(ledgerSheet),
+      "Score Ledger"
+    );
 
-    await updateDoc(
-      doc(
-        db,
-        "attendancePlayers",
-        id
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(settingsSheet),
+      "Scoring Settings"
+    );
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(
+        settingsHistorySheet
       ),
-      {
-        ...changes,
-        updatedAt:
-          serverTimestamp(),
-      }
+      "Settings History"
+    );
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(raidSchedule),
+      "Raid Schedule"
+    );
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(backupInfo),
+      "Backup Info"
+    );
+
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-");
+
+    XLSX.writeFile(
+      workbook,
+      `RAN-EP7-FULL-BACKUP-${stamp}.xlsx`
     );
   }
 
-  /* ==========================================================
-     DELETE PLAYER
-  ========================================================== */
+  /* =======================================================
+     XLSX IMPORT
+  ======================================================= */
 
-  async function deletePlayer(
-    id
-  ) {
-    if (!isAdmin) return;
-
-    const answer =
-      window.confirm(
-        "Delete this IGN? Attendance history will be kept."
-      );
-
-    if (!answer) return;
-
-    await deleteDoc(
-      doc(
-        db,
-        "attendancePlayers",
-        id
-      )
-    );
-  }
-
-  /* ==========================================================
-     ADD ATTENDANCE
-
-     IMPORTANT:
-     Score is recalculated from ALL history after adding.
-     This avoids score corruption.
-  ========================================================== */
-
-  async function addAttendance(
-    player,
-    bosses,
-    points
-  ) {
+  async function importFullBackup(file) {
     if (!isAdmin) {
       throw new Error(
-        "Admin required."
+        "Administrator access required."
       );
     }
 
-    await addDoc(
-      collection(
-        db,
-        "attendanceHistory"
-      ),
-      {
-        playerId:
-          player.id,
-        ign:
-          player.ign,
-        dateKey:
-          getDateKey(),
-        bosses,
-        points:
-          Number(points),
-        createdAt:
-          serverTimestamp(),
-        createdBy:
-          user?.email || "",
-      }
-    );
+    const buffer = await file.arrayBuffer();
 
-    await recalculatePlayerScore(
-      player.id
-    );
-  }
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+    });
 
-  /* ==========================================================
-     RECALCULATE PLAYER SCORE
-  ========================================================== */
+    function readSheet(name) {
+      const sheet = workbook.Sheets[name];
 
-  async function recalculatePlayerScore(
-    playerId
-  ) {
-    const playerHistory =
-      history.filter(
-        (item) =>
-          item.playerId ===
-          playerId
-      );
+      if (!sheet) return [];
 
-    const total =
-      playerHistory.reduce(
-        (sum, item) =>
-          sum +
-          Number(
-            item.points || 0
-          ),
-        0
-      );
+      return XLSX.utils.sheet_to_json(sheet, {
+        defval: "",
+      });
+    }
 
-    const score =
-      Number(total.toFixed(2));
-
-    await updateDoc(
-      doc(
-        db,
-        "attendancePlayers",
-        playerId
-      ),
-      {
-        totalScore: score,
-        eligible:
-          score >=
-          Number(
-            settings.eligibilityScore
-          ),
-        updatedAt:
-          serverTimestamp(),
-      }
-    );
-  }
-
-  /* ==========================================================
-     DELETE HISTORY
-
-     Score is recalculated from remaining history.
-  ========================================================== */
-
-  async function deleteHistory(
-    historyId,
-    playerId
-  ) {
-    if (!isAdmin) return;
-
-    const answer =
-      window.confirm(
-        "Delete this attendance record?"
-      );
-
-    if (!answer) return;
-
-    await deleteDoc(
-      doc(
-        db,
-        "attendanceHistory",
-        historyId
-      )
-    );
+    const playersRows = readSheet("Players");
+    const historyRows =
+      readSheet("Attendance History");
+    const ledgerRows =
+      readSheet("Score Ledger");
+    const settingsRows =
+      readSheet("Scoring Settings");
+    const settingsHistoryRows =
+      readSheet("Settings History");
+    const raidRows =
+      readSheet("Raid Schedule");
 
     /*
-      Build score from local history
-      minus the deleted record.
-    */
+     * Restore in chunks to respect Firestore batch limits.
+     */
+    const operations = [];
 
-    const remaining =
-      history.filter(
-        (item) =>
-          item.playerId ===
-            playerId &&
-          item.id !==
-            historyId
-      );
+    playersRows.forEach((row) => {
+      if (!row.id) return;
 
-    const total =
-      remaining.reduce(
-        (sum, item) =>
-          sum +
-          Number(
-            item.points || 0
+      operations.push({
+        ref: doc(
+          db,
+          "attendancePlayers",
+          String(row.id)
+        ),
+        data: {
+          ign: String(row.ign || ""),
+          class: String(row.class || ""),
+          preferredWeapon: String(
+            row.preferredWeapon || ""
           ),
-        0
-      );
+          createdAt:
+            excelDateToJS(row.createdAt)
+              ?.toISOString() ||
+            row.createdAt ||
+            null,
+          updatedAt:
+            excelDateToJS(row.updatedAt)
+              ?.toISOString() ||
+            row.updatedAt ||
+            null,
+          createdBy:
+            String(row.createdBy || ""),
+          updatedBy:
+            String(row.updatedBy || ""),
+        },
+      });
+    });
 
-    const score =
-      Number(
-        total.toFixed(2)
-      );
+    historyRows.forEach((row) => {
+      if (!row.id) return;
 
-    await updateDoc(
-      doc(
-        db,
-        "attendancePlayers",
-        playerId
-      ),
-      {
-        totalScore: score,
-        eligible:
-          score >=
-          Number(
-            settings.eligibilityScore
+      operations.push({
+        ref: doc(
+          db,
+          "attendanceHistory",
+          String(row.id)
+        ),
+        data: {
+          playerId:
+            String(row.playerId || ""),
+          ign: String(row.ign || ""),
+          bossId: String(row.bossId || ""),
+          bossName: String(
+            row.bossName || ""
           ),
-        updatedAt:
-          serverTimestamp(),
-      }
-    );
+          points: Number(row.points || 0),
+          attendanceDate:
+            String(row.attendanceDate || ""),
+          createdAt:
+            excelDateToJS(row.createdAt)
+              ?.toISOString() ||
+            row.createdAt ||
+            null,
+          createdBy:
+            String(row.createdBy || ""),
+        },
+      });
+    });
+
+    ledgerRows.forEach((row) => {
+      if (!row.id) return;
+
+      operations.push({
+        ref: doc(
+          db,
+          "scoreLedger",
+          String(row.id)
+        ),
+        data: {
+          playerId:
+            String(row.playerId || ""),
+          ign: String(row.ign || ""),
+          type: String(row.type || ""),
+          delta: Number(row.delta || 0),
+          oldScore: Number(
+            row.oldScore || 0
+          ),
+          newScore: Number(
+            row.newScore || 0
+          ),
+          weapon: String(
+            row.weapon || ""
+          ),
+          reason: String(
+            row.reason || ""
+          ),
+          admin: String(
+            row.admin || ""
+          ),
+          createdAt:
+            excelDateToJS(row.createdAt)
+              ?.toISOString() ||
+            row.createdAt ||
+            null,
+        },
+      });
+    });
+
+    settingsHistoryRows.forEach((row) => {
+      if (!row.id) return;
+
+      operations.push({
+        ref: doc(
+          db,
+          "settingsHistory",
+          String(row.id)
+        ),
+        data: {
+          setting: String(
+            row.setting || ""
+          ),
+          oldValue: row.oldValue,
+          newValue: row.newValue,
+          changedBy: String(
+            row.changedBy || ""
+          ),
+          changedAt:
+            excelDateToJS(row.changedAt)
+              ?.toISOString() ||
+            row.changedAt ||
+            null,
+        },
+      });
+    });
+
+    for (
+      let start = 0;
+      start < operations.length;
+      start += 450
+    ) {
+      const batch = writeBatch(db);
+
+      operations
+        .slice(start, start + 450)
+        .forEach((operation) => {
+          batch.set(
+            operation.ref,
+            operation.data,
+            { merge: true }
+          );
+        });
+
+      await batch.commit();
+    }
+
+    if (settingsRows.length > 0) {
+      const row = settingsRows[0];
+
+      await setDoc(
+        doc(db, "settings", "attendance"),
+        {
+          sonyaPoints: Number(
+            row.sonyaPoints || 0
+          ),
+          geomancerPoints: Number(
+            row.geomancerPoints || 0
+          ),
+          reflectorPoints: Number(
+            row.reflectorPoints || 0
+          ),
+          giantHawkPoints: Number(
+            row.giantHawkPoints || 0
+          ),
+          eligibilityScore: Number(
+            row.eligibilityScore || 0
+          ),
+          updatedAt:
+            excelDateToJS(row.updatedAt)
+              ?.toISOString() ||
+            row.updatedAt ||
+            null,
+          updatedBy:
+            String(row.updatedBy || ""),
+        },
+        { merge: true }
+      );
+    }
+
+    if (raidRows.length > 0) {
+      const importedRaids =
+        BOSSES.map((boss) => {
+          const row = raidRows.find(
+            (item) =>
+              String(item.id) ===
+              String(boss.id)
+          );
+
+          if (!row) {
+            return getDefaultRaid(boss);
+          }
+
+          return sanitizeRaid(
+            {
+              id: boss.id,
+              name: row.name,
+              type: row.type,
+              frequency: row.frequency,
+              day:
+                row.day === ""
+                  ? null
+                  : Number(row.day),
+              hour: Number(row.hour),
+              minute: Number(row.minute),
+              image: row.image || "",
+              updatedAt:
+                excelDateToJS(
+                  row.updatedAt
+                )?.toISOString() ||
+                row.updatedAt ||
+                null,
+              updatedBy:
+                row.updatedBy || "",
+            },
+            boss
+          );
+        });
+
+      await setDoc(
+        doc(db, "settings", "raidSchedule"),
+        {
+          raiders: importedRaids,
+          raids: importedRaids,
+          updatedAt: serverTimestamp(),
+          updatedBy:
+            auth.currentUser?.email ||
+            auth.currentUser?.uid ||
+            "Admin",
+        },
+        { merge: true }
+      );
+    }
   }
 
-  /* ==========================================================
-     LOADING
-  ========================================================== */
+  /* =======================================================
+     AUTH LOADING
+  ======================================================= */
 
   if (authLoading) {
     return (
       <div className="loading-screen">
-        <div className="loading-box">
-          <div className="eyebrow">
-            RAN ONLINE EP7
-          </div>
-
-          <strong>
-            Loading...
-          </strong>
+        <div className="loading-logo">RAN</div>
+        <div className="loading-bar">
+          <span />
         </div>
+        <p>LOADING DATABASE...</p>
       </div>
     );
   }
 
-  /* ==========================================================
-     APP
-  ========================================================== */
+  /* =======================================================
+     APP UI
+  ======================================================= */
 
   return (
     <div className="app">
-      <header className="site-header">
-        <div className="brand-area">
-          <div className="eyebrow">
-            RAN ONLINE EP7
+      <header className="main-header">
+        <div className="brand">
+          <div className="brand-mark">R</div>
+
+          <div>
+            <strong>RAN EP7</strong>
+            <span>BH ATTENDANCE</span>
           </div>
-
-          <h1>
-            BH RAID
-            <span>
-              {" "}
-              SCHEDULE
-            </span>
-          </h1>
-
-          <p>
-            Philippines raid schedule
-            converted to your timezone
-          </p>
         </div>
 
-        <div className="local-info">
-          <span>
-            YOUR LOCAL TIMEZONE
-          </span>
+        <nav className="main-nav">
+          <button
+            className={
+              page === "raid" ? "nav-active" : ""
+            }
+            onClick={() => setPage("raid")}
+          >
+            RAID SCHEDULE
+          </button>
 
-          <strong>
-            {getTimezoneFlag(
-              getLocalTimezone()
-            )}{" "}
-            {getTimezoneLabel(
-              getLocalTimezone()
-            )}
-          </strong>
+          <button
+            className={
+              page === "attendance"
+                ? "nav-active"
+                : ""
+            }
+            onClick={() => setPage("attendance")}
+          >
+            ATTENDANCE
+          </button>
 
-          <small>
-            Fixed Philippines raid times
-            are converted automatically.
-          </small>
+          {isAdmin && (
+            <button
+              className={
+                page === "admin"
+                  ? "nav-active"
+                  : ""
+              }
+              onClick={() => setPage("admin")}
+            >
+              ADMIN
+            </button>
+          )}
+        </nav>
+
+        <div className="header-right">
+          {isAdmin ? (
+            <>
+              <span className="admin-indicator">
+                ADMIN ACCESS
+              </span>
+
+              <button
+                className="logout-button"
+                onClick={() => signOut(auth)}
+              >
+                LOG OUT
+              </button>
+            </>
+          ) : (
+            <button
+              className="admin-login-button"
+              onClick={() => setShowLogin(true)}
+            >
+              ADMIN LOGIN
+            </button>
+          )}
         </div>
       </header>
 
-      <nav className="main-nav">
-        <button
-          className={
-            page === "raid"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            setPage("raid")
-          }
-        >
-          RAID SCHEDULE
-        </button>
+      <main>
+        {page === "raid" && (
+          <RaidPage
+            raids={raids}
+            timezone={timezone}
+            onTimezoneChange={handleTimezoneChange}
+            onEdit={setRaidEditor}
+          />
+        )}
 
-        <button
-          className={
-            page ===
-            "attendance"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            setPage(
-              "attendance"
-            )
-          }
-        >
-          ATTENDANCE
-        </button>
-      </nav>
+        {page === "attendance" && (
+          <AttendancePage
+            players={players}
+            histories={histories}
+            ledger={ledger}
+            settings={settings}
+            isAdmin={isAdmin}
+            onAddPlayer={() =>
+              setPlayerEditor({ mode: "new" })
+            }
+            onEditPlayer={(player) =>
+              setPlayerEditor(player)
+            }
+            onDeletePlayer={deletePlayerProfile}
+            onPurgePlayer={completelyPurgeIgn}
+            onHistory={setHistoryPlayer}
+            onClaim={setClaimPlayer}
+            onOverride={setOverridePlayer}
+          />
+        )}
 
-      {page === "raid" ? (
-        <RaidPage
-          raids={raids}
-          onUpdateRaid={
-            updateRaid
-          }
-        />
-      ) : (
-        <AttendancePage
-          players={players}
-          history={history}
-          settings={settings}
-          admin={isAdmin}
-          onAddPlayer={
-            addPlayer
-          }
-          onUpdatePlayer={
-            updatePlayer
-          }
-          onDeletePlayer={
-            deletePlayer
-          }
-          onAddAttendance={
-            addAttendance
-          }
-          onDeleteHistory={
-            deleteHistory
-          }
+        {page === "admin" && isAdmin && (
+          <AdminPage
+            players={players}
+            histories={histories}
+            ledger={ledger}
+            settings={settings}
+            settingsHistory={settingsHistory}
+            user={user}
+            onAddPlayer={() =>
+              setPlayerEditor({ mode: "new" })
+            }
+            onEditPlayer={(player) =>
+              setPlayerEditor(player)
+            }
+            onHistory={setHistoryPlayer}
+            onClaim={setClaimPlayer}
+            onOverride={setOverridePlayer}
+            onPurgePlayer={completelyPurgeIgn}
+            onDeletePlayer={deletePlayerProfile}
+            onSaveSettings={saveSettings}
+            onExport={exportFullBackup}
+            onImport={importFullBackup}
+          />
+        )}
+      </main>
+
+      <footer className="main-footer">
+        <div>
+          <strong>RAN ONLINE EP7 BH ATTENDANCE</strong>
+          <span>
+            Attendance • Raid Schedule • Scoring
+          </span>
+        </div>
+
+        <span>
+          © {new Date().getFullYear()} BH Guild
+        </span>
+      </footer>
+
+      {showLogin && (
+        <AdminLogin
+          onClose={() => setShowLogin(false)}
         />
       )}
 
-      <footer>
-        RAN ONLINE EP7 • BH RAID
-        SCHEDULE • ATTENDANCE
-      </footer>
+      {raidEditor && (
+        <RaidEditor
+          raid={raidEditor}
+          onClose={() => setRaidEditor(null)}
+          onSaved={() => { }}
+        />
+      )}
+
+      {playerEditor && (
+        <PlayerFormModal
+          player={
+            playerEditor.mode === "new"
+              ? null
+              : playerEditor
+          }
+          onClose={() => setPlayerEditor(null)}
+          onSaved={() => { }}
+        />
+      )}
+
+      {historyPlayer && (
+        <PlayerHistoryModal
+          player={historyPlayer}
+          histories={histories}
+          ledger={ledger}
+          score={getPlayerScore(
+            historyPlayer,
+            histories,
+            ledger
+          )}
+          onClose={() => setHistoryPlayer(null)}
+        />
+      )}
+
+      {claimPlayer && (
+        <ClaimModal
+          player={claimPlayer}
+          currentScore={getPlayerScore(
+            claimPlayer,
+            histories,
+            ledger
+          )}
+          eligibilityScore={Number(
+            settings.eligibilityScore
+          )}
+          onClose={() => setClaimPlayer(null)}
+        />
+      )}
+
+      {overridePlayer && (
+        <OverrideModal
+          player={overridePlayer}
+          currentScore={getPlayerScore(
+            overridePlayer,
+            histories,
+            ledger
+          )}
+          onClose={() =>
+            setOverridePlayer(null)
+          }
+        />
+      )}
     </div>
   );
 }
-
