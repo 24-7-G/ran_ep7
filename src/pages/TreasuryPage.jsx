@@ -1,0 +1,3 @@
+export default function TreasuryPage() {
+  return <div className="page"><section className="page-heading"><div><div className="page-kicker">RAN ONLINE EP7 CLASSIC</div><h1>Guild Treasury</h1><p>Castle War treasury and ledger.</p></div></section><section className="section-card empty-panel"><h2>Treasury</h2><p>Ledger and balance controls are ready to be connected to your existing CW module.</p></section></div>;
+}
