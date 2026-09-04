@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -33,11 +34,13 @@ import {
 } from "../lib/time";
 
 import "./BHPage.css";
+import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
 
 import sonyaImage from "../bosses/sonya.png";
 import geomancerImage from "../bosses/geomancer.png";
 import giantHawkImage from "../bosses/giant-hawk.png";
 import reflectorImage from "../bosses/reflector.png";
+import duckRaceIcon from "../icons/duck-race.svg";
 
 import swordmanIcon from "../icons/swordman.svg";
 import archerIcon from "../icons/archer.svg";
@@ -208,17 +211,40 @@ function formatLongDate(date, timezone = PRIMARY_TIMEZONE) {
   }
 }
 
+function timezoneAbbreviation(date, timezone = PRIMARY_TIMEZONE) {
+  const d = safeToDate(date);
+  if (!d) return "";
+
+  if (timezone === "Asia/Manila") return "PHT";
+  if (timezone === "UTC") return "UTC";
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone || PRIMARY_TIMEZONE,
+      timeZoneName: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }).formatToParts(d);
+
+    return parts.find((part) => part.type === "timeZoneName")?.value || "";
+  } catch {
+    return "";
+  }
+}
+
 function formatTime(date, timezone = PRIMARY_TIMEZONE) {
   const d = safeToDate(date);
   if (!d) return "—";
 
   try {
-    return new Intl.DateTimeFormat("en-US", {
+    const time = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
     }).format(d);
+    const zone = timezoneAbbreviation(d, timezone);
+    return zone ? `${time} ${zone}` : time;
   } catch {
     return d.toLocaleTimeString([], {
       hour: "numeric",
@@ -503,12 +529,31 @@ function generateScheduleOccurrences(
   const visibleKeys = new Set(displayDateKeys || []);
   if (!visibleKeys.size) return [];
 
-  const result = [];
+  const sortedVisible = Array.from(visibleKeys).sort();
+  const firstDisplayKey = sortedVisible[0];
+  const lastDisplayKey = sortedVisible[sortedVisible.length - 1];
 
-  const getWeekday = (dateKey) => {
-    const d = zonedLocalToDate(dateKey, "12:00", displayTimezone);
-    return d ? d.getUTCDay() : -1;
-  };
+  /*
+   * A display date is NOT necessarily the same calendar date in the
+   * schedule's source timezone. For example, 12:00 AM Pacific can be
+   * a different Philippines calendar day. Build the schedule in its
+   * own configured timezone first, then convert the resulting instant
+   * into the selected DISPLAY TIMEZONE.
+   */
+  const displayStart = zonedLocalToDate(
+    shiftDateKey(firstDisplayKey, -1),
+    "00:00",
+    displayTimezone
+  );
+  const displayEnd = zonedLocalToDate(
+    shiftDateKey(lastDisplayKey, 1),
+    "23:59",
+    displayTimezone
+  );
+
+  if (!displayStart || !displayEnd) return [];
+
+  const result = [];
 
   const normalizeWeekday = (value) => {
     const raw = lower(value);
@@ -547,29 +592,17 @@ function generateScheduleOccurrences(
     };
   };
 
-  const addOccurrence = (sourceRaid, dateKey, hour, minute) => {
+  const addOccurrence = (sourceRaid, spawnAt) => {
+    if (!(spawnAt instanceof Date) || Number.isNaN(spawnAt.getTime())) return;
+    if (spawnAt < displayStart || spawnAt > displayEnd) return;
+
+    const dateKey = dateKeyFromDate(spawnAt, displayTimezone);
     if (!visibleKeys.has(dateKey)) return;
-
-    const timezone =
-      clean(sourceRaid?.timezone) ||
-      displayTimezone ||
-      PRIMARY_TIMEZONE;
-
-    const spawnAt = zonedLocalToDate(
-      dateKey,
-      `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
-      timezone
-    );
-
-    if (!spawnAt) return;
 
     const raidId = canonicalRaidId(sourceRaid);
     const bossId = normalizeBossId(
-      sourceRaid?.id ??
-      sourceRaid?.bossId ??
-      sourceRaid?.name
+      sourceRaid?.id ?? sourceRaid?.bossId ?? sourceRaid?.name
     );
-
     if (!raidId || !bossId) return;
 
     result.push({
@@ -578,14 +611,11 @@ function generateScheduleOccurrences(
       scheduleId: raidId,
       bossId,
       bossName:
-        clean(
-          sourceRaid?.name ??
-          sourceRaid?.bossName ??
-          sourceRaid?.title
-        ) || bossLabel(bossId),
+        clean(sourceRaid?.name ?? sourceRaid?.bossName ?? sourceRaid?.title) ||
+        bossLabel(bossId),
       points: bossPointsFromScoring(scoring, bossId),
       spawnAt,
-      dateKey: dateKeyFromDate(spawnAt, displayTimezone),
+      dateKey,
       timeKey: timeKeyFromDate(spawnAt, displayTimezone),
       primaryDateKey: dateKeyFromDate(spawnAt, PRIMARY_TIMEZONE),
       primaryTimeKey: timeKeyFromDate(spawnAt, PRIMARY_TIMEZONE),
@@ -600,83 +630,83 @@ function generateScheduleOccurrences(
     const raid = normalizeRaidSource(sourceRaid);
     if (!raid) continue;
 
+    const sourceTimezone = clean(raid.timezone) || PRIMARY_TIMEZONE;
     const { hour, minute } = parseTime(raid);
     const type = lower(raid.scheduleType);
-    const raidDays = Array.isArray(raid.days) ? raid.days : [];
 
-    for (const dateKey of visibleKeys) {
-      let shouldAdd = false;
+    if (type === "interval") {
+      const anchorDateKey = clean(raid.anchorDate);
+      const intervalHours = Number(raid.intervalHours);
+      if (!anchorDateKey || !Number.isFinite(intervalHours) || intervalHours <= 0) continue;
 
-      if (type === "weekly") {
-        const weekday = getWeekday(dateKey);
-        shouldAdd = raidDays.length
-          ? raidDays.some(
-            (day) => normalizeWeekday(day) === weekday
-          )
-          : false;
-      } else if (type === "interval") {
-        const anchorDateKey = clean(raid.anchorDate);
-        if (!anchorDateKey || !raid.intervalHours) continue;
+      const base = zonedLocalToDate(
+        anchorDateKey,
+        `${String(raid.anchorHour).padStart(2, "0")}:${String(raid.anchorMinute).padStart(2, "0")}`,
+        sourceTimezone
+      );
+      if (!base) continue;
 
-        const base = zonedLocalToDate(
-          anchorDateKey,
-          `${String(raid.anchorHour).padStart(2, "0")}:${String(raid.anchorMinute).padStart(2, "0")}`,
-          clean(raid.timezone) ||
-          displayTimezone ||
-          PRIMARY_TIMEZONE
-        );
+      const intervalMs = intervalHours * 60 * 60 * 1000;
+      const startMs = displayStart.getTime();
+      const endMs = displayEnd.getTime();
+      const baseMs = base.getTime();
 
-        const target = zonedLocalToDate(
-          dateKey,
-          `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
-          clean(raid.timezone) ||
-          displayTimezone ||
-          PRIMARY_TIMEZONE
-        );
+      let index = Math.ceil((startMs - baseMs) / intervalMs - 1e-10);
+      if (!Number.isFinite(index)) continue;
+      index = Math.max(0, index);
 
-        if (!base || !target) continue;
+      for (let i = 0; i < 1000; i += 1) {
+        const occurrenceMs = baseMs + index * intervalMs;
+        if (occurrenceMs > endMs) break;
+        if (occurrenceMs >= startMs) {
+          addOccurrence(raid, new Date(occurrenceMs));
+        }
+        index += 1;
+      }
+      continue;
+    }
 
-        const intervalMs =
-          Number(raid.intervalHours) *
-          60 *
-          60 *
-          1000;
+    /* Daily and weekly schedules are generated using SOURCE calendar dates. */
+    const sourceStartKey = dateKeyFromDate(displayStart, sourceTimezone);
+    const sourceEndKey = dateKeyFromDate(displayEnd, sourceTimezone);
 
-        if (intervalMs <= 0) continue;
+    let sourceKey = shiftDateKey(sourceStartKey, -1);
+    const lastSourceKey = shiftDateKey(sourceEndKey, 1);
 
-        const delta = target.getTime() - base.getTime();
-        const quotient = delta / intervalMs;
+    for (let i = 0; i < 20 && sourceKey <= lastSourceKey; i += 1) {
+      const localSpawn = zonedLocalToDate(
+        sourceKey,
+        `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+        sourceTimezone
+      );
 
-        shouldAdd =
-          quotient >= 0 &&
-          Math.abs(quotient - Math.round(quotient)) < 1e-8;
-      } else {
-        // Daily schedules occur every day at their configured time.
-        shouldAdd = true;
+      if (localSpawn) {
+        let shouldAdd = true;
+
+        if (type === "weekly") {
+          const weekdayDate = zonedLocalToDate(sourceKey, "12:00", sourceTimezone);
+          const weekday = weekdayDate ? weekdayDate.getUTCDay() : -1;
+          const days = Array.isArray(raid.days) ? raid.days : [];
+          shouldAdd = days.length > 0 && days.some((day) => normalizeWeekday(day) === weekday);
+        }
+
+        if (shouldAdd) addOccurrence(raid, localSpawn);
       }
 
-      if (shouldAdd) {
-        addOccurrence(raid, dateKey, hour, minute);
-      }
+      sourceKey = shiftDateKey(sourceKey, 1);
     }
   }
 
   const unique = new Map();
-
   for (const occurrence of result) {
-    const key =
-      `${occurrence.bossId}|${occurrence.spawnAt.getTime()}`;
-
-    if (!unique.has(key)) {
-      unique.set(key, occurrence);
-    }
+    const key = `${occurrence.bossId}|${occurrence.spawnAt.getTime()}`;
+    if (!unique.has(key)) unique.set(key, occurrence);
   }
 
   return Array.from(unique.values()).sort(
     (a, b) => a.spawnAt.getTime() - b.spawnAt.getTime()
   );
 }
-
 /* =========================================================
    NORMALIZERS
 ========================================================= */
@@ -783,10 +813,12 @@ function normalizePlayer(
 ) {
   const data =
     snapshot.data() || {};
+  const inferred = inferNoticeAuditFields(data);
 
   return {
     id: String(snapshot.id),
     ...data,
+    ...inferred,
     ign:
       clean(
         data.ign ??
@@ -956,10 +988,28 @@ function normalizeReward(
     notes: clean(
       data.notes
     ),
+    weaponClass: clean(
+      data.weaponClass ?? data.class ?? data.weaponClassName
+    ),
     createdAt:
       data.createdAt || null,
+    createdBy: clean(data.createdBy),
     updatedAt:
       data.updatedAt || null,
+    updatedBy: clean(data.updatedBy),
+  };
+}
+
+function normalizeDuckRaceStatus(snapshot) {
+  const data = snapshot.data() || {};
+  return {
+    id: String(snapshot.id),
+    ...data,
+    bossId: normalizeBossId(data.bossId ?? data.boss),
+    dateKey: clean(data.dateKey),
+    status: clean(data.status) || "not-yet",
+    updatedAt: data.updatedAt || null,
+    updatedBy: clean(data.updatedBy),
   };
 }
 
@@ -1024,15 +1074,102 @@ function normalizeClaim(
   };
 }
 
+function noticeDayKey(date, timezone) {
+  const d = safeToDate(date);
+  if (!d) return "";
+
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone || PRIMARY_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return "";
+  }
+}
+
+function noticeIcon(type) {
+  switch (String(type || "info").toLowerCase()) {
+    case "success":
+      return "✓";
+    case "warning":
+      return "!";
+    case "error":
+      return "×";
+    case "reward":
+      return "◆";
+    default:
+      return "●";
+  }
+}
+
+function noticeTypeLabel(type) {
+  switch (String(type || "info").toLowerCase()) {
+    case "success":
+      return "ACTIVITY";
+    case "warning":
+      return "WARNING";
+    case "error":
+      return "ERROR";
+    case "reward":
+      return "REWARD";
+    default:
+      return "NOTICE";
+  }
+}
+
+function noticeSortNewestFirst(a, b) {
+  const ad = safeToDate(a?.createdAt)?.getTime() || 0;
+  const bd = safeToDate(b?.createdAt)?.getTime() || 0;
+  return bd - ad;
+}
+
+function inferNoticeAuditFields(data) {
+  const title = clean(data?.title);
+  const message = clean(data?.message);
+  const text = `${title} ${message}`;
+  const inferred = {};
+
+  if (!data?.action) inferred.action = title;
+  if (!data?.playerName) {
+    const m = message.match(/^(.*?)\s+(?:was|received|claimed|attendance|\'s|only has)/i);
+    if (m?.[1] && !/^(a player|player)$/i.test(m[1].trim())) inferred.playerName = clean(m[1]);
+  }
+  if (!data?.bossName) {
+    const bosses = DEFAULT_BOSS_LIST.map((b) => b.name).sort((a, b) => b.length - a.length);
+    const found = bosses.find((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+    if (found) inferred.bossName = found;
+  }
+  if (!data?.points) {
+    const m = text.match(/(?:received|for|cost|points?|→)\s*(-?\d+(?:\.\d+)?)/i);
+    if (m) inferred.points = safeNumber(m[1], 0);
+  }
+  if (!data?.status) {
+    if (/deleted|removed/i.test(title)) inferred.status = "deleted";
+    else if (/claimed/i.test(title)) inferred.status = "claimed";
+    else if (/disabled/i.test(title)) inferred.status = "disabled";
+    else if (/enabled/i.test(title)) inferred.status = "active";
+    else if (/recorded|added/i.test(title)) inferred.status = "recorded";
+  }
+  inferred.details = Array.isArray(data?.details) ? data.details.filter(Boolean) : [];
+  inferred.changes = Array.isArray(data?.changes) ? data.changes.filter(Boolean) : [];
+  if (!inferred.details.length && message) inferred.details = [message];
+  return inferred;
+}
+
 function normalizeNotice(
   snapshot
 ) {
   const data =
     snapshot.data() || {};
+  const inferred = inferNoticeAuditFields(data);
 
   return {
     id: String(snapshot.id),
     ...data,
+    ...inferred,
     module:
       clean(data.module) ||
       "bh-attendance",
@@ -1063,6 +1200,22 @@ function normalizeNotice(
       clean(
         data.createdByUid
       ),
+    timestamp: safeToDate(data.timestamp) || safeToDate(data.createdAt),
+    action: clean(data.action) || inferred.action,
+    entityType: clean(data.entityType) || inferred.entityType,
+    entityId: clean(data.entityId),
+    playerId: clean(data.playerId),
+    playerName: clean(data.playerName) || inferred.playerName,
+    bossId: clean(data.bossId),
+    bossName: clean(data.bossName) || inferred.bossName,
+    rewardId: clean(data.rewardId),
+    rewardName: clean(data.rewardName),
+    points: data.points == null ? (inferred.points ?? null) : safeNumber(data.points, 0),
+    status: clean(data.status) || inferred.status,
+    reason: clean(data.reason),
+    notes: clean(data.notes),
+    details: inferred.details,
+    changes: inferred.changes,
   };
 }
 
@@ -1119,6 +1272,26 @@ function TableScroller({
   );
 }
 
+function formatRosterSince(value, timezone) {
+  const date = safeToDate(value);
+  if (!date) return "—";
+
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone || browserTimezone(),
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  }
+}
+
 /* =========================================================
    FIXED PLAYER PICKER
 ========================================================= */
@@ -1133,6 +1306,7 @@ function AttendancePlayerFilter({
   selectedScheduledSpawns = [],
   toggleScheduledSpawn,
   showTodaySchedule = true,
+  onAddNewPlayer,
 }) {
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("all");
@@ -1140,6 +1314,10 @@ function AttendancePlayerFilter({
   const [page, setPage] = useState(1);
   const rootRef = useRef(null);
   const searchRef = useRef(null);
+
+  // This component has its own React scope, so use the global display timezone
+  // directly instead of referencing BHPage's local effectiveTimezone variable.
+  const { resolvedTimezone: attendanceDisplayTimezone } = useGlobalDisplayTimezone();
 
   const activePlayers = useMemo(
     () =>
@@ -1332,6 +1510,22 @@ function AttendancePlayerFilter({
           <b>{open ? "CLOSE ROSTER" : "BROWSE ROSTER"}</b>
         </button>
 
+        {onAddNewPlayer && (
+          <button
+            type="button"
+            className="bh-picker-v6-add-player"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              onAddNewPlayer();
+            }}
+          >
+            <span>＋</span>
+            <b>ADD NEW PLAYER</b>
+          </button>
+        )}
+
         {selected && (
           <button
             type="button"
@@ -1372,8 +1566,12 @@ function AttendancePlayerFilter({
               <span className="bh-picker-v6-detail-glyph">⚔</span>
               <div><b>{selected.weapon || "—"}</b><small>WEAPON</small></div>
             </div>
-            <div className="bh-picker-v6-detail bh-picker-v6-id">
-              <div><b>{String(selected.id || "—")}</b><small>PLAYER ID</small></div>
+            <div className="bh-picker-v6-detail bh-picker-v6-roster-since">
+              <span className="bh-picker-v6-detail-glyph">♙</span>
+              <div>
+                <b>{formatRosterSince(selected.createdAt, attendanceDisplayTimezone)}</b>
+                <small>ROSTER SINCE</small>
+              </div>
             </div>
           </>
         )}
@@ -1411,7 +1609,12 @@ function AttendancePlayerFilter({
                   >
                     {image ? <img src={image} alt="" /> : <span className="bh-picker-v6-boss-fallback">◆</span>}
                     <span className="bh-picker-v6-boss-info">
-                      <small>{occurrence.timeKey}</small>
+                      <small>
+                        {formatTime(
+                          occurrence.spawnAt,
+                          attendanceDisplayTimezone
+                        )}
+                      </small>
                       <b>{occurrence.bossName}</b>
                       <strong>+{safeNumber(occurrence.points, 0).toFixed(2)} pts</strong>
                     </span>
@@ -1507,6 +1710,16 @@ export default function BHPage() {
   ] = useState([]);
 
   const [
+    duckRaceStatuses,
+    setDuckRaceStatuses,
+  ] = useState([]);
+
+  const [
+    duckRaceSaving,
+    setDuckRaceSaving,
+  ] = useState(false);
+
+  const [
     guildNotices,
     setGuildNotices,
   ] = useState([]);
@@ -1539,14 +1752,60 @@ export default function BHPage() {
   const [
     activeTab,
     setActiveTab,
-  ] = useState("schedule");
+  ] = useState(() => {
+    try {
+      const saved = localStorage.getItem("bh-active-tab");
+      return saved === "rewards" || saved === "notices" || saved === "schedule"
+        ? saved
+        : "schedule";
+    } catch {
+      return "schedule";
+    }
+  });
 
-  const [
-    displayTimezone,
-    setDisplayTimezone,
-  ] = useState(
-    PRIMARY_TIMEZONE
-  );
+  const activeTabRef = useRef(activeTab);
+  const restoringScrollRef = useRef(false);
+  const userScrolledRef = useRef(false);
+
+  const saveTabScroll = (tab = activeTabRef.current) => {
+    try {
+      const y = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+      localStorage.setItem(`bh-scroll-${tab}`, String(y));
+    } catch {
+      // Ignore storage restrictions.
+    }
+  };
+
+  const switchActiveTab = (nextTab) => {
+    if (nextTab !== "schedule" && nextTab !== "rewards" && nextTab !== "notices") {
+      return;
+    }
+
+    // Save the page we are leaving BEFORE React swaps the tab content.
+    saveTabScroll(activeTabRef.current);
+    activeTabRef.current = nextTab;
+    setActiveTab(nextTab);
+  };
+
+  const [noticeNewPage, setNoticeNewPage] = useState(1);
+  const [noticeOldPage, setNoticeOldPage] = useState(1);
+  const [noticeAllPage, setNoticeAllPage] = useState(1);
+  const [noticeSearch, setNoticeSearch] = useState("");
+  const [noticeTypeFilter, setNoticeTypeFilter] = useState("all");
+  const [noticeTimeFilter, setNoticeTimeFilter] = useState("all");
+  const [noticeAdminFilter, setNoticeAdminFilter] = useState("all");
+  const [noticeDateFilter, setNoticeDateFilter] = useState("");
+  const [noticeFromTime, setNoticeFromTime] = useState("11:00");
+  const [noticeToTime, setNoticeToTime] = useState("03:00");
+  const [selectedNotice, setSelectedNotice] = useState(null);
+
+  /*
+   * Match Raid Schedule behavior:
+   * - Automatic uses the visitor's browser timezone.
+   * - A selected timezone is used only for display.
+   * - Stored attendance/schedule timestamps are NOT changed.
+   */
+  const { displayTimezone, resolvedTimezone } = useGlobalDisplayTimezone();
 
   const [
     clockTick,
@@ -1606,6 +1865,11 @@ export default function BHPage() {
   const [
     attendanceSaving,
     setAttendanceSaving,
+  ] = useState(false);
+
+  const [
+    addPlayerModalOpen,
+    setAddPlayerModalOpen,
   ] = useState(false);
 
   const [
@@ -1736,7 +2000,8 @@ export default function BHPage() {
     bossId:
       DEFAULT_BOSS_LIST[0]?.id ||
       "sonya",
-    cost: 1,
+    cost: 6,
+    weaponClass: CLASS_OPTIONS[0] || "",
     playerId: "",
     status: "available",
     spawnAt: "",
@@ -1751,6 +2016,11 @@ export default function BHPage() {
   const [
     editingReward,
     setEditingReward,
+  ] = useState(null);
+
+  const [
+    selectedRewardInventory,
+    setSelectedRewardInventory,
   ] = useState(null);
 
   const [
@@ -1855,11 +2125,13 @@ export default function BHPage() {
      TIMEZONE
   ========================================================= */
 
-  const effectiveTimezone =
-    displayTimezone ===
-      "Automatic"
-      ? browserTimezone
-      : displayTimezone;
+  /*
+   * This is the single timezone used by the BH UI.
+   * Keep the schedule's configured/server timezone separate from
+   * the display timezone.  Changing the selector must never rewrite
+   * the underlying Firebase timestamps.
+   */
+  const effectiveTimezone = resolvedTimezone;
 
   const todayKey = useMemo(
     () =>
@@ -1872,6 +2144,144 @@ export default function BHPage() {
       effectiveTimezone,
     ]
   );
+
+  const sortedGuildNotices = useMemo(
+    () => [...guildNotices].sort(noticeSortNewestFirst),
+    [guildNotices]
+  );
+
+  const newNotices = useMemo(
+    () =>
+      sortedGuildNotices.filter(
+        (notice) => noticeDayKey(notice.createdAt, effectiveTimezone) === todayKey
+      ),
+    [sortedGuildNotices, effectiveTimezone, todayKey]
+  );
+
+  const oldNotices = useMemo(
+    () =>
+      sortedGuildNotices.filter(
+        (notice) => {
+          const day = noticeDayKey(notice.createdAt, effectiveTimezone);
+          return Boolean(day) && day !== todayKey;
+        }
+      ),
+    [sortedGuildNotices, effectiveTimezone, todayKey]
+  );
+
+  const filteredAllNotices = useMemo(() => {
+    const now = new Date(clockTick).getTime();
+    const search = noticeSearch.trim().toLowerCase();
+
+    return sortedGuildNotices.filter((notice) => {
+      if (noticeTypeFilter !== "all" && String(notice.type || "info") !== noticeTypeFilter) {
+        return false;
+      }
+
+      if (noticeAdminFilter !== "all" && String(notice.createdBy || "System") !== noticeAdminFilter) {
+        return false;
+      }
+
+      if (noticeTimeFilter !== "all") {
+        const created = safeToDate(notice.createdAt)?.getTime();
+        if (!created) return false;
+        const ageDays = (now - created) / 86400000;
+        if (noticeTimeFilter === "today" && noticeDayKey(notice.createdAt, effectiveTimezone) !== todayKey) return false;
+        if (noticeTimeFilter === "7" && ageDays > 7) return false;
+        if (noticeTimeFilter === "30" && ageDays > 30) return false;
+      }
+
+      // Exact local-calendar date/time filter. If the end time is earlier than
+      // the start time, the range intentionally crosses midnight (e.g. 11:00 AM → 3:00 AM).
+      if (noticeDateFilter) {
+        const day = noticeDayKey(notice.createdAt, effectiveTimezone);
+        const from = noticeFromTime || "00:00";
+        const to = noticeToTime || "23:59";
+        const [fh, fm] = from.split(":").map(Number);
+        const [th, tm] = to.split(":").map(Number);
+        const fromMinutes = (fh || 0) * 60 + (fm || 0);
+        const toMinutes = (th || 0) * 60 + (tm || 0);
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: effectiveTimezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+        }).formatToParts(safeToDate(notice.createdAt));
+        const hour = Number(parts.find((p) => p.type === "hour")?.value || 0);
+        const minute = Number(parts.find((p) => p.type === "minute")?.value || 0);
+        const localMinutes = hour * 60 + minute;
+        if (fromMinutes <= toMinutes) {
+          if (day !== noticeDateFilter || localMinutes < fromMinutes || localMinutes > toMinutes) return false;
+        } else {
+          const nextDay = new Date(`${noticeDateFilter}T12:00:00Z`);
+          nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+          const nextDateKey = nextDay.toISOString().slice(0, 10);
+          const inRange = (day === noticeDateFilter && localMinutes >= fromMinutes) ||
+            (day === nextDateKey && localMinutes <= toMinutes);
+          if (!inRange) return false;
+        }
+      }
+
+      if (search) {
+        const haystack = [
+          notice.title,
+          notice.message,
+          notice.createdBy,
+          notice.module,
+          notice.type,
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+
+      return true;
+    });
+  }, [
+    sortedGuildNotices,
+    noticeSearch,
+    noticeTypeFilter,
+    noticeTimeFilter,
+    noticeAdminFilter,
+    noticeDateFilter,
+    noticeFromTime,
+    noticeToTime,
+    clockTick,
+    effectiveTimezone,
+    todayKey,
+  ]);
+
+  const noticeAdmins = useMemo(
+    () => Array.from(new Set(sortedGuildNotices.map((n) => n.createdBy || "System"))).sort((a, b) => a.localeCompare(b)),
+    [sortedGuildNotices]
+  );
+
+  const NOTICE_PAGE_SIZE = 10;
+  const newNoticePageCount = Math.max(1, Math.ceil(newNotices.length / NOTICE_PAGE_SIZE));
+  const oldNoticePageCount = Math.max(1, Math.ceil(oldNotices.length / NOTICE_PAGE_SIZE));
+  const allNoticePageCount = Math.max(1, Math.ceil(filteredAllNotices.length / NOTICE_PAGE_SIZE));
+
+  const safeNewPage = Math.min(noticeNewPage, newNoticePageCount);
+  const safeOldPage = Math.min(noticeOldPage, oldNoticePageCount);
+  const safeAllPage = Math.min(noticeAllPage, allNoticePageCount);
+
+  const pagedNewNotices = newNotices.slice(
+    (safeNewPage - 1) * NOTICE_PAGE_SIZE,
+    safeNewPage * NOTICE_PAGE_SIZE
+  );
+  const pagedOldNotices = oldNotices.slice(
+    (safeOldPage - 1) * NOTICE_PAGE_SIZE,
+    safeOldPage * NOTICE_PAGE_SIZE
+  );
+  const pagedAllNotices = filteredAllNotices.slice(
+    (safeAllPage - 1) * NOTICE_PAGE_SIZE,
+    safeAllPage * NOTICE_PAGE_SIZE
+  );
+
+  const openAllNotifications = () => {
+    switchActiveTab("notices");
+    requestAnimationFrame(() => {
+      document.getElementById("bh-notifications-panel")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
 
   /* =========================================================
      LOAD ALL DATA
@@ -1890,6 +2300,7 @@ export default function BHPage() {
           raidsSnap,
           rewardsSnap,
           claimsSnap,
+          duckRaceSnap,
           scoringSnap,
           scoringHistorySnap,
           noticesSnap,
@@ -1926,6 +2337,13 @@ export default function BHPage() {
             collection(
               db,
               "bhRewardClaims"
+            )
+          ),
+
+          getDocs(
+            collection(
+              db,
+              "bhDuckRaceStatus"
             )
           ),
 
@@ -2025,6 +2443,9 @@ export default function BHPage() {
                   )
                 )
             );
+
+        const loadedDuckRaceStatuses =
+          duckRaceSnap.docs.map(normalizeDuckRaceStatus);
 
         const loadedClaims =
           claimsSnap.docs
@@ -2127,6 +2548,8 @@ export default function BHPage() {
           loadedClaims
         );
 
+        setDuckRaceStatuses(loadedDuckRaceStatuses);
+
         setScoring(
           loadedScoring
         );
@@ -2160,6 +2583,7 @@ export default function BHPage() {
             raidsSnap,
             rewardsSnap,
             claimsSnap,
+            duckRaceSnap,
             scoringSnap,
             scoringHistorySnap,
           ] =
@@ -2196,6 +2620,13 @@ export default function BHPage() {
                 collection(
                   db,
                   "bhRewardClaims"
+                )
+              ),
+
+              getDocs(
+                collection(
+                  db,
+                  "bhDuckRaceStatus"
                 )
               ),
 
@@ -2273,6 +2704,9 @@ export default function BHPage() {
               normalizeReward
             );
 
+          const loadedDuckRaceStatuses =
+            duckRaceSnap.docs.map(normalizeDuckRaceStatus);
+
           const loadedClaims =
             claimsSnap.docs.map(
               normalizeClaim
@@ -2332,6 +2766,8 @@ export default function BHPage() {
             loadedClaims
           );
 
+          setDuckRaceStatuses(loadedDuckRaceStatuses);
+
           setScoring(
             loadedScoring
           );
@@ -2382,6 +2818,201 @@ export default function BHPage() {
     }
   }, []);
 
+  /* =========================================================
+     PERSIST LAST TAB + EXACT SCROLL POSITION
+     - localStorage is used so it survives a full browser reload/close.
+     - The tab being left is saved BEFORE its DOM is replaced.
+     - The saved position is restored only after data/content is rendered.
+     - A few delayed restores handle images/cards changing document height.
+  ========================================================= */
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+    try {
+      localStorage.setItem("bh-active-tab", activeTab);
+    } catch {
+      // Ignore storage restrictions.
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timers = [];
+    userScrolledRef.current = false;
+
+    const onUserScroll = () => {
+      // Ignore the first tiny amount of programmatic restore movement.
+      if (!restoringScrollRef.current) {
+        userScrolledRef.current = true;
+        saveTabScroll(activeTab);
+      }
+    };
+
+    const restore = () => {
+      if (cancelled || userScrolledRef.current) return;
+
+      let saved = 0;
+      try {
+        saved = Number(localStorage.getItem(`bh-scroll-${activeTab}`) || 0);
+      } catch {
+        saved = 0;
+      }
+
+      if (!Number.isFinite(saved) || saved < 0) saved = 0;
+
+      restoringScrollRef.current = true;
+      window.scrollTo(0, Math.min(saved, Math.max(0, document.documentElement.scrollHeight - window.innerHeight)));
+
+      window.setTimeout(() => {
+        restoringScrollRef.current = false;
+      }, 80);
+    };
+
+    // Wait for the tab/data DOM to exist, then retry as images and cards settle.
+    if (!loading) {
+      [0, 80, 220, 500, 900].forEach((delay) => {
+        timers.push(window.setTimeout(restore, delay));
+      });
+    }
+
+    const onPageHide = () => saveTabScroll(activeTab);
+    const onBeforeUnload = () => saveTabScroll(activeTab);
+
+    window.addEventListener("scroll", onUserScroll, { passive: true });
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      saveTabScroll(activeTab);
+      window.removeEventListener("scroll", onUserScroll);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [activeTab, loading]);
+
+
+  /* =========================================================
+     LIVE FIRESTORE DATA
+     Keep the dashboard current without manual refresh.
+     Long-lived listeners receive changed documents instead of
+     repeatedly re-reading every collection on a timer.
+  ========================================================= */
+  useEffect(() => {
+    const unsubs = [];
+    let disposed = false;
+
+    const sortByTimeDesc = (a, b, field) => {
+      const ad = safeToDate(a?.[field])?.getTime() || 0;
+      const bd = safeToDate(b?.[field])?.getTime() || 0;
+      return bd - ad;
+    };
+
+    const listen = (ref, onData) => {
+      const unsub = onSnapshot(
+        ref,
+        (snap) => {
+          if (!disposed) onData(snap);
+        },
+        (err) => {
+          console.error("BH realtime listener error:", err);
+        }
+      );
+      unsubs.push(unsub);
+    };
+
+    listen(collection(db, "players"), (snap) => {
+      const next = snap.docs
+        .map(normalizePlayer)
+        .sort((a, b) =>
+          lower(a.ign).localeCompare(lower(b.ign))
+        );
+      setPlayers(next);
+    });
+
+    listen(collection(db, "bhAttendance"), (snap) => {
+      const next = snap.docs
+        .map(normalizeAttendance)
+        .sort((a, b) => sortByTimeDesc(a, b, "spawnAt"));
+      setAttendanceRows(next);
+    });
+
+    listen(collection(db, "raids"), (snap) => {
+      const firebaseRaids = snap.docs.map((s) => ({
+        id: s.id,
+        ...s.data(),
+      }));
+      setSchedules(
+        deduplicateRaids([
+          ...(DEFAULT_RAIDS || []),
+          ...firebaseRaids,
+        ])
+      );
+    });
+
+    listen(collection(db, "bhRewards"), (snap) => {
+      const next = snap.docs
+        .map(normalizeReward)
+        .sort((a, b) =>
+          lower(a.name).localeCompare(lower(b.name))
+        );
+      setRewards(next);
+    });
+
+    listen(collection(db, "bhRewardClaims"), (snap) => {
+      const next = snap.docs
+        .map(normalizeClaim)
+        .sort((a, b) => sortByTimeDesc(a, b, "claimedAt"));
+      setRewardClaims(next);
+    });
+
+    listen(collection(db, "bhDuckRaceStatus"), (snap) => {
+      setDuckRaceStatuses(
+        snap.docs.map(normalizeDuckRaceStatus)
+      );
+    });
+
+    listen(doc(db, "bhScoring", "current"), (snap) => {
+      const next = snap.exists()
+        ? snap.data()
+        : { bosses: {} };
+
+      setScoring(next);
+      setScoringDraft(
+        buildScoringDraft(next, DEFAULT_RAIDS || [])
+      );
+    });
+
+    listen(collection(db, "bhScoringHistory"), (snap) => {
+      const next = snap.docs
+        .map((s) => ({
+          id: String(s.id),
+          ...s.data(),
+          createdAt: safeToDate(s.data()?.createdAt),
+        }))
+        .sort((a, b) => sortByTimeDesc(a, b, "createdAt"));
+      setScoringHistory(next);
+    });
+
+    listen(collection(db, "guildNotices"), (snap) => {
+      const next = snap.docs
+        .map(normalizeNotice)
+        .filter((notice) => notice.active !== false)
+        .sort((a, b) => sortByTimeDesc(a, b, "createdAt"));
+      setGuildNotices(next);
+    });
+
+    return () => {
+      disposed = true;
+      unsubs.forEach((unsubscribe) => {
+        try {
+          unsubscribe();
+        } catch {
+          // Ignore already-closed listeners.
+        }
+      });
+    };
+  }, []);
   /* =========================================================
      DATE WINDOW
   ========================================================= */
@@ -3078,6 +3709,21 @@ export default function BHPage() {
       message,
       type = "info",
       module = "bh-attendance",
+      action = "",
+      entityType = "",
+      entityId = "",
+      playerId = "",
+      playerName = "",
+      bossId = "",
+      bossName = "",
+      rewardId = "",
+      rewardName = "",
+      points = null,
+      status = "",
+      reason = "",
+      notes = "",
+      details = [],
+      changes = [],
     }) => {
       try {
         await addDoc(
@@ -3100,6 +3746,26 @@ export default function BHPage() {
             createdByUid:
               currentUser?.uid ||
               null,
+
+            // Structured audit fields.  The UI renders these as human-readable
+            // activity details instead of exposing raw Firestore JSON.
+            timestamp:
+              serverTimestamp(),
+            action: clean(action) || clean(title),
+            entityType: clean(entityType),
+            entityId: clean(entityId),
+            playerId: playerId ? String(playerId) : null,
+            playerName: clean(playerName),
+            bossId: clean(bossId),
+            bossName: clean(bossName),
+            rewardId: rewardId ? String(rewardId) : null,
+            rewardName: clean(rewardName),
+            points: points == null || points === "" ? null : safeNumber(points, 0),
+            status: clean(status),
+            reason: clean(reason),
+            notes: clean(notes),
+            details: Array.isArray(details) ? details.filter(Boolean) : [],
+            changes: Array.isArray(changes) ? changes.filter(Boolean) : [],
           }
         );
       } catch (err) {
@@ -3307,6 +3973,7 @@ export default function BHPage() {
       try {
         let added = 0;
         let skipped = 0;
+        const recordedOccurrences = [];
 
         for (const occurrenceKey of selectedScheduledSpawns) {
           const occurrence =
@@ -3421,21 +4088,46 @@ export default function BHPage() {
           );
 
           added += 1;
+          recordedOccurrences.push(occurrence);
         }
 
         if (added) {
+
+          const bossGroups = new Map();
+          for (const occurrence of recordedOccurrences) {
+            const bossName = occurrence.bossName || bossLabel(occurrence.bossId);
+            const key = `${bossName}`;
+            if (!bossGroups.has(key)) bossGroups.set(key, []);
+            bossGroups.get(key).push(occurrence);
+          }
+
+          const spawnLines = recordedOccurrences.map((occurrence) =>
+            `${occurrence.bossName || bossLabel(occurrence.bossId)} — ${occurrence.dateKey || "date unavailable"} at ${occurrence.timeKey || "time unavailable"} — +${safeNumber(occurrence.points, 0).toFixed(2)} points`
+          );
+
+          const bossSummary = Array.from(bossGroups.entries())
+            .map(([bossName, rows]) => `${bossName} (${rows.length} spawn${rows.length === 1 ? "" : "s"})`)
+            .join(", ");
+
           await createGuildNotice(
             {
-              title:
-                "Boss Hunt Attendance Recorded",
-
-              message:
-                `${player.ign} was marked present for ${added} scheduled boss hunt spawn${added === 1
-                  ? ""
-                  : "s"
-                }.`,
-
+              title: "Boss Hunt Attendance Recorded",
+              message: `${player.ign} was marked PRESENT for ${added} scheduled boss hunt spawn${added === 1 ? "" : "s"}: ${bossSummary || "scheduled boss hunt"}.`,
               type: "success",
+              action: "Attendance Recorded",
+              entityType: "attendance",
+              playerId: player.id,
+              playerName: player.ign,
+              status: "recorded",
+              notes: clean(attendanceComment),
+              details: [
+                `Player: ${player.ign}`,
+                `Scheduled spawn${added === 1 ? "" : "s"}: ${added}`,
+                `Boss${bossGroups.size === 1 ? "" : "es"}: ${bossSummary || "Unknown"}`,
+                ...spawnLines.map((line, index) => `Spawn ${index + 1}: ${line}`),
+                `Recorded by: ${getCurrentUpdaterName()}`,
+                clean(attendanceComment) ? `Attendance note: ${clean(attendanceComment)}` : "",
+              ].filter(Boolean),
             }
           );
         }
@@ -3465,6 +4157,12 @@ export default function BHPage() {
 
         await loadAllData();
         await reloadGuildNotices();
+        setTimeout(() => {
+          document.getElementById("players-history")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 120);
       } catch (err) {
         console.error(err);
 
@@ -3684,6 +4382,25 @@ export default function BHPage() {
               )}.`,
 
             type: "warning",
+            action: "Manual Attendance Recorded",
+            entityType: "attendance",
+            playerId: player.id,
+            playerName: player.ign,
+            bossId,
+            bossName: bossLabel(bossId),
+            points,
+            status: "recorded",
+            notes: clean(overrideComment),
+            details: [
+              `Player: ${player.ign}`,
+              `Boss: ${bossLabel(bossId)}`,
+              `Attendance date: ${formatLongDate(spawnAt, effectiveTimezone)}`,
+              `Attendance time: ${timeKeyFromDate(spawnAt, effectiveTimezone)}`,
+              `Points awarded: +${points.toFixed(2)}`,
+              `Manual override: Yes`,
+              `Recorded by: ${getCurrentUpdaterName()}`,
+              clean(overrideComment) ? `Admin note: ${clean(overrideComment)}` : "",
+            ].filter(Boolean),
           }
         );
 
@@ -3789,9 +4506,20 @@ export default function BHPage() {
               "Player Added",
 
             message:
-              `${ign} was added to the guild roster.`,
+              `${ign} was added to the guild roster as ${newPlayerClass || "Unspecified class"}${newPlayerWeapon ? ` using ${newPlayerWeapon}` : ""}.`,
 
             type: "success",
+            action: "Player Added",
+            entityType: "player",
+            playerName: ign,
+            status: "active",
+            details: [
+              `Player: ${ign}`,
+              `Class: ${clean(newPlayerClass) || "Unspecified"}`,
+              `Weapon: ${clean(newPlayerWeapon) || "Unspecified"}`,
+              `Roster status: Active`,
+              `Added by: ${getCurrentUpdaterName()}`,
+            ],
           }
         );
 
@@ -3801,6 +4529,15 @@ export default function BHPage() {
         setSuccess(
           `Player ${ign} added.`
         );
+
+        // A new player is immediately shown in Players & History.
+        // This changes only navigation after a successful write; roster/filter logic is unchanged.
+        setAddPlayerModalOpen(false);
+        setAttendanceModalOpen(false);
+        switchActiveTab("schedule");
+        setPlayerSearch("");
+        setPlayerClassFilter("all");
+        setPlayerPage(1);
 
         await loadAllData();
         await reloadGuildNotices();
@@ -3902,6 +4639,21 @@ export default function BHPage() {
               `${ign}'s player profile was updated.`,
 
             type: "info",
+            action: "Player Profile Updated",
+            entityType: "player",
+            entityId: editingPlayer.id,
+            playerName: ign,
+            details: [
+              `Player: ${ign}`,
+              `New class: ${clean(editingPlayer.class) || "Unspecified"}`,
+              `New weapon: ${clean(editingPlayer.weapon) || "Unspecified"}`,
+              `Changed by: ${getCurrentUpdaterName()}`,
+            ],
+            changes: [
+              `IGN: ${clean(editingPlayer.ign) || "—"} → ${ign}`,
+              `Class: ${clean(editingPlayer.originalClass || editingPlayer.class) || "—"} → ${clean(editingPlayer.class) || "—"}`,
+              `Weapon: ${clean(editingPlayer.originalWeapon || editingPlayer.weapon) || "—"} → ${clean(editingPlayer.weapon) || "—"}`,
+            ],
           }
         );
 
@@ -3995,8 +4747,28 @@ export default function BHPage() {
 
         await createGuildNotice({
           title: "Player Permanently Deleted",
-          message: `A player and all associated attendance, reward claims, and assigned reward records were permanently deleted by ${getCurrentUpdaterName()}.`,
+          message: `${playerIgn} and all associated attendance, reward claims, and assigned reward records were permanently deleted by ${getCurrentUpdaterName()}.`,
           type: "warning",
+          action: "Player Permanently Deleted",
+          entityType: "player",
+          entityId: playerId,
+          playerId,
+          playerName: playerIgn,
+          status: "deleted",
+          details: [
+            `Player: ${playerIgn}`,
+            `Attendance records deleted: ${attendanceToDelete.length}`,
+            `Reward claims deleted: ${claimsToDelete.length}`,
+            `Assigned rewards deleted: ${rewardsToDelete.length}`,
+            `Player roster record deleted: Yes`,
+            `Deleted by: ${getCurrentUpdaterName()}`,
+          ],
+          changes: [
+            `Player roster: active record → permanently deleted`,
+            `Attendance records: ${attendanceToDelete.length} deleted`,
+            `Reward claims: ${claimsToDelete.length} deleted`,
+            `Assigned rewards: ${rewardsToDelete.length} deleted`,
+          ],
         });
 
         setDeletePlayerTarget(null);
@@ -4059,6 +4831,21 @@ export default function BHPage() {
               player.active
                 ? "warning"
                 : "success",
+            action: player.active ? "Player Disabled" : "Player Enabled",
+            entityType: "player",
+            entityId: player.id,
+            playerId: player.id,
+            playerName: player.ign,
+            status: player.active ? "disabled" : "active",
+            details: [
+              `Player: ${player.ign}`,
+              `Previous roster status: ${player.active ? "Active" : "Disabled"}`,
+              `New roster status: ${player.active ? "Disabled" : "Active"}`,
+              `Changed by: ${getCurrentUpdaterName()}`,
+            ],
+            changes: [
+              `Status: ${player.active ? "Active" : "Disabled"} → ${player.active ? "Disabled" : "Active"}`,
+            ],
           }
         );
 
@@ -4211,6 +4998,29 @@ export default function BHPage() {
       }
     };
 
+
+  const openNewRewardModal = () => {
+    if (!isAdmin) return;
+
+    setRewardForm({
+      name: "",
+      bossId: "sonya",
+      cost: SONYA_REWARD_COST,
+      weaponClass: CLASS_OPTIONS[0] || "",
+      playerId: "",
+      status: "available",
+      spawnAt: "",
+      notes: "",
+    });
+    setError("");
+    setEditingReward({ __new: true });
+  };
+
+  const openRewardInventoryDetails = (reward) => {
+    if (!reward) return;
+    setSelectedRewardInventory(reward);
+  };
+
   /* =========================================================
      ADD REWARD
   ========================================================= */
@@ -4231,16 +5041,11 @@ export default function BHPage() {
         return;
       }
 
-      const cost =
-        safeNumber(
-          rewardForm.cost,
-          0
-        );
+      const normalizedBoss = normalizeBossId(rewardForm.bossId);
+      const cost = normalizedBoss === "sonya" ? SONYA_REWARD_COST : 0;
 
-      if (cost <= 0) {
-        setError(
-          "Reward cost must be greater than zero."
-        );
+      if (!clean(rewardForm.weaponClass)) {
+        setError("Choose the weapon class for this reward.");
         return;
       }
 
@@ -4269,10 +5074,7 @@ export default function BHPage() {
           {
             name,
 
-            bossId:
-              normalizeBossId(
-                rewardForm.bossId
-              ),
+            bossId: normalizedBoss,
 
             bossName:
               bossLabel(
@@ -4280,6 +5082,8 @@ export default function BHPage() {
               ),
 
             cost,
+
+            weaponClass: clean(rewardForm.weaponClass),
 
             playerId:
               rewardPlayerId,
@@ -4312,6 +5116,8 @@ export default function BHPage() {
 
             createdBy:
               getCurrentUpdaterName(),
+            createdByUid: currentUser?.uid || null,
+            updatedBy: getCurrentUpdaterName(),
           }
         );
 
@@ -4321,9 +5127,7 @@ export default function BHPage() {
               "New Boss Hunt Reward",
 
             message:
-              `${name} was added to the reward list for ${cost.toFixed(
-                2
-              )} points.`,
+              `${name} was added to the ${bossLabel(normalizedBoss)} reward list${normalizedBoss === "sonya" ? " for 6.00 points" : " (free Duck Race reward)"}.`,
 
             type: "success",
           }
@@ -4335,7 +5139,8 @@ export default function BHPage() {
             DEFAULT_BOSS_LIST[0]
               ?.id ||
             "sonya",
-          cost: 1,
+          cost: SONYA_REWARD_COST,
+          weaponClass: CLASS_OPTIONS[0] || "",
           playerId: "",
           status:
             "available",
@@ -4349,6 +5154,7 @@ export default function BHPage() {
 
         await loadAllData();
         await reloadGuildNotices();
+        return true;
       } catch (err) {
         console.error(err);
 
@@ -4356,6 +5162,7 @@ export default function BHPage() {
           err?.message ||
           "Could not add reward."
         );
+        return false;
       }
     };
 
@@ -4373,6 +5180,10 @@ export default function BHPage() {
       }
 
       try {
+        if (!clean(editingReward.weaponClass)) {
+          setError("Choose the weapon class for this reward.");
+          return;
+        }
         const player =
           players.find(
             (p) =>
@@ -4408,11 +5219,9 @@ export default function BHPage() {
                 editingReward.bossId
               ),
 
-            cost:
-              safeNumber(
-                editingReward.cost,
-                0
-              ),
+            cost: normalizeBossId(editingReward.bossId) === "sonya" ? SONYA_REWARD_COST : 0,
+
+            weaponClass: clean(editingReward.weaponClass),
 
             playerId:
               clean(
@@ -4500,6 +5309,15 @@ export default function BHPage() {
         return;
       }
 
+      const rewardBossId = normalizeBossId(reward.bossId);
+      if (rewardBossId !== "sonya") {
+        const todayDuck = getDuckRaceStatus(rewardBossId);
+        if (todayDuck?.status !== "duck-raced") {
+          setError(`${reward.bossName} has not been marked DUCK RACED for today yet.`);
+          return;
+        }
+      }
+
       const stats =
         playerStats.find(
           (player) =>
@@ -4518,20 +5336,12 @@ export default function BHPage() {
         return;
       }
 
-      const cost =
-        safeNumber(
-          reward.cost,
-          0
-        );
+      const cost = normalizeBossId(reward.bossId) === "sonya" ? SONYA_REWARD_COST : 0;
+      const minimumEligible = normalizeBossId(reward.bossId) === "sonya" ? cost : BH_CLAIM_THRESHOLD;
 
-      if (
-        stats.available <
-        cost
-      ) {
+      if (stats.available < minimumEligible) {
         setError(
-          `${stats.ign} only has ${stats.available.toFixed(
-            2
-          )} available points.`
+          `${stats.ign} only has ${stats.available.toFixed(2)} available points. ${reward.bossId === "sonya" ? "6.00 points are required for Sonya." : `${BH_CLAIM_THRESHOLD.toFixed(1)}+ points are required to claim a Duck Race reward.`}`
         );
 
         return;
@@ -4559,6 +5369,8 @@ export default function BHPage() {
 
             rewardName:
               reward.name,
+
+            weaponClass: reward.weaponClass || "",
 
             bossId:
               reward.bossId,
@@ -4604,25 +5416,41 @@ export default function BHPage() {
           }
         );
 
-        await createGuildNotice(
-          {
-            title:
-              "Reward Claimed",
+        const claimMessage = normalizeBossId(reward.bossId) === "sonya"
+          ? `${stats.ign} claimed ${reward.name} from Sonya for 6.00 points.`
+          : `${stats.ign} claimed ${reward.name} from ${reward.bossName} as a Duck Race reward.`;
 
-            message:
-              `${stats.ign} claimed ${reward.name} for ${cost.toFixed(
-                2
-              )} points.`,
+        await createGuildNotice({
+          title: normalizeBossId(reward.bossId) === "sonya" ? "Sonya Reward Claimed" : "Duck Race Reward Claimed",
+          message: claimMessage,
+          type: "success",
+          action: normalizeBossId(reward.bossId) === "sonya" ? "Sonya Reward Claimed" : "Duck Race Reward Claimed",
+          entityType: "reward-claim",
+          entityId: reward.id,
+          rewardId: reward.id,
+          rewardName: reward.name,
+          playerId: stats.id,
+          playerName: stats.ign,
+          bossId: reward.bossId,
+          bossName: reward.bossName,
+          points: cost,
+          status: "claimed",
+          details: [
+            `Player: ${stats.ign}`,
+            `Reward: ${reward.name}`,
+            `Boss: ${reward.bossName}`,
+            `Points used: ${cost.toFixed(2)}`,
+            `Claim type: ${normalizeBossId(reward.bossId) === "sonya" ? "Sonya reward" : "Duck Race reward"}`,
+            `Claimed by: ${getCurrentUpdaterName()}`,
+            `Reward status: Available → Claimed`,
+          ],
+          changes: [
+            `Reward status: ${reward.status || "available"} → claimed`,
+            `Points: ${cost.toFixed(2)} deducted from available balance`,
+          ],
+        });
 
-            type: "success",
-          }
-        );
-
-        setSuccess(
-          `${reward.name} claimed for ${cost.toFixed(
-            2
-          )} points.`
-        );
+        setSuccess(claimMessage);
 
         await loadAllData();
         await reloadGuildNotices();
@@ -4646,21 +5474,20 @@ export default function BHPage() {
 
   const openEditRewardClaim = (claim) => {
     if (!isAdmin || !claim) return;
-
-    const player = players.find(
-      (p) => String(p.id) === String(claim.playerId || "")
-    );
-
+    const player = players.find((p) => String(p.id) === String(claim.playerId || ""));
+    const reward = rewards.find((r) => String(r.id) === String(claim.rewardId || ""));
+    const bossId = normalizeBossId(claim.bossId || reward?.bossId);
     setEditingRewardClaim({
       ...claim,
       id: String(claim.id || ""),
       playerId: String(claim.playerId || ""),
       playerName: claim.playerName || player?.ign || "",
       rewardId: String(claim.rewardId || ""),
-      rewardName: claim.rewardName || "Sonya Weapon",
-      bossId: "sonya",
-      bossName: "Sonya",
-      points: SONYA_REWARD_COST,
+      rewardName: claim.rewardName || reward?.name || "Reward",
+      bossId,
+      bossName: claim.bossName || reward?.bossName || bossLabel(bossId),
+      weaponClass: claim.weaponClass || reward?.weaponClass || "",
+      points: bossId === "sonya" ? SONYA_REWARD_COST : 0,
       status: "claimed",
       notes: claim.notes || "",
     });
@@ -4668,77 +5495,59 @@ export default function BHPage() {
 
   const saveEditedRewardClaim = async () => {
     if (!isAdmin || !editingRewardClaim) return;
-
-    const player = players.find(
-      (p) => String(p.id) === String(editingRewardClaim.playerId || "")
-    );
-
-    if (!player) {
-      setError("Please select a valid player.");
-      return;
-    }
-
+    const player = players.find((p) => String(p.id) === String(editingRewardClaim.playerId || ""));
+    if (!player) { setError("Please select a valid player."); return; }
+    const reward = rewards.find((r) => String(r.id) === String(editingRewardClaim.rewardId || ""));
+    const bossId = normalizeBossId(editingRewardClaim.bossId || reward?.bossId);
+    const points = bossId === "sonya" ? SONYA_REWARD_COST : 0;
     try {
       const claimId = String(editingRewardClaim.id || "");
-      const existingClaim = rewardClaims.find(
-        (claim) => String(claim.id) === claimId
-      );
-
+      const existingClaim = rewardClaims.find((claim) => String(claim.id) === claimId);
       const payload = {
-        playerId: String(player.id),
-        playerName: player.ign || "",
+        playerId: String(player.id), playerName: player.ign || "",
         rewardId: String(editingRewardClaim.rewardId || ""),
-        rewardName: clean(editingRewardClaim.rewardName) || "Sonya Weapon",
-        bossId: "sonya",
-        bossName: "Sonya",
-        points: SONYA_REWARD_COST,
-        status: "claimed",
-        notes: clean(editingRewardClaim.notes),
-        updatedAt: serverTimestamp(),
-        updatedBy: getCurrentUpdaterName(),
+        rewardName: clean(editingRewardClaim.rewardName) || reward?.name || "Reward",
+        weaponClass: clean(editingRewardClaim.weaponClass || reward?.weaponClass),
+        bossId, bossName: bossLabel(bossId), points, status: "claimed",
+        notes: clean(editingRewardClaim.notes), updatedAt: serverTimestamp(),
+        updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null,
       };
-
       if (existingClaim) {
-        await updateDoc(
-          doc(db, "bhRewardClaims", claimId),
-          payload
-        );
+        await updateDoc(doc(db, "bhRewardClaims", claimId), payload);
       } else if (editingRewardClaim.rewardId) {
-        // Legacy claim stored only on the reward document. Keep the reward
-        // claimed and update its assigned player/name instead.
-        await updateDoc(
-          doc(db, "bhRewards", String(editingRewardClaim.rewardId)),
-          {
-            playerId: String(player.id),
-            playerName: player.ign || "",
-            name: payload.rewardName,
-            bossId: "sonya",
-            bossName: "Sonya",
-            cost: SONYA_REWARD_COST,
-            status: "claimed",
-            notes: payload.notes,
-            updatedAt: serverTimestamp(),
-            updatedBy: getCurrentUpdaterName(),
-          }
-        );
-      } else {
-        throw new Error("This reward claim could not be located.");
-      }
-
+        await updateDoc(doc(db, "bhRewards", String(editingRewardClaim.rewardId)), {
+          playerId: String(player.id), playerName: player.ign || "", status: "claimed",
+          updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(),
+        });
+      } else throw new Error("This reward claim could not be located.");
       await createGuildNotice({
         title: "Reward Claim Updated",
-        message: `${player.ign}\'s Sonya weapon claim was updated by ${getCurrentUpdaterName()}.`,
+        message: `${player.ign}'s ${bossLabel(bossId)} reward claim was updated by ${getCurrentUpdaterName()}.`,
         type: "info",
+        action: "Reward Claim Updated",
+        entityType: "reward-claim",
+        entityId: claimId,
+        rewardId: editingRewardClaim.rewardId,
+        rewardName: clean(editingRewardClaim.rewardName) || reward?.name || "Reward",
+        playerId: player.id,
+        playerName: player.ign,
+        bossId,
+        bossName: bossLabel(bossId),
+        points,
+        status: "claimed",
+        notes: clean(editingRewardClaim.notes),
+        details: [
+          `Player: ${player.ign}`,
+          `Reward: ${clean(editingRewardClaim.rewardName) || reward?.name || "Reward"}`,
+          `Boss: ${bossLabel(bossId)}`,
+          `Points: ${points.toFixed(2)}`,
+          `Status: Claimed`,
+          `Changed by: ${getCurrentUpdaterName()}`,
+          clean(editingRewardClaim.notes) ? `Notes: ${clean(editingRewardClaim.notes)}` : "",
+        ].filter(Boolean),
       });
-
-      setEditingRewardClaim(null);
-      setSuccess("Reward claim updated.");
-      await loadAllData();
-      await reloadGuildNotices();
-    } catch (err) {
-      console.error(err);
-      setError(err?.message || "Could not update reward claim.");
-    }
+      setEditingRewardClaim(null); setSuccess("Reward claim updated."); await loadAllData(); await reloadGuildNotices();
+    } catch (err) { console.error(err); setError(err?.message || "Could not update reward claim."); }
   };
 
   const deleteRewardClaim = async (claim) => {
@@ -4782,6 +5591,30 @@ export default function BHPage() {
         title: "Reward Claim Removed",
         message: `${playerName}\'s Sonya weapon claim was removed by ${getCurrentUpdaterName()}. The 6.00 points are restored to the player\'s balance.`,
         type: "warning",
+        action: "Reward Claim Removed",
+        entityType: "reward-claim",
+        entityId: claimId,
+        rewardId: claim.rewardId,
+        rewardName: claim.rewardName,
+        playerId: claim.playerId,
+        playerName,
+        bossId: claim.bossId,
+        bossName: claim.bossName,
+        points: claim.points ?? SONYA_REWARD_COST,
+        status: "removed",
+        details: [
+          `Player: ${playerName}`,
+          `Reward: ${claim.rewardName || "Sonya weapon reward"}`,
+          `Boss: ${claim.bossName || "Sonya"}`,
+          `Claim removed by: ${getCurrentUpdaterName()}`,
+          `Linked reward status: Returned to Available`,
+          `Points restored: ${(claim.points ?? SONYA_REWARD_COST).toFixed(2)}`,
+        ],
+        changes: [
+          `Claim status: claimed → removed`,
+          `Linked reward: claimed → available`,
+          `Points restored: ${(claim.points ?? SONYA_REWARD_COST).toFixed(2)}`,
+        ],
       });
 
       setSuccess("Reward claim deleted and 6.00 points restored.");
@@ -5435,6 +6268,154 @@ export default function BHPage() {
     return images[id] || sonyaImage;
   };
 
+  const weaponClassIconPath = (weaponClass) => {
+    const key = lower(weaponClass).replace(/[^a-z]/g, "");
+    const icons = {
+      swordman: swordmanIcon,
+      swordsman: swordmanIcon,
+      archer: archerIcon,
+      gunner: gunnerIcon,
+      shaman: shamanIcon,
+      extreme: extremeIcon,
+      brawler: brawlerIcon,
+    };
+    return icons[key] || null;
+  };
+
+  const getDuckRaceStatus = (bossId, date = todayKey) => {
+    const id = normalizeBossId(bossId);
+    return duckRaceStatuses.find(
+      (item) => item.bossId === id && item.dateKey === date
+    ) || null;
+  };
+
+  const miniBossIds = ["geomancer", "giant-hawk", "reflector"];
+
+  const todayRewardClaimsByBoss = useMemo(() => {
+    const groups = new Map();
+    DEFAULT_BOSS_LIST.forEach((boss) => groups.set(boss.id, []));
+    rewardClaims.forEach((claim) => {
+      if (lower(claim.status) === "cancelled") return;
+      const claimedAt = safeToDate(claim.claimedAt);
+      if (!claimedAt || dateKeyFromDate(claimedAt, effectiveTimezone) !== todayKey) return;
+      const bossId = normalizeBossId(claim.bossId ?? claim.bossName);
+      if (!groups.has(bossId)) groups.set(bossId, []);
+      groups.get(bossId).push(claim);
+    });
+    groups.forEach((claims) => claims.sort((a, b) => (safeToDate(a.claimedAt)?.getTime() || 0) - (safeToDate(b.claimedAt)?.getTime() || 0)));
+    return groups;
+  }, [rewardClaims, effectiveTimezone, todayKey]);
+
+  const lastWinnerByBoss = useMemo(() => {
+    const latest = new Map();
+    rewardClaims.forEach((claim) => {
+      if (lower(claim.status) === "cancelled") return;
+      const d = safeToDate(claim.claimedAt);
+      if (!d) return;
+      const bossId = normalizeBossId(claim.bossId ?? claim.bossName);
+      const existing = latest.get(bossId);
+      if (!existing || d.getTime() > (safeToDate(existing.claimedAt)?.getTime() || 0)) latest.set(bossId, claim);
+    });
+    return latest;
+  }, [rewardClaims]);
+
+  const rewardLastUpdated = useMemo(() => {
+    const events = rewards.flatMap((reward) => [
+      { at: safeToDate(reward.updatedAt), by: reward.updatedBy },
+      { at: safeToDate(reward.createdAt), by: reward.createdBy },
+    ]).filter((x) => x.at);
+    events.sort((a, b) => b.at.getTime() - a.at.getTime());
+    return events[0] || null;
+  }, [rewards]);
+
+  const setDuckRaceForToday = async (bossId, nextStatus) => {
+    if (!isAdmin || !miniBossIds.includes(normalizeBossId(bossId))) return;
+    setDuckRaceSaving(true);
+    try {
+      const id = normalizeBossId(bossId);
+      const docId = `${id}_${todayKey}`;
+      await setDoc(doc(db, "bhDuckRaceStatus", docId), {
+        bossId: id,
+        bossName: bossLabel(id),
+        dateKey: todayKey,
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+        updatedBy: getCurrentUpdaterName(),
+        updatedByUid: currentUser?.uid || null,
+      }, { merge: true });
+      await createGuildNotice({
+        title: nextStatus === "duck-raced" ? "Duck Race Completed" : "Duck Race Reset",
+        message: `${bossLabel(id)} was marked ${nextStatus === "duck-raced" ? "DUCK RACED" : "NOT YET"} for ${todayKey} by ${getCurrentUpdaterName()}.`,
+        type: nextStatus === "duck-raced" ? "success" : "warning",
+        action: nextStatus === "duck-raced" ? "Duck Race Completed" : "Duck Race Reset",
+        entityType: "duck-race",
+        entityId: `${id}_${todayKey}`,
+        bossId: id,
+        bossName: bossLabel(id),
+        status: nextStatus,
+        details: [
+          `Boss: ${bossLabel(id)}`,
+          `Local date: ${todayKey}`,
+          `Previous status: ${nextStatus === "duck-raced" ? "Not Yet" : "Duck Raced"}`,
+          `New status: ${nextStatus === "duck-raced" ? "Duck Raced" : "Not Yet"}`,
+          `Changed by: ${getCurrentUpdaterName()}`,
+        ],
+        changes: [
+          `Duck Race status: ${nextStatus === "duck-raced" ? "Not Yet → Duck Raced" : "Duck Raced → Not Yet"}`,
+        ],
+      });
+      await loadAllData();
+      await reloadGuildNotices();
+    } catch (err) {
+      setError(err?.message || "Could not update Duck Race status.");
+    } finally {
+      setDuckRaceSaving(false);
+    }
+  };
+
+  const deleteReward = async (reward) => {
+    if (!isAdmin || !reward) return;
+    const linkedClaims = rewardClaims.filter((claim) => String(claim.rewardId || "") === String(reward.id));
+    if (linkedClaims.length) {
+      setError("This reward has claim history and cannot be deleted. Disable it instead to preserve the ledger.");
+      return;
+    }
+    if (!window.confirm(`Delete reward \"${reward.name}\"?\n\nThis cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "bhRewards", String(reward.id)));
+      await createGuildNotice({
+        title: "Reward Deleted",
+        message: `${reward.name} was deleted by ${getCurrentUpdaterName()}.`,
+        type: "warning",
+        action: "Reward Deleted",
+        entityType: "reward",
+        entityId: reward.id,
+        rewardId: reward.id,
+        rewardName: reward.name,
+        playerId: reward.playerId,
+        playerName: reward.playerName,
+        bossId: reward.bossId,
+        bossName: reward.bossName,
+        points: reward.cost,
+        status: "deleted",
+        details: [
+          `Reward: ${reward.name}`,
+          `Boss: ${reward.bossName || bossLabel(reward.bossId)}`,
+          `Cost: ${safeNumber(reward.cost, 0).toFixed(2)} points`,
+          `Assigned player: ${reward.playerName || "Unassigned"}`,
+          `Previous status: ${reward.status || "available"}`,
+          `Deleted by: ${getCurrentUpdaterName()}`,
+        ],
+        changes: [`Reward record: ${reward.status || "available"} → deleted`],
+      });
+      setSuccess("Reward deleted.");
+      await loadAllData();
+      await reloadGuildNotices();
+    } catch (err) {
+      setError(err?.message || "Could not delete reward.");
+    }
+  };
+
   /* =========================================================
      RENDER
   ========================================================= */
@@ -5564,317 +6545,99 @@ export default function BHPage() {
       <section className="bh-notice-board">
         <div className="bh-notice-board-header">
           <div>
-            <div className="bh-section-kicker">
-              GUILD NOTIFICATIONS
-            </div>
-
-            <h2>
-              Guild Notice Board
-            </h2>
-
-            <p>
-              New notices stay NEW for the rest of today.
-              After the local calendar date changes, they move to OLD.
-            </p>
+            <div className="bh-section-kicker">GUILD NOTIFICATIONS</div>
+            <h2>Guild Notice Board</h2>
+            <p>New notices stay NEW for the rest of the local calendar day. At midnight, they move to OLD.</p>
           </div>
 
           <div className="bh-notice-board-counts">
             <div className="bh-notice-count bh-notice-count-new">
-              <strong>{guildNotices.filter((notice) => {
-                const d = safeToDate(notice.createdAt);
-                if (!d) return false;
-
-                const today = new Intl.DateTimeFormat("en-CA", {
-                  timeZone: effectiveTimezone,
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                }).format(d);
-
-                return today === todayKey;
-              }).length}</strong>
+              <strong>{newNotices.length}</strong>
               <span>NEW TODAY</span>
             </div>
-
             <div className="bh-notice-count">
-              <strong>{guildNotices.filter((notice) => {
-                const d = safeToDate(notice.createdAt);
-                if (!d) return false;
-
-                const noticeDay = new Intl.DateTimeFormat("en-CA", {
-                  timeZone: effectiveTimezone,
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                }).format(d);
-
-                return noticeDay !== todayKey;
-              }).length}</strong>
+              <strong>{oldNotices.length}</strong>
               <span>OLD</span>
             </div>
           </div>
         </div>
 
-        {(() => {
-          const newNotices = guildNotices.filter((notice) => {
-            const d = safeToDate(notice.createdAt);
-            if (!d) return false;
+        <div className="bh-notice-board-grid">
+          <div className="bh-notice-board-table-wrap">
+            <div className="bh-notice-board-table-heading">
+              <div><span className="bh-notice-status-badge new">NEW</span> NEW TODAY</div>
+              <span>{newNotices.length ? `${(safeNewPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeNewPage * NOTICE_PAGE_SIZE, newNotices.length)} of ${newNotices.length}` : "0 of 0"}</span>
+            </div>
 
-            const noticeDay = new Intl.DateTimeFormat("en-CA", {
-              timeZone: effectiveTimezone,
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            }).format(d);
+            <div className="bh-notice-table-scroll">
+              <table className="bh-notice-table">
+                <thead>
+                  <tr><th>#</th><th>TYPE</th><th>MESSAGE</th><th>TIME</th><th>BY</th></tr>
+                </thead>
+                <tbody>
+                  {pagedNewNotices.map((notice, index) => (
+                    <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
+                      <td>{(safeNewPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
+                      <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span></td>
+                      <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
+                      <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
+                      <td>{notice.createdBy || "System"}</td>
+                    </tr>
+                  ))}
+                  {!pagedNewNotices.length && <tr><td colSpan="5" className="bh-notice-table-empty">No new notices today.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="bh-notice-pagination">
+              <button disabled={safeNewPage <= 1} onClick={() => setNoticeNewPage(1)}>«</button>
+              <button disabled={safeNewPage <= 1} onClick={() => setNoticeNewPage((p) => Math.max(1, p - 1))}>‹</button>
+              <button className="active">{safeNewPage}</button>
+              <button disabled={safeNewPage >= newNoticePageCount} onClick={() => setNoticeNewPage((p) => Math.min(newNoticePageCount, p + 1))}>›</button>
+              <button disabled={safeNewPage >= newNoticePageCount} onClick={() => setNoticeNewPage(newNoticePageCount)}>»</button>
+            </div>
+          </div>
 
-            return noticeDay === todayKey;
-          });
+          <div className="bh-notice-board-table-wrap">
+            <div className="bh-notice-board-table-heading old">
+              <div><span className="bh-notice-status-badge old">OLD</span> OLD NOTICES</div>
+              <span>{oldNotices.length ? `${(safeOldPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeOldPage * NOTICE_PAGE_SIZE, oldNotices.length)} of ${oldNotices.length}` : "0 of 0"}</span>
+            </div>
 
-          const oldNotices = guildNotices.filter((notice) => {
-            const d = safeToDate(notice.createdAt);
-            if (!d) return false;
+            <div className="bh-notice-table-scroll">
+              <table className="bh-notice-table">
+                <thead>
+                  <tr><th>#</th><th>TYPE</th><th>MESSAGE</th><th>TIME</th><th>BY</th></tr>
+                </thead>
+                <tbody>
+                  {pagedOldNotices.map((notice, index) => (
+                    <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
+                      <td>{(safeOldPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
+                      <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span></td>
+                      <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
+                      <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
+                      <td>{notice.createdBy || "System"}</td>
+                    </tr>
+                  ))}
+                  {!pagedOldNotices.length && <tr><td colSpan="5" className="bh-notice-table-empty">No old notices.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div className="bh-notice-pagination">
+              <button disabled={safeOldPage <= 1} onClick={() => setNoticeOldPage(1)}>«</button>
+              <button disabled={safeOldPage <= 1} onClick={() => setNoticeOldPage((p) => Math.max(1, p - 1))}>‹</button>
+              <button className="active">{safeOldPage}</button>
+              <button disabled={safeOldPage >= oldNoticePageCount} onClick={() => setNoticeOldPage((p) => Math.min(oldNoticePageCount, p + 1))}>›</button>
+              <button disabled={safeOldPage >= oldNoticePageCount} onClick={() => setNoticeOldPage(oldNoticePageCount)}>»</button>
+            </div>
+          </div>
+        </div>
 
-            const noticeDay = new Intl.DateTimeFormat("en-CA", {
-              timeZone: effectiveTimezone,
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            }).format(d);
-
-            return noticeDay !== todayKey;
-          });
-
-          return (
-            <>
-              <div className="bh-notice-board-section">
-                <div className="bh-notice-board-section-title">
-                  NEW TODAY
-                </div>
-
-                {newNotices.length ? (
-                  <div className="bh-notice-board-list">
-                    {newNotices.slice(0, 6).map((notice) => (
-                      <div
-                        key={notice.id}
-                        className={`bh-notice-board-item bh-notice-${notice.type}`}
-                      >
-                        <div className="bh-notice-board-item-main">
-                          <strong>{notice.title}</strong>
-                          <span>{notice.message}</span>
-                        </div>
-
-                        <div className="bh-notice-board-item-meta">
-                          <b>NEW</b>
-                          <span>
-                            {formatDateTime(
-                              notice.createdAt,
-                              effectiveTimezone
-                            )}
-                          </span>
-                          <span>
-                            by {notice.createdBy || "System"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bh-notice-board-empty">
-                    No new notices today.
-                  </div>
-                )}
-              </div>
-
-              <div className="bh-notice-board-section">
-                <div className="bh-notice-board-section-title">
-                  OLD NOTICES
-                </div>
-
-                {oldNotices.length ? (
-                  <div className="bh-notice-board-list">
-                    {oldNotices.slice(0, 6).map((notice) => (
-                      <div
-                        key={notice.id}
-                        className={`bh-notice-board-item bh-notice-old bh-notice-${notice.type}`}
-                      >
-                        <div className="bh-notice-board-item-main">
-                          <strong>{notice.title}</strong>
-                          <span>{notice.message}</span>
-                        </div>
-
-                        <div className="bh-notice-board-item-meta">
-                          <b>OLD</b>
-                          <span>
-                            {formatDateTime(
-                              notice.createdAt,
-                              effectiveTimezone
-                            )}
-                          </span>
-                          <span>
-                            by {notice.createdBy || "System"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bh-notice-board-empty">
-                    No old notices.
-                  </div>
-                )}
-              </div>
-            </>
-          );
-        })()}
-
-        <button
-          className="bh-secondary-button"
-          onClick={() =>
-            setActiveTab("notices")
-          }
-        >
-          VIEW ALL NOTIFICATIONS
-        </button>
-      </section>
-
-      {/* ===================================================
-          REWARD CENTER
-      =================================================== */}
-
-      <section className="bh-reward-center">
-        <div className="bh-reward-center-header">
+        <div className="bh-view-all-notices-cta">
           <div>
-            <div className="bh-section-kicker">
-              REWARD CENTER
-            </div>
-
-            <h2>
-              Boss Hunt Rewards
-            </h2>
-
-            <p>
-              Rewards are grouped by boss with total, claimed and unclaimed counts.
-            </p>
+            <div className="bh-section-kicker">VIEW ALL NOTIFICATIONS</div>
+            <p>View the complete history of guild activity, including attendance, players, rewards and overrides.</p>
           </div>
-
-          <div className="bh-reward-summary-cards">
-            <div className="bh-reward-summary-card">
-              <strong>{totalRewardCount}</strong>
-              <span>Total rewards available</span>
-            </div>
-
-            <div className="bh-reward-summary-card">
-              <strong>
-                {totalClaimedRewardCount}
-              </strong>
-              <span>Claimed</span>
-            </div>
-
-            <div className="bh-reward-summary-card">
-              <strong>{totalUnclaimedRewardCount}</strong>
-              <span>Unclaimed</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bh-reward-boss-table">
-          <div className="bh-reward-boss-head">
-            <span>BOSS</span>
-            <span>TOTAL REWARDS</span>
-            <span>CLAIMED</span>
-            <span>UNCLAIMED</span>
-          </div>
-
-          {rewardBossSummary.map((boss) => (
-            <div
-              className="bh-reward-boss-row"
-              key={boss.id}
-            >
-              <div className="bh-reward-boss-cell bh-reward-boss-name">
-                <img
-                  src={bossImagePath(boss.id)}
-                  alt={boss.name}
-                  className="bh-reward-boss-image"
-                  onError={(event) => {
-                    event.currentTarget.style.display = "none";
-                  }}
-                />
-
-                <strong>{boss.name}</strong>
-              </div>
-
-              <div className="bh-reward-boss-cell">
-                <strong>{boss.total}</strong>
-              </div>
-
-              <div className="bh-reward-boss-cell bh-reward-claimed">
-                <strong>{boss.claimed}</strong>
-              </div>
-
-              <div className="bh-reward-boss-cell bh-reward-unclaimed">
-                <strong>{boss.unclaimed}</strong>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          className="bh-secondary-button bh-reward-view-button"
-          onClick={() =>
-            setActiveTab("rewards")
-          }
-        >
-          VIEW REWARDS
-        </button>
-      </section>
-
-      {/* ===================================================
-          BOSS INFORMATION
-      =================================================== */}
-
-      <section className="bh-panel">
-        <div className="bh-panel-header">
-          <div>
-            <div className="bh-section-kicker">
-              BOSS INFORMATION
-            </div>
-
-            <h2>
-              Boss Hunt Scoring
-            </h2>
-          </div>
-        </div>
-
-        <div className="bh-boss-grid">
-          {bossOptions.map(
-            (boss) => (
-              <div
-                key={
-                  boss.id
-                }
-                className="bh-boss-card"
-              >
-                <div className="bh-boss-name">
-                  {
-                    boss.name
-                  }
-                </div>
-
-                <div className="bh-boss-points">
-                  {safeNumber(
-                    boss.points,
-                    0
-                  ).toFixed(
-                    2
-                  )}
-                </div>
-
-                <div className="bh-boss-points-label">
-                  points
-                </div>
-              </div>
-            )
-          )}
+          <button className="bh-secondary-button" onClick={openAllNotifications}>VIEW ALL NOTIFICATIONS <span>›</span></button>
         </div>
       </section>
 
@@ -5891,7 +6654,7 @@ export default function BHPage() {
               : ""
           }
           onClick={() =>
-            setActiveTab(
+            switchActiveTab(
               "schedule"
             )
           }
@@ -5899,21 +6662,6 @@ export default function BHPage() {
           ACTUAL SCHEDULE
         </button>
 
-        <button
-          className={
-            activeTab ===
-              "players"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            setActiveTab(
-              "players"
-            )
-          }
-        >
-          PLAYERS & HISTORY
-        </button>
 
         <button
           className={
@@ -5923,7 +6671,7 @@ export default function BHPage() {
               : ""
           }
           onClick={() =>
-            setActiveTab(
+            switchActiveTab(
               "rewards"
             )
           }
@@ -5939,7 +6687,7 @@ export default function BHPage() {
               : ""
           }
           onClick={() =>
-            setActiveTab(
+            switchActiveTab(
               "notices"
             )
           }
@@ -5947,23 +6695,6 @@ export default function BHPage() {
           NOTIFICATIONS
         </button>
 
-        {isAdmin && (
-          <button
-            className={
-              activeTab ===
-                "admin"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setActiveTab(
-                "admin"
-              )
-            }
-          >
-            ADMIN
-          </button>
-        )}
       </div>
 
       {/* ===================================================
@@ -5992,40 +6723,6 @@ export default function BHPage() {
                 </p>
               </div>
 
-              <div className="bh-timezone-control">
-                <label>
-                  DISPLAY TIMEZONE
-                </label>
-
-                <select
-                  className="bh-select"
-                  value={
-                    displayTimezone
-                  }
-                  onChange={(e) =>
-                    setDisplayTimezone(
-                      e.target.value
-                    )
-                  }
-                >
-                  {TIMEZONES.map(
-                    (tz) => (
-                      <option
-                        key={
-                          tz.value
-                        }
-                        value={
-                          tz.value
-                        }
-                      >
-                        {
-                          tz.label
-                        }
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
             </div>
 
             <div className="bh-schedule-controls">
@@ -6309,32 +7006,40 @@ export default function BHPage() {
                                     }
                                   }}
                                 >
-                                  <div className="bh-occurrence-time">
-                                    {
-                                      occurrence.timeKey
-                                    }
+                                  <div className="bh-occurrence-media">
+                                    <img
+                                      className="bh-occurrence-image"
+                                      src={bossImagePath(occurrence.bossId)}
+                                      alt={`${occurrence.bossName} boss`}
+                                    />
+                                    <div className="bh-occurrence-media-shade" />
+                                    <span className="bh-occurrence-kind">
+                                      {normalizeBossId(occurrence.bossId) === "sonya" ? "BOSS RAID" : normalizeBossId(occurrence.bossId) === "reflector" ? "MINI BOSS" : "BOSS RAID"}
+                                    </span>
                                   </div>
 
-                                  <div className="bh-occurrence-boss">
-                                    {
-                                      occurrence.bossName
-                                    }
-                                  </div>
+                                  <div className="bh-occurrence-content">
+                                    <div className="bh-occurrence-time">
+                                      {formatTime(
+                                        occurrence.spawnAt,
+                                        effectiveTimezone
+                                      )}
+                                    </div>
 
-                                  <div className="bh-occurrence-points">
-                                    +
-                                    {safeNumber(
-                                      occurrence.points,
-                                      0
-                                    ).toFixed(
-                                      2
-                                    )}
-                                  </div>
+                                    <div className="bh-occurrence-boss">
+                                      {occurrence.bossName}
+                                    </div>
 
-                                  <div className="bh-occurrence-status">
-                                    {recordedCount
-                                      ? `${recordedCount} recorded`
-                                      : "No attendance"}
+                                    <div className="bh-occurrence-meta">
+                                      <span className="bh-occurrence-points">
+                                        +{safeNumber(occurrence.points, 0).toFixed(2)} POINTS
+                                      </span>
+                                      <span className="bh-occurrence-status">
+                                        {recordedCount
+                                          ? `${recordedCount} RECORDED`
+                                          : "NO ATTENDANCE"}
+                                      </span>
+                                    </div>
                                   </div>
                                 </button>
                               );
@@ -6354,8 +7059,8 @@ export default function BHPage() {
           PLAYERS
       =================================================== */}
 
-      {activeTab === "players" && (
-        <section className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
+      {activeTab === "schedule" && (
+        <section id="players-history" className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
           <div className="bh-players-hero bh-players-hero-v8">
             <div className="bh-players-title-wrap bh-players-title-wrap-v8">
               <div className="bh-players-emblem bh-players-emblem-v8" aria-hidden="true">
@@ -6363,7 +7068,24 @@ export default function BHPage() {
               </div>
               <div>
                 <div className="bh-section-kicker">PLAYER ROSTER</div>
-                <h2>Players &amp; History</h2>
+                <div className="bh-players-title-row">
+                  <h2>Players &amp; History</h2>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="bh-inline-add-player"
+                      onClick={() => {
+                        setNewPlayerIgn("");
+                        setNewPlayerClass(CLASS_OPTIONS[0] || "");
+                        setNewPlayerWeapon("");
+                        setError("");
+                        setAddPlayerModalOpen(true);
+                      }}
+                    >
+                      ＋ ADD NEW PLAYER
+                    </button>
+                  )}
+                </div>
                 <p>Manage registered players, track attendance records and reward activities.</p>
               </div>
             </div>
@@ -6656,462 +7378,298 @@ export default function BHPage() {
 
       {activeTab ===
         "rewards" && (
-          <section className="bh-panel">
-            <div className="bh-panel-header">
+          <section className="bh-panel bh-reward-dashboard" id="bh-reward-center">
+            <div className="bh-reward-dashboard-header">
               <div>
-                <div className="bh-section-kicker">
-                  REWARD CENTER
-                </div>
-
-                <h2>
-                  Boss Hunt Rewards
-                </h2>
-
-                <p>
-                  Rewards use
-                  attendance points.
-                  Claim history is
-                  preserved.
-                </p>
+                <div className="bh-section-kicker">REWARD CENTER <span className="bh-live-indicator">LIVE</span></div>
+                <h2>Boss Hunt Rewards</h2>
+                <p>Manage Sonya grand rewards, daily Duck Race rewards, winners and claim history.</p>
+              </div>
+              <div className="bh-reward-last-updated">
+                <span>LAST UPDATED</span>
+                <strong>{rewardLastUpdated?.at ? formatDateTime(rewardLastUpdated.at, effectiveTimezone) : "—"}</strong>
+                <small>{rewardLastUpdated?.by || "System"}</small>
               </div>
             </div>
 
-            <div className="bh-filter-row">
-              <input
-                className="bh-input"
-                value={
-                  rewardSearch
-                }
-                placeholder="Search reward, player or boss..."
-                onChange={(e) => {
-                  setRewardSearch(
-                    e.target.value
-                  );
-
-                  setRewardPage(
-                    1
-                  );
-                }}
-              />
-
-              <select
-                className="bh-select"
-                value={
-                  rewardBossFilter
-                }
-                onChange={(e) => {
-                  setRewardBossFilter(
-                    e.target.value
-                  );
-
-                  setRewardPage(
-                    1
-                  );
-                }}
-              >
-                <option value="all">
-                  All Bosses
-                </option>
-
-                {bossOptions.map(
-                  (boss) => (
-                    <option
-                      key={
-                        boss.id
-                      }
-                      value={
-                        boss.id
-                      }
-                    >
-                      {
-                        boss.name
-                      }
-                    </option>
-                  )
-                )}
-              </select>
-
-              <select
-                className="bh-select"
-                value={
-                  rewardStatusFilter
-                }
-                onChange={(e) => {
-                  setRewardStatusFilter(
-                    e.target.value
-                  );
-
-                  setRewardPage(
-                    1
-                  );
-                }}
-              >
-                <option value="all">
-                  All Status
-                </option>
-
-                <option value="available">
-                  Available
-                </option>
-
-                <option value="claimed">
-                  Claimed
-                </option>
-
-                <option value="disabled">
-                  Disabled
-                </option>
-              </select>
+            <div className="bh-reward-summary-grid">
+              <div className="bh-reward-summary-card"><span>🎁</span><div><small>TOTAL REWARDS</small><strong>{totalRewardCount}</strong><em>Across all bosses</em></div></div>
+              <div className="bh-reward-summary-card"><span>✓</span><div><small>TOTAL CLAIMED</small><strong>{totalClaimedRewardCount}</strong><em>All time</em></div></div>
+              <div className="bh-reward-summary-card"><span>⌛</span><div><small>UNCLAIMED</small><strong>{totalUnclaimedRewardCount}</strong><em>Available rewards</em></div></div>
+              <div className="bh-reward-summary-card"><span>🏆</span><div><small>TODAY'S WINNERS</small><strong>{Array.from(todayRewardClaimsByBoss.values()).reduce((n, x) => n + x.length, 0)}</strong><em>All bosses</em></div></div>
             </div>
 
-            <TableScroller>
-              <table className="bh-table">
-                <thead>
-                  <tr>
-                    <th>
-                      REWARD
-                    </th>
+            <div className="bh-reward-section-title">
+              <div><span className="bh-section-kicker">BOSS OVERVIEW</span><h3>Reward &amp; Duck Race Status</h3></div>
+              {isAdmin && <span className="bh-reward-admin-note">Only Sonya has a 6.00-point cost. Mini bosses use daily Duck Race status.</span>}
+            </div>
 
-                    <th>
-                      BOSS
-                    </th>
+            <div className="bh-reward-boss-grid">
+              {rewardBossSummary.map((boss) => {
+                const sonya = boss.id === "sonya";
+                const duck = !sonya ? getDuckRaceStatus(boss.id) : null;
+                const winnerCount = todayRewardClaimsByBoss.get(boss.id)?.length || 0;
+                return (
+                  <article key={boss.id} className={`bh-reward-boss-card bh-reward-boss-card-detailed ${sonya ? "sonya" : "mini"}`}>
+                    <div className="bh-reward-boss-hero">
+                      <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
+                      <div className="bh-reward-boss-hero-overlay">
+                        <span className="bh-reward-boss-kind">{sonya ? "GRAND BOSS" : "MINI BOSS"}</span>
+                        <strong>{boss.name}</strong>
+                        <small>{sonya ? "WEEKLY · WEDNESDAY" : boss.id === "geomancer" ? "EVERY 10 HOURS" : "DAILY · MULTIPLE SPAWNS"}</small>
+                      </div>
+                    </div>
+                    <div className="bh-reward-boss-detail-body">
+                      <div className="bh-reward-boss-score-row">
+                        <div><span>ATTENDANCE POINTS</span><strong>+{safeNumber(boss.points, 0).toFixed(2)}</strong></div>
+                        <div className={`bh-reward-boss-state ${sonya ? "grand" : duck?.status === "duck-raced" ? "done" : "pending"}`}>
+                          <span>{sonya ? "REWARD COST" : "DUCK RACE"}</span>
+                          <strong>{sonya ? "-6.00" : duck?.status === "duck-raced" ? "COMPLETED" : "PENDING"}</strong>
+                        </div>
+                      </div>
+                      <div className="bh-reward-boss-stat-grid">
+                        <div><small>TOTAL REWARDS</small><strong>{boss.total}</strong></div>
+                        <div><small>CLAIMED</small><strong>{boss.claimed}</strong></div>
+                        <div><small>UNCLAIMED</small><strong>{boss.unclaimed}</strong></div>
+                      </div>
+                      <div className="bh-reward-boss-info-list">
+                        <div><span>SCHEDULE</span><strong>{sonya ? "Weekly Wednesday · 21:00 PH" : boss.id === "geomancer" ? "Every 10 hours" : "Daily · multiple spawns"}</strong></div>
+                        <div><span>REWARD TYPE</span><strong>{sonya ? "Point-funded reward" : "Duck Race reward"}</strong></div>
+                        <div><span>STATUS</span><strong className={sonya ? "status-live" : duck?.status === "duck-raced" ? "status-done" : "status-pending"}>{sonya ? "AVAILABLE" : duck?.status === "duck-raced" ? "DUCK RACED" : "WAITING"}</strong></div>
+                      </div>
+                      {!sonya && isAdmin && (
+                        <button type="button" className="bh-reward-duck-button" disabled={duckRaceSaving} onClick={() => setDuckRaceForToday(boss.id, duck?.status === "duck-raced" ? "not-yet" : "duck-raced")}>
+                          {duck?.status === "duck-raced" ? "RESET DUCK RACE" : "MARK DUCK RACED"}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
 
-                    <th>
-                      COST
-                    </th>
+            <div className="bh-reward-section-title winners"><div><span className="bh-section-kicker">🏆 TODAY'S WINNERS</span><h3>{formatDate(new Date(), effectiveTimezone)}</h3></div></div>
+            <div className="bh-reward-winners-grid">
+              {rewardBossSummary.map((boss) => {
+                const claims = todayRewardClaimsByBoss.get(boss.id) || [];
+                const last = lastWinnerByBoss.get(boss.id);
+                const sonya = boss.id === "sonya";
+                return (
+                  <div key={boss.id} className={`bh-reward-winner-card ${sonya ? "grand" : "duck"}`}>
+                    <div className="bh-reward-winner-title">{sonya ? "👑 SONYA — GRAND BOSS WINNERS" : <><img src={duckRaceIcon} alt="" /> {boss.name.toUpperCase()} — DUCK RACE WINNERS</>}</div>
+                    {claims.length ? <div className="bh-reward-winner-list">{claims.map((claim) => {
+                      const reward = rewards.find((r) => String(r.id) === String(claim.rewardId));
+                      const wc = claim.weaponClass || reward?.weaponClass || "";
+                      const icon = weaponClassIconPath(wc);
+                      return <div className={`bh-reward-winner-row ${sonya ? "grand-winner" : "duck-winner"}`} key={claim.id}><div className="bh-reward-winner-player"><strong>{claim.playerName || "Unknown"}</strong>{wc && <span>{icon && <img src={icon} alt="" />}{wc}</span>}</div><div><small>{claim.rewardName || "Reward"}</small><b>{sonya ? "-6.00 points" : "CLAIMED"}</b></div><time>{formatTime(claim.claimedAt, effectiveTimezone)}</time>{!sonya && <img className="bh-reward-winner-duck" src={duckRaceIcon} alt="Duck Race pick" title="Duck Race pick" />}</div>;
+                    })}</div> : <div className="bh-reward-no-winner"><strong>NO WINNER TODAY</strong><span>No reward claims for {boss.name} today.</span>{last && <div><small>LAST WINNER</small><b>{last.playerName || "Unknown"}</b><span>{formatDateTime(last.claimedAt, effectiveTimezone)}</span></div>}</div>}
+                    {claims.length > 0 && <div className="bh-reward-winner-total">TOTAL WINNERS: {claims.length}</div>}
+                  </div>
+                );
+              })}
+            </div>
 
-                    <th>
-                      PLAYER
-                    </th>
+            <div className="bh-reward-section-title bh-reward-inventory-title">
+              <div>
+                <span className="bh-section-kicker">REWARD MANAGEMENT</span>
+                <h3>Reward Inventory</h3>
+                <p>Click any reward to view its complete claim history and details.</p>
+              </div>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="bh-reward-add-inline"
+                  onClick={openNewRewardModal}
+                >
+                  ＋ ADD NEW REWARD
+                </button>
+              )}
+            </div>
 
-                    <th>
-                      STATUS
-                    </th>
+            <div id="reward-inventory" className="bh-filter-row bh-reward-filters">
+              <input className="bh-input" value={rewardSearch} placeholder="Search reward, boss or player..." onChange={(e) => { setRewardSearch(e.target.value); setRewardPage(1); }} />
+              <select className="bh-select" value={rewardBossFilter} onChange={(e) => { setRewardBossFilter(e.target.value); setRewardPage(1); }}><option value="all">All Bosses</option>{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select>
+              <select className="bh-select" value={rewardStatusFilter} onChange={(e) => { setRewardStatusFilter(e.target.value); setRewardPage(1); }}><option value="all">All Status</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="disabled">Disabled</option></select>
+            </div>
 
-                    <th>
-                      ACTIONS
-                    </th>
+            <TableScroller><table className="bh-table bh-reward-management-table"><thead><tr><th>REWARD</th><th>BOSS</th><th>WEAPON CLASS</th><th>COST</th><th>DUCK RACE</th><th>STATUS</th><th>CLAIMS</th><th>UNCLAIMED</th><th>CREATED BY</th><th>CREATED AT</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
+              {visibleRewards.map((reward) => {
+                const bossId = normalizeBossId(reward.bossId); const isSonya = bossId === "sonya"; const icon = weaponClassIconPath(reward.weaponClass); const rewardClaimsForReward = rewardClaims.filter((c) => String(c.rewardId) === String(reward.id) && lower(c.status) !== "cancelled"); const claimed = claimedRewardIds.has(String(reward.id)); const duck = !isSonya ? getDuckRaceStatus(bossId) : null;
+                return (
+                  <tr
+                    key={reward.id}
+                    className="bh-reward-inventory-row"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View details and claim history for ${reward.name || "reward"}`}
+                    onClick={() => openRewardInventoryDetails(reward)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openRewardInventoryDetails(reward);
+                      }
+                    }}
+                  >
+                    <td>
+                      <strong>{reward.name}</strong>
+                      {reward.playerName && <small className="bh-reward-assignee">Assigned: {reward.playerName}</small>}
+                      <small className="bh-reward-row-hint">CLICK FOR HISTORY &amp; DETAILS</small>
+                    </td>
+                    <td>{reward.bossName}</td>
+                    <td><span className="bh-reward-class-cell">{icon && <img src={icon} alt="" />}{reward.weaponClass || "—"}</span></td>
+                    <td>{isSonya ? <strong className="bh-reward-cost">-6.00</strong> : <span>—</span>}</td>
+                    <td>{isSonya ? <span className="bh-reward-na">N/A</span> : <span className={`bh-reward-duck-pill ${duck?.status === "duck-raced" ? "done" : "pending"}`}>{duck?.status === "duck-raced" ? "DUCK RACED" : "NOT YET"}</span>}</td>
+                    <td><span className={`bh-status-pill bh-status-${reward.status}`}>{reward.status}</span></td>
+                    <td>{rewardClaimsForReward.length + (claimed && !rewardClaimsForReward.length ? 1 : 0)}</td>
+                    <td>{claimed ? 0 : reward.status === "available" ? 1 : 0}</td>
+                    <td>{reward.createdBy || "System"}</td>
+                    <td>{formatDateTime(reward.createdAt, effectiveTimezone)}</td>
+                    <td>{formatDateTime(reward.updatedAt, effectiveTimezone)}</td>
+                    <td>
+                      <div className="bh-action-row" onClick={(e) => e.stopPropagation()}>
+                        {reward.playerId && reward.status === "available" && <button className="bh-small-button" onClick={() => claimReward(reward)}>CLAIM</button>}
+                        {isAdmin && (
+                          <>
+                            <button className="bh-small-button" onClick={() => setEditingReward({ ...reward })}>EDIT</button>
+                            <button className="bh-small-button danger" onClick={() => deleteReward(reward)}>DELETE</button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
-                </thead>
+                );
+              })}
+              {!visibleRewards.length && <tr><td colSpan="12" className="bh-empty-cell">No rewards found.</td></tr>}
+            </tbody></table></TableScroller>
+            <div className="bh-pagination"><button disabled={rewardPage <= 1} onClick={() => setRewardPage((p) => Math.max(1, p - 1))}>PREVIOUS</button><span>Page {rewardPage} of {rewardPageCount}</span><button disabled={rewardPage >= rewardPageCount} onClick={() => setRewardPage((p) => Math.min(rewardPageCount, p + 1))}>NEXT</button></div>
 
-                <tbody>
-                  {visibleRewards.map(
-                    (reward) => {
-                      const stats =
-                        playerStats.find(
-                          (p) =>
-                            String(
-                              p.id
-                            ) ===
-                            String(
-                              reward.playerId
-                            )
-                        );
-
-                      const canClaim =
-                        reward.status ===
-                        "available" &&
-                        stats &&
-                        stats.available >=
-                        reward.cost;
-
-                      return (
-                        <tr
-                          key={
-                            String(
-                              reward.id
-                            )
-                          }
-                        >
-                          <td>
-                            <strong>
-                              {
-                                reward.name
-                              }
-                            </strong>
-
-                            {reward.notes && (
-                              <div className="bh-muted">
-                                {
-                                  reward.notes
-                                }
-                              </div>
-                            )}
-                          </td>
-
-                          <td>
-                            {
-                              reward.bossName
-                            }
-                          </td>
-
-                          <td>
-                            {safeNumber(
-                              reward.cost,
-                              0
-                            ).toFixed(
-                              2
-                            )}
-                          </td>
-
-                          <td>
-                            {
-                              reward.playerName ||
-                              "Unassigned"
-                            }
-                          </td>
-
-                          <td>
-                            <span
-                              className={`bh-status-pill bh-status-${reward.status}`}
-                            >
-                              {
-                                reward.status
-                              }
-                            </span>
-                          </td>
-
-                          <td>
-                            <div className="bh-action-row">
-                              {reward.playerId &&
-                                reward.status ===
-                                "available" && (
-                                  <button
-                                    className="bh-small-button"
-                                    disabled={
-                                      !canClaim
-                                    }
-                                    onClick={() =>
-                                      claimReward(
-                                        reward
-                                      )
-                                    }
-                                  >
-                                    CLAIM
-                                  </button>
-                                )}
-
-                              {isAdmin && (
-                                <button
-                                  className="bh-small-button"
-                                  onClick={() =>
-                                    setEditingReward(
-                                      {
-                                        ...reward,
-                                      }
-                                    )
-                                  }
-                                >
-                                  EDIT
-                                </button>
-                              )}
-                            </div>
-
-                            {reward.playerId &&
-                              stats &&
-                              reward.status ===
-                              "available" && (
-                                <div className="bh-muted">
-                                  Available:{" "}
-                                  {stats.available.toFixed(
-                                    2
-                                  )}
-                                </div>
-                              )}
-                          </td>
-                        </tr>
-                      );
-                    }
-                  )}
-
-                  {!visibleRewards.length && (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="bh-empty-cell"
-                      >
-                        No rewards
-                        found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </TableScroller>
-
-            <div className="bh-pagination">
-              <button
-                disabled={
-                  rewardPage <=
-                  1
-                }
-                onClick={() =>
-                  setRewardPage(
-                    (p) =>
-                      Math.max(
-                        1,
-                        p - 1
-                      )
-                  )
-                }
-              >
-                PREVIOUS
-              </button>
-
-              <span>
-                Page{" "}
-                {rewardPage} of{" "}
-                {
-                  rewardPageCount
-                }
-              </span>
-
-              <button
-                disabled={
-                  rewardPage >=
-                  rewardPageCount
-                }
-                onClick={() =>
-                  setRewardPage(
-                    (p) =>
-                      Math.min(
-                        rewardPageCount,
-                        p + 1
-                      )
-                  )
-                }
-              >
-                NEXT
-              </button>
-            </div>
-
-            <div className="bh-subsection">
-              <div className="bh-subsection-header">
-                <h3>
-                  Reward Claim
-                  History
-                </h3>
-              </div>
-
-              <TableScroller>
-                <table className="bh-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        DATE
-                      </th>
-
-                      <th>
-                        PLAYER
-                      </th>
-
-                      <th>
-                        REWARD
-                      </th>
-
-                      <th>
-                        BOSS
-                      </th>
-
-                      <th>
-                        POINTS
-                      </th>
-
-                      <th>
-                        CLAIMED BY
-                      </th>
-
-                      {isAdmin && (
-                        <th>ACTIONS</th>
-                      )}
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {rewardClaims
-                      .slice(
-                        0,
-                        50
-                      )
-                      .map(
-                        (
-                          claim
-                        ) => (
-                          <tr
-                            key={
-                              String(
-                                claim.id
-                              )
-                            }
-                          >
-                            <td>
-                              {formatDateTime(
-                                claim.claimedAt,
-                                effectiveTimezone
-                              )}
-                            </td>
-
-                            <td>
-                              {
-                                claim.playerName
-                              }
-                            </td>
-
-                            <td>
-                              {
-                                claim.rewardName
-                              }
-                            </td>
-
-                            <td>
-                              {
-                                claim.bossName
-                              }
-                            </td>
-
-                            <td>
-                              <strong className="bh-reward-claim-deduction">
-                                -{SONYA_REWARD_COST.toFixed(2)}
-                              </strong>
-                            </td>
-
-                            <td>
-                              {
-                                claim.claimedBy ||
-                                "—"
-                              }
-                            </td>
-
-                            {isAdmin && (
-                              <td>
-                                <div className="bh-history-v4-actions">
-                                  <button type="button" onClick={() => openEditRewardClaim(claim)}>EDIT</button>
-                                  <button type="button" className="danger" onClick={() => deleteRewardClaim(claim)}>DELETE</button>
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                        )
-                      )}
-
-                    {!rewardClaims.length && (
-                      <tr>
-                        <td
-                          colSpan={isAdmin ? 7 : 6}
-                          className="bh-empty-cell"
-                        >
-                          No reward
-                          claims
-                          yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </TableScroller>
-            </div>
           </section>
         )}
+
+      {/* ===================================================
+          REWARD INVENTORY DETAIL / CLAIM HISTORY MODAL
+      =================================================== */}
+      {selectedRewardInventory && (() => {
+        const detailReward = selectedRewardInventory;
+        const detailBossId = normalizeBossId(detailReward.bossId);
+        const detailClaims = rewardClaims
+          .filter((claim) =>
+            String(claim.rewardId || "") === String(detailReward.id || "") &&
+            lower(claim.status) !== "cancelled"
+          )
+          .sort((a, b) =>
+            (safeToDate(b.claimedAt)?.getTime() || 0) -
+            (safeToDate(a.claimedAt)?.getTime() || 0)
+          );
+        const detailIcon = weaponClassIconPath(detailReward.weaponClass);
+        const detailBossImage = bossImagePath(detailBossId);
+
+        return (
+          <div
+            className="bh-modal-backdrop bh-reward-detail-backdrop"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setSelectedRewardInventory(null);
+            }}
+          >
+            <div className="bh-reward-detail-modal">
+              <header className="bh-reward-detail-header">
+                <div>
+                  <span className="bh-section-kicker">REWARD INVENTORY</span>
+                  <h2>{detailReward.name || "Reward"}</h2>
+                  <p>Complete reward information and claim history.</p>
+                </div>
+                <button
+                  type="button"
+                  className="bh-modal-close"
+                  aria-label="Close reward details"
+                  onClick={() => setSelectedRewardInventory(null)}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="bh-reward-detail-hero">
+                <img src={detailBossImage} alt="" />
+                <div>
+                  <span>{detailReward.bossName || "Boss"}</span>
+                  <strong>{detailReward.name || "Reward"}</strong>
+                  <small>{detailReward.status || "available"}</small>
+                </div>
+              </div>
+
+              <div className="bh-reward-detail-grid">
+                <div><span>PLAYER</span><strong>{detailReward.playerName || "Unassigned"}</strong></div>
+                <div><span>BOSS</span><strong>{detailReward.bossName || "—"}</strong></div>
+                <div><span>WEAPON CLASS</span><strong>{detailIcon && <img src={detailIcon} alt="" />}{detailReward.weaponClass || "—"}</strong></div>
+                <div><span>COST</span><strong>{detailBossId === "sonya" ? "-6.00 POINTS" : "—"}</strong></div>
+                <div><span>STATUS</span><strong className={`detail-status-${lower(detailReward.status)}`}>{detailReward.status || "—"}</strong></div>
+                <div><span>CLAIMS</span><strong>{detailClaims.length}</strong></div>
+                <div><span>CREATED BY</span><strong>{detailReward.createdBy || "System"}</strong></div>
+                <div><span>CREATED AT</span><strong>{formatDateTime(detailReward.createdAt, effectiveTimezone)}</strong></div>
+                <div><span>UPDATED AT</span><strong>{formatDateTime(detailReward.updatedAt, effectiveTimezone)}</strong></div>
+                <div><span>SPAWN DATE / TIME</span><strong>{detailReward.spawnAt ? formatDateTime(detailReward.spawnAt, effectiveTimezone) : "—"}</strong></div>
+              </div>
+
+              {(detailReward.notes || detailReward.reason) && (
+                <div className="bh-reward-detail-notes">
+                  <span>DETAILS / NOTES</span>
+                  <p>{detailReward.notes || detailReward.reason}</p>
+                </div>
+              )}
+
+              <section className="bh-reward-detail-history">
+                <div className="bh-reward-detail-history-head">
+                  <div>
+                    <span className="bh-section-kicker">CLAIM HISTORY</span>
+                    <h3>{detailClaims.length ? `${detailClaims.length} Claim${detailClaims.length === 1 ? "" : "s"}` : "No Claims Yet"}</h3>
+                  </div>
+                  <span className="bh-reward-detail-live">● LIVE DATA</span>
+                </div>
+
+                {detailClaims.length ? (
+                  <div className="bh-reward-claim-detail-list">
+                    {detailClaims.map((claim) => {
+                      const claimReward = rewards.find((r) => String(r.id) === String(claim.rewardId || ""));
+                      const claimClass = claim.weaponClass || claimReward?.weaponClass || detailReward.weaponClass || "";
+                      const claimClassIcon = weaponClassIconPath(claimClass);
+                      return (
+                        <article className="bh-reward-claim-detail-card" key={claim.id}>
+                          <div className="bh-reward-claim-detail-icon">✓</div>
+                          <div className="bh-reward-claim-detail-main">
+                            <div className="bh-reward-claim-detail-top">
+                              <strong>{claim.playerName || detailReward.playerName || "Unknown Player"}</strong>
+                              <span>{formatDateTime(claim.claimedAt, effectiveTimezone)}</span>
+                            </div>
+                            <div className="bh-reward-claim-detail-fields">
+                              <div><span>REWARD</span><strong>{claim.rewardName || detailReward.name || "Reward"}</strong></div>
+                              <div><span>BOSS</span><strong>{claim.bossName || detailReward.bossName || "—"}</strong></div>
+                              <div><span>WEAPON CLASS</span><strong>{claimClassIcon && <img src={claimClassIcon} alt="" />}{claimClass || "—"}</strong></div>
+                              <div><span>COST</span><strong>{normalizeBossId(claim.bossId || detailReward.bossId) === "sonya" ? "-6.00 POINTS" : "—"}</strong></div>
+                              <div><span>CLAIMED BY</span><strong>{claim.claimedBy || claim.updatedBy || claim.createdBy || "SYSTEM"}</strong></div>
+                              <div><span>CLAIM ID</span><strong>{claim.id || "—"}</strong></div>
+                            </div>
+                          </div>
+                          {isAdmin && (
+                            <div className="bh-reward-claim-detail-actions">
+                              <button type="button" onClick={() => openEditRewardClaim(claim)}>EDIT</button>
+                              <button type="button" className="danger" onClick={() => deleteRewardClaim(claim)}>DELETE</button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bh-reward-detail-empty">
+                    <strong>NO CLAIM HISTORY</strong>
+                    <span>This reward has not been claimed yet.</span>
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===================================================
           NOTIFICATIONS
@@ -7119,85 +7677,85 @@ export default function BHPage() {
 
       {activeTab ===
         "notices" && (
-          <section className="bh-panel">
+          <section className="bh-panel bh-notifications-full" id="bh-notifications-panel">
             <div className="bh-panel-header">
               <div>
-                <div className="bh-section-kicker">
-                  GUILD NOTIFICATIONS
-                </div>
-
-                <h2>
-                  Activity &
-                  Notifications
-                </h2>
-
-                <p>
-                  Changes to
-                  attendance, points,
-                  overrides, rewards
-                  and players appear
-                  here.
-                </p>
+                <div className="bh-section-kicker">GUILD NOTIFICATIONS</div>
+                <h2>Activity &amp; Notifications</h2>
+                <p>Complete notification history. NEW is based on the current local calendar day.</p>
               </div>
-
-              <button
-                className="bh-secondary-button"
-                onClick={
-                  reloadGuildNotices
-                }
-              >
-                REFRESH
-              </button>
+              <button className="bh-secondary-button" onClick={reloadGuildNotices}>REFRESH</button>
             </div>
 
-            <div className="bh-notices-list">
-              {guildNotices.map(
-                (notice) => (
-                  <div
-                    key={
-                      notice.id
-                    }
-                    className={`bh-notice-card bh-notice-${notice.type}`}
-                  >
-                    <div className="bh-notice-card-main">
-                      <div className="bh-notice-card-title">
-                        {
-                          notice.title
-                        }
-                      </div>
+            <div className="bh-notifications-toolbar">
+              <input
+                className="bh-input"
+                type="search"
+                placeholder="Search messages, players, or admin..."
+                value={noticeSearch}
+                onChange={(e) => { setNoticeSearch(e.target.value); setNoticeAllPage(1); }}
+              />
+              <select className="bh-input" value={noticeTypeFilter} onChange={(e) => { setNoticeTypeFilter(e.target.value); setNoticeAllPage(1); }}>
+                <option value="all">All Types</option>
+                <option value="success">Activity</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="reward">Reward</option>
+                <option value="info">Notice</option>
+              </select>
+              <select className="bh-input" value={noticeTimeFilter} onChange={(e) => { setNoticeTimeFilter(e.target.value); setNoticeAllPage(1); }}>
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="7">Last 7 Days</option>
+                <option value="30">Last 30 Days</option>
+              </select>
+              <select className="bh-input" value={noticeAdminFilter} onChange={(e) => { setNoticeAdminFilter(e.target.value); setNoticeAllPage(1); }}>
+                <option value="all">All Admins</option>
+                {noticeAdmins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
+              </select>
+              <div className="bh-notice-date-filter">
+                <label>DATE <input className="bh-input" type="date" value={noticeDateFilter} onChange={(e) => { setNoticeDateFilter(e.target.value); setNoticeAllPage(1); }} /></label>
+                <label>FROM <input className="bh-input" type="time" value={noticeFromTime} onChange={(e) => { setNoticeFromTime(e.target.value); setNoticeAllPage(1); }} /></label>
+                <label>TO <input className="bh-input" type="time" value={noticeToTime} onChange={(e) => { setNoticeToTime(e.target.value); setNoticeAllPage(1); }} /></label>
+                {noticeDateFilter && <button type="button" className="bh-secondary-button bh-notice-clear-filter" onClick={() => { setNoticeDateFilter(""); setNoticeFromTime("11:00"); setNoticeToTime("03:00"); setNoticeAllPage(1); }}>CLEAR DATE</button>}
+              </div>
+            </div>
 
-                      <div className="bh-notice-card-message">
-                        {
-                          notice.message
-                        }
-                      </div>
-                    </div>
+            <div className="bh-notifications-results-head">
+              <strong>{filteredAllNotices.length}</strong> notifications found
+              <span>{filteredAllNotices.length ? `${(safeAllPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeAllPage * NOTICE_PAGE_SIZE, filteredAllNotices.length)}` : "0"} shown</span>
+            </div>
 
-                    <div className="bh-notice-card-meta">
-                      <span>
-                        {formatDateTime(
-                          notice.createdAt,
-                          effectiveTimezone
-                        )}
-                      </span>
+            <div className="bh-notice-table-scroll bh-notifications-full-table-scroll">
+              <table className="bh-notice-table bh-notifications-full-table">
+                <thead>
+                  <tr><th>#</th><th>STATUS</th><th>TYPE</th><th>MESSAGE</th><th>DATE &amp; TIME</th><th>ADMIN</th></tr>
+                </thead>
+                <tbody>
+                  {pagedAllNotices.map((notice, index) => {
+                    const isNew = noticeDayKey(notice.createdAt, effectiveTimezone) === todayKey;
+                    return (
+                      <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
+                        <td>{(safeAllPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
+                        <td><span className={`bh-notice-status-badge ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
+                        <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span><span className="bh-notice-type-label">{noticeTypeLabel(notice.type)}</span></td>
+                        <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
+                        <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
+                        <td>{notice.createdBy || "System"}</td>
+                      </tr>
+                    );
+                  })}
+                  {!pagedAllNotices.length && <tr><td colSpan="6" className="bh-notice-table-empty">No notifications match your filters.</td></tr>}
+                </tbody>
+              </table>
+            </div>
 
-                      <span>
-                        {
-                          notice.createdBy ||
-                          "System"
-                        }
-                      </span>
-                    </div>
-                  </div>
-                )
-              )}
-
-              {!guildNotices.length && (
-                <div className="bh-empty-state">
-                  No notifications
-                  yet.
-                </div>
-              )}
+            <div className="bh-notice-pagination bh-notifications-pagination">
+              <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage(1)}>«</button>
+              <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage((p) => Math.max(1, p - 1))}>‹</button>
+              <button className="active">{safeAllPage}</button>
+              <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage((p) => Math.min(allNoticePageCount, p + 1))}>›</button>
+              <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage(allNoticePageCount)}>»</button>
             </div>
           </section>
         )}
@@ -7738,21 +8296,6 @@ export default function BHPage() {
         )}
 
       {/* ===================================================
-          FLOATING ADD ATTENDANCE
-      =================================================== */}
-
-      {isAdmin && (
-        <button
-          className="bh-floating-add"
-          onClick={() =>
-            openAttendanceModal()
-          }
-        >
-          + ADD NEW ATTENDANCE
-        </button>
-      )}
-
-      {/* ===================================================
           ATTENDANCE MODAL
       =================================================== */}
 
@@ -7808,6 +8351,13 @@ export default function BHPage() {
               selectedScheduledSpawns={selectedScheduledSpawns}
               toggleScheduledSpawn={toggleScheduledSpawn}
               showTodaySchedule={attendanceMode === "scheduled"}
+              onAddNewPlayer={isAdmin ? () => {
+                setNewPlayerIgn("");
+                setNewPlayerClass(CLASS_OPTIONS[0] || "");
+                setNewPlayerWeapon("");
+                setError("");
+                setAddPlayerModalOpen(true);
+              } : null}
             />
 
             {/* =================================================
@@ -8181,7 +8731,26 @@ export default function BHPage() {
                   <tbody>
                     {visibleHistory.map((row) => (
                       <tr key={row.id} className={row.eventType === "reward" ? "reward-row" : "attendance-row"}>
-                        <td><div className="bh-history-v4-datetime"><strong>{row.dateKey || "—"}</strong><span>{row.timeKey || "—"}</span></div></td>
+                        <td>
+                          <div className="bh-history-v4-datetime">
+                            <strong>
+                              {row.dateTime
+                                ? formatDate(
+                                  row.dateTime,
+                                  effectiveTimezone
+                                )
+                                : row.dateKey || "—"}
+                            </strong>
+                            <span>
+                              {row.dateTime
+                                ? formatTime(
+                                  row.dateTime,
+                                  effectiveTimezone
+                                )
+                                : row.timeKey || "—"}
+                            </span>
+                          </div>
+                        </td>
                         <td><span className={`bh-history-v4-type ${row.eventType}`}><i>{row.eventType === "reward" ? "⚔" : "✦"}</i>{row.eventType === "reward" ? "REWARD CLAIMED" : (row.attendanceRow?.manualOverride ? "OVERRIDE" : "ATTENDANCE")}</span></td>
                         <td><div className="bh-history-v4-boss"><span>{clean(row.bossName).slice(0, 1).toUpperCase() || "B"}</span><strong>{row.bossName}</strong></div></td>
                         <td><span className="bh-history-v4-details">{row.details}</span></td>
@@ -8378,6 +8947,98 @@ export default function BHPage() {
                 onClick={saveEditedAttendance}
               >
                 ✓ SAVE CHANGES
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================
+          ADD NEW PLAYER MODAL
+      =================================================== */}
+
+      {addPlayerModalOpen && isAdmin && (
+        <div
+          className="bh-modal-backdrop bh-add-player-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAddPlayerModalOpen(false);
+          }}
+        >
+          <div className="bh-modal bh-add-player-modal" role="dialog" aria-modal="true" aria-labelledby="add-player-title">
+            <div className="bh-add-player-header">
+              <div className="bh-add-player-icon">♙</div>
+              <div>
+                <div className="bh-section-kicker">PLAYER ROSTER</div>
+                <h2 id="add-player-title">Add New Player</h2>
+                <p>Create a new active player and add them to the guild roster.</p>
+              </div>
+              <span className="bh-add-player-admin">⚙ ADMIN ONLY</span>
+              <button type="button" className="bh-modal-close" onClick={() => setAddPlayerModalOpen(false)} aria-label="Close add player">×</button>
+            </div>
+
+            <div className="bh-add-player-body">
+              <div className="bh-add-player-intro">
+                <span>NEW ROSTER ENTRY</span>
+                <strong>Player information</strong>
+                <p>The player will be created as <b>ACTIVE</b> and will immediately appear in Players &amp; History.</p>
+              </div>
+
+              <div className="bh-add-player-grid">
+                <div className="bh-form-group bh-add-player-field-full">
+                  <label>IGN / IN-GAME NAME</label>
+                  <input
+                    className="bh-input bh-add-player-large-input"
+                    value={newPlayerIgn}
+                    placeholder="Enter player IGN..."
+                    autoComplete="off"
+                    autoFocus
+                    onChange={(e) => setNewPlayerIgn(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") addPlayer(); }}
+                  />
+                </div>
+
+                <div className="bh-form-group">
+                  <label>CLASS</label>
+                  <select
+                    className="bh-select bh-add-player-large-input"
+                    value={newPlayerClass}
+                    onChange={(e) => setNewPlayerClass(e.target.value)}
+                  >
+                    {CLASS_OPTIONS.map((className) => (
+                      <option key={className} value={className}>{className}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bh-form-group">
+                  <label>WEAPON</label>
+                  <input
+                    className="bh-input bh-add-player-large-input"
+                    value={newPlayerWeapon}
+                    placeholder="Enter weapon..."
+                    autoComplete="off"
+                    onChange={(e) => setNewPlayerWeapon(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {error && <div className="bh-add-player-error">{error}</div>}
+
+              <div className="bh-add-player-preview">
+                <div className="bh-add-player-preview-avatar">{clean(newPlayerIgn || "?").charAt(0).toUpperCase()}</div>
+                <div>
+                  <small>ROSTER PREVIEW</small>
+                  <strong>{clean(newPlayerIgn) || "New Player"}</strong>
+                  <span>{newPlayerClass || "Class not selected"}{newPlayerWeapon ? ` • ${newPlayerWeapon}` : ""}</span>
+                </div>
+                <em>ACTIVE</em>
+              </div>
+            </div>
+
+            <div className="bh-add-player-footer">
+              <button type="button" className="bh-secondary-button" onClick={() => setAddPlayerModalOpen(false)}>CANCEL</button>
+              <button type="button" className="bh-primary-button bh-add-player-save" disabled={!clean(newPlayerIgn)} onClick={addPlayer}>
+                ＋ ADD PLAYER &amp; VIEW ROSTER
               </button>
             </div>
           </div>
@@ -8618,403 +9279,123 @@ export default function BHPage() {
       =================================================== */}
 
       {editingRewardClaim && isAdmin && (
-        <div
-          className="bh-modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setEditingRewardClaim(null);
-            }
-          }}
-        >
+        <div className="bh-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setEditingRewardClaim(null); }}>
           <div className="bh-modal bh-reward-claim-edit-modal">
-            <div className="bh-modal-header">
-              <div>
-                <div className="bh-section-kicker">ADMIN</div>
-                <h2>Edit Reward Claim</h2>
-                <p className="bh-modal-subtitle">
-                  Update the Sonya weapon claim record. A Sonya claim always deducts 6.00 points.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="bh-modal-close"
-                onClick={() => setEditingRewardClaim(null)}
-              >
-                ×
-              </button>
+            <div className="bh-modal-header"><div><div className="bh-section-kicker">ADMIN ONLY</div><h2>Edit Reward Claim</h2><p className="bh-modal-subtitle">Correct the winner, reward or claim notes. Sonya claims always use the fixed 6.00-point deduction; mini-boss Duck Race claims are free.</p></div><button className="bh-modal-close" onClick={() => setEditingRewardClaim(null)}>×</button></div>
+            <div className="bh-reward-form-grid">
+              <div className="bh-form-group"><label>PLAYER (IGN)</label><select className="bh-select" value={editingRewardClaim.playerId || ""} onChange={(e) => { const v = e.target.value; const pl = players.find((x) => String(x.id) === String(v)); setEditingRewardClaim((x) => ({ ...x, playerId: v, playerName: pl?.ign || "" })); }}><option value="">Choose player...</option>{players.filter((p) => p.active).map((p) => <option key={String(p.id)} value={String(p.id)}>{p.ign}</option>)}</select></div>
+              <div className="bh-form-group"><label>REWARD</label><select className="bh-select" value={editingRewardClaim.rewardId || ""} onChange={(e) => { const r = rewards.find((x) => String(x.id) === String(e.target.value)); setEditingRewardClaim((x) => ({ ...x, rewardId: e.target.value, rewardName: r?.name || x.rewardName || "", bossId: r?.bossId || x.bossId, bossName: r?.bossName || x.bossName, weaponClass: r?.weaponClass || x.weaponClass, points: normalizeBossId(r?.bossId || x.bossId) === "sonya" ? SONYA_REWARD_COST : 0 })); }}><option value="">Select reward...</option>{rewards.filter((r) => r.status !== "disabled").map((r) => <option key={String(r.id)} value={String(r.id)}>{r.bossName} · {r.name}</option>)}</select></div>
+              <div className="bh-form-group"><label>BOSS</label><div className="bh-readonly-field"><strong>{editingRewardClaim.bossName || bossLabel(editingRewardClaim.bossId)}</strong><span>{normalizeBossId(editingRewardClaim.bossId) === "sonya" ? "GRAND BOSS" : "DUCK RACE BOSS"}</span></div></div>
+              <div className="bh-form-group"><label>WEAPON CLASS</label><div className="bh-readonly-field">{weaponClassIconPath(editingRewardClaim.weaponClass) && <img src={weaponClassIconPath(editingRewardClaim.weaponClass)} alt="" style={{ width: 20, height: 20 }} />}<strong>{editingRewardClaim.weaponClass || "—"}</strong></div></div>
+              <div className="bh-form-group"><label>POINTS</label><div className="bh-readonly-field bh-readonly-gold"><strong>{normalizeBossId(editingRewardClaim.bossId) === "sonya" ? "-6.00" : "FREE"}</strong><span>{normalizeBossId(editingRewardClaim.bossId) === "sonya" ? "Fixed Sonya cost" : "No point deduction"}</span></div></div>
+              <div className="bh-form-group"><label>CLAIMED AT</label><div className="bh-readonly-field"><strong>{formatDateTime(editingRewardClaim.claimedAt, effectiveTimezone)}</strong></div></div>
+              <div className="bh-form-group full"><label>NOTES</label><textarea className="bh-textarea" value={editingRewardClaim.notes || ""} placeholder="Optional claim note..." onChange={(e) => setEditingRewardClaim((x) => ({ ...x, notes: e.target.value }))} /></div>
             </div>
-
-            <div className="bh-form-group">
-              <label>PLAYER (IGN)</label>
-              <select
-                className="bh-select"
-                value={editingRewardClaim.playerId || ""}
-                onChange={(e) =>
-                  setEditingRewardClaim((current) => ({
-                    ...current,
-                    playerId: String(e.target.value),
-                  }))
-                }
-              >
-                <option value="">Select player...</option>
-                {players.map((player) => (
-                  <option key={String(player.id)} value={String(player.id)}>
-                    {player.ign}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="bh-form-group">
-              <label>REWARD</label>
-              <input
-                className="bh-input"
-                value={editingRewardClaim.rewardName || "Sonya Weapon"}
-                onChange={(e) =>
-                  setEditingRewardClaim((current) => ({
-                    ...current,
-                    rewardName: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div className="bh-form-group">
-              <label>BOSS</label>
-              <div className="bh-readonly-field">
-                <span>⚔</span>
-                <strong>Sonya</strong>
-              </div>
-            </div>
-
-            <div className="bh-form-group">
-              <label>POINTS DEDUCTED</label>
-              <div className="bh-readonly-field bh-readonly-gold">
-                <strong>-6.00</strong>
-                <span>Fixed Sonya weapon cost</span>
-              </div>
-            </div>
-
-            <div className="bh-form-group">
-              <label>NOTES</label>
-              <textarea
-                className="bh-textarea"
-                value={editingRewardClaim.notes || ""}
-                placeholder="Optional claim note..."
-                onChange={(e) =>
-                  setEditingRewardClaim((current) => ({
-                    ...current,
-                    notes: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div className="bh-modal-actions">
-              <button
-                type="button"
-                className="bh-secondary-button"
-                onClick={() => setEditingRewardClaim(null)}
-              >
-                CANCEL
-              </button>
-              <button
-                type="button"
-                className="bh-primary-button"
-                onClick={saveEditedRewardClaim}
-              >
-                SAVE CLAIM
-              </button>
-            </div>
+            <div className="bh-modal-actions"><button className="bh-secondary-button" onClick={() => setEditingRewardClaim(null)}>CANCEL</button><button className="bh-primary-button" onClick={saveEditedRewardClaim}>SAVE CLAIM</button></div>
           </div>
         </div>
       )}
 
       {/* ===================================================
-          EDIT REWARD MODAL
+          ADD / EDIT REWARD MODAL
       =================================================== */}
 
       {editingReward && (
-        <div
-          className="bh-modal-backdrop"
-          onMouseDown={(e) => {
-            if (
-              e.target ===
-              e.currentTarget
-            ) {
-              setEditingReward(
-                null
-              );
-            }
-          }}
-        >
-          <div className="bh-modal">
+        <div className="bh-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setEditingReward(null); }}>
+          <div className="bh-modal bh-reward-edit-modal">
+            <div className="bh-modal-header"><div><div className="bh-section-kicker">ADMIN ONLY</div><h2>{editingReward.__new ? "Add New Reward" : "Edit Reward"}</h2><p className="bh-modal-subtitle">Assign a weapon-class reward to an eligible player. Sonya always costs 6.00 points; mini-boss Duck Race rewards are free.</p></div><button className="bh-modal-close" onClick={() => setEditingReward(null)}>×</button></div>
+            <div className="bh-reward-form-grid">
+              <div className="bh-form-group"><label>REWARD NAME</label><input className="bh-input" value={editingReward.__new ? rewardForm.name : editingReward.name || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, name: e.target.value })) : setEditingReward((x) => ({ ...x, name: e.target.value }))} placeholder="e.g. Dex Gaunt" /></div>
+              <div className="bh-form-group"><label>BOSS</label><select className="bh-select" value={editingReward.__new ? rewardForm.bossId : editingReward.bossId || "sonya"} onChange={(e) => { const bossId = e.target.value; if (editingReward.__new) setRewardForm((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); else setEditingReward((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); }} >{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select></div>
+              <div className="bh-form-group"><label>WEAPON CLASS</label><select className="bh-select" value={editingReward.__new ? rewardForm.weaponClass : editingReward.weaponClass || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, weaponClass: e.target.value })) : setEditingReward((x) => ({ ...x, weaponClass: e.target.value }))}><option value="">Choose class...</option>{CLASS_OPTIONS.map((cls) => <option key={cls} value={cls}>{cls}</option>)}</select></div>
+              <div className="bh-form-group"><label>COST</label><div className="bh-readonly-field bh-readonly-gold"><strong>{(editingReward.__new ? rewardForm.bossId : editingReward.bossId) === "sonya" ? "-6.00" : "FREE"}</strong><span>{(editingReward.__new ? rewardForm.bossId : editingReward.bossId) === "sonya" ? "Fixed Sonya cost" : "Duck Race reward — no point deduction"}</span></div></div>
+              <div className="bh-form-group"><label>PLAYER / WINNER</label><select className="bh-select" value={editingReward.__new ? rewardForm.playerId : editingReward.playerId || ""} onChange={(e) => { const v = e.target.value; const player = players.find((p) => String(p.id) === String(v)); editingReward.__new ? setRewardForm((x) => ({ ...x, playerId: v })) : setEditingReward((x) => ({ ...x, playerId: v, playerName: player?.ign || "" })); }}><option value="">Unassigned</option>{players.filter((p) => p.active).map((player) => <option key={String(player.id)} value={String(player.id)}>{player.ign} · {safeNumber(playerStats.find((s) => String(s.id) === String(player.id))?.available, 0).toFixed(2)} pts</option>)}</select></div>
+              <div className="bh-form-group"><label>STATUS</label><select className="bh-select" value={editingReward.__new ? rewardForm.status : editingReward.status || "available"} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, status: e.target.value })) : setEditingReward((x) => ({ ...x, status: e.target.value }))}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></div>
+              <div className="bh-form-group full"><label>NOTES</label><textarea className="bh-textarea" value={editingReward.__new ? rewardForm.notes : editingReward.notes || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, notes: e.target.value })) : setEditingReward((x) => ({ ...x, notes: e.target.value }))} placeholder="Optional reward note..." /></div>
+            </div>
+            <div className="bh-modal-actions"><button className="bh-secondary-button" onClick={() => setEditingReward(null)}>CANCEL</button><button className="bh-primary-button" disabled={rewardSaving} onClick={async () => { if (editingReward.__new) { setRewardSaving(true); const ok = await addReward(); setRewardSaving(false); if (ok) { setEditingReward(null); setTimeout(() => document.getElementById("reward-inventory")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); } } else { await saveEditedReward(); } }}>{editingReward.__new ? "ADD REWARD" : "SAVE REWARD"}</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================
+          NOTIFICATION DETAIL MODAL
+      =================================================== */}
+      {selectedNotice && (
+        <div className="bh-modal-backdrop bh-notice-detail-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedNotice(null); }}>
+          <div className="bh-modal bh-notice-detail-modal" role="dialog" aria-modal="true" aria-labelledby="notice-detail-title">
             <div className="bh-modal-header">
               <div>
-                <div className="bh-section-kicker">
-                  ADMIN
-                </div>
+                <div className="bh-section-kicker">GUILD ACTIVITY</div>
+                <h2 id="notice-detail-title">{selectedNotice.title || "Notification Details"}</h2>
+                <p className="bh-modal-subtitle">Full record of this guild activity.</p>
+              </div>
+              <button type="button" className="bh-modal-close" onClick={() => setSelectedNotice(null)}>×</button>
+            </div>
 
-                <h2>
-                  Edit Reward
-                </h2>
+            <div className="bh-notice-detail-grid">
+              <div className="bh-notice-detail-main">
+                <div className="bh-notice-detail-badges">
+                  <span className={`bh-notice-status-badge ${noticeDayKey(selectedNotice.createdAt, effectiveTimezone) === todayKey ? "new" : "old"}`}>
+                    {noticeDayKey(selectedNotice.createdAt, effectiveTimezone) === todayKey ? "NEW TODAY" : "OLD"}
+                  </span>
+                  <span className={`bh-notice-type-icon bh-notice-${selectedNotice.type}`}>{noticeIcon(selectedNotice.type)}</span>
+                  <strong>{noticeTypeLabel(selectedNotice.type)}</strong>
+                </div>
+                <div className="bh-notice-detail-message">{selectedNotice.message || "No additional message was recorded."}</div>
+
+                <div className="bh-notice-detail-meta">
+                  <div><span>CREATED BY</span><strong>{selectedNotice.createdBy || "System"}</strong></div>
+                  <div><span>DATE &amp; TIME</span><strong>{formatDateTime(selectedNotice.createdAt, effectiveTimezone)}</strong></div>
+                  {selectedNotice.updatedAt && <div><span>LAST UPDATED</span><strong>{formatDateTime(selectedNotice.updatedAt, effectiveTimezone)}</strong></div>}
+                  {selectedNotice.module && <div><span>AREA</span><strong>{String(selectedNotice.module).replace(/^bh-/, "").replace(/[-_]/g, " ")}</strong></div>}
+                </div>
               </div>
 
-              <button
-                className="bh-modal-close"
-                onClick={() =>
-                  setEditingReward(
-                    null
-                  )
-                }
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                REWARD
-              </label>
-
-              <input
-                className="bh-input"
-                value={
-                  editingReward.name ||
-                  ""
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      name:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              />
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                BOSS
-              </label>
-
-              <select
-                className="bh-select"
-                value={
-                  editingReward.bossId ||
-                  ""
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      bossId:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              >
-                {bossOptions.map(
-                  (boss) => (
-                    <option
-                      key={
-                        boss.id
-                      }
-                      value={
-                        boss.id
-                      }
-                    >
-                      {
-                        boss.name
-                      }
-                    </option>
-                  )
+              <div className="bh-notice-detail-audit">
+                <div className="bh-notice-detail-audit-title">RECORD DETAILS</div>
+                {[
+                  ["Player", selectedNotice.playerName || selectedNotice.ign],
+                  ["Boss", selectedNotice.bossName],
+                  ["Reward", selectedNotice.rewardName || selectedNotice.reward],
+                  ["Class", selectedNotice.weaponClass || selectedNotice.className],
+                  ["Points", selectedNotice.points ?? selectedNotice.pointValue],
+                  ["Action", selectedNotice.action],
+                  ["Status", selectedNotice.status],
+                  ["Reason", selectedNotice.reason],
+                  ["Notes", selectedNotice.notes],
+                  ["Changed By", selectedNotice.updatedBy],
+                ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "").map(([label, value]) => (
+                  <div className="bh-notice-audit-row" key={label}><span>{label}</span><strong>{String(value)}</strong></div>
+                ))}
+                {Array.isArray(selectedNotice.details) && selectedNotice.details.length > 0 && (
+                  <div className="bh-notice-audit-section">
+                    <div className="bh-notice-detail-audit-title">ACTION DETAILS</div>
+                    {selectedNotice.details.map((item, index) => (
+                      <div className="bh-notice-audit-row bh-notice-audit-detail-line" key={`detail-${index}`}>
+                        <span>DETAIL</span><strong>{String(item)}</strong>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </select>
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                COST
-              </label>
-
-              <input
-                className="bh-input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={
-                  editingReward.cost ??
-                  0
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      cost:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              />
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                PLAYER
-              </label>
-
-              <select
-                className="bh-select"
-                value={
-                  editingReward.playerId ||
-                  ""
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      playerId:
-                        String(
-                          e.target
-                            .value
-                        ),
-                    })
-                  )
-                }
-              >
-                <option value="">
-                  Unassigned
-                </option>
-
-                {players
-                  .filter(
-                    (p) =>
-                      p.active
-                  )
-                  .map(
-                    (
-                      player
-                    ) => (
-                      <option
-                        key={
-                          String(
-                            player.id
-                          )
-                        }
-                        value={
-                          String(
-                            player.id
-                          )
-                        }
-                      >
-                        {
-                          player.ign
-                        }
-                      </option>
-                    )
-                  )}
-              </select>
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                STATUS
-              </label>
-
-              <select
-                className="bh-select"
-                value={
-                  editingReward.status ||
-                  "available"
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      status:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              >
-                <option value="available">
-                  Available
-                </option>
-
-                <option value="disabled">
-                  Disabled
-                </option>
-
-                <option value="claimed">
-                  Claimed
-                </option>
-              </select>
-            </div>
-
-            <div className="bh-form-group">
-              <label>
-                NOTES
-              </label>
-
-              <textarea
-                className="bh-textarea"
-                value={
-                  editingReward.notes ||
-                  ""
-                }
-                onChange={(e) =>
-                  setEditingReward(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      notes:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              />
+                {Array.isArray(selectedNotice.changes) && selectedNotice.changes.length > 0 && (
+                  <div className="bh-notice-audit-section">
+                    <div className="bh-notice-detail-audit-title">CHANGES / ACTION TAKEN</div>
+                    {selectedNotice.changes.map((item, index) => (
+                      <div className="bh-notice-audit-row bh-notice-audit-change-line" key={`change-${index}`}>
+                        <span>CHANGE</span><strong>{String(item)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!selectedNotice.playerName && !selectedNotice.ign && !selectedNotice.bossName && !selectedNotice.rewardName && !selectedNotice.reward && !selectedNotice.weaponClass && !selectedNotice.className && selectedNotice.points == null && selectedNotice.pointValue == null && !selectedNotice.action && !selectedNotice.status && !selectedNotice.reason && !selectedNotice.notes && !selectedNotice.updatedBy && !selectedNotice.details?.length && !selectedNotice.changes?.length && (
+                  <div className="bh-notice-audit-empty">No additional record fields were attached to this notification.</div>
+                )}
+              </div>
             </div>
 
             <div className="bh-modal-actions">
-              <button
-                className="bh-secondary-button"
-                onClick={() =>
-                  setEditingReward(
-                    null
-                  )
-                }
-              >
-                CANCEL
-              </button>
-
-              <button
-                className="bh-primary-button"
-                onClick={
-                  saveEditedReward
-                }
-              >
-                SAVE REWARD
-              </button>
+              <button type="button" className="bh-secondary-button" onClick={() => setSelectedNotice(null)}>CLOSE</button>
             </div>
           </div>
         </div>

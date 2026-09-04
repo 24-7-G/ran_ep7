@@ -1,0 +1,791 @@
+/* =========================================================
+   RAN ONLINE EP7 — GLOBAL RESPONSIVE FOUNDATION
+   Applies to every page/component.
+   Layout only: existing React logic/data is preserved.
+   ========================================================= */
+
+:root {
+  --app-content-max: 1920px;
+  --app-gutter: clamp(12px, 2.2vw, 36px);
+  --app-section-gap: clamp(14px, 1.5vw, 24px);
+}
+
+html {
+  width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: var(--app-content-max);
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0 auto;
+  border-inline: 1px solid rgba(41, 64, 82, .72);
+  text-align: left;
+}
+
+*,
+*::before,
+*::after {
+  min-width: 0;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+/* ---------- App shell ---------- */
+.app-shell,
+.app-layout,
+.app-main,
+.app-content,
+.app-main-wrapper,
+.main-content,
+.content,
+.main {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.app-main {
+  overflow: visible;
+}
+
+/* ---------- Page containers ---------- */
+.page-container,
+.page,
+.raid-page,
+.bh-page {
+  width: 100%;
+  max-width: 1920px;
+  margin-inline: auto;
+  padding-inline: var(--app-gutter);
+}
+
+/* Keep large desktop pages spacious without becoming absurdly wide. */
+@media (min-width: 1600px) {
+  .page-container,
+  .page,
+  .raid-page,
+  .bh-page {
+    padding-inline: clamp(28px, 3vw, 52px);
+  }
+}
+
+/* ---------- Generic grids ---------- */
+[class*="grid"] {
+  min-width: 0;
+}
+
+/* Prevent flex/grid children from causing horizontal overflow. */
+.flex,
+[class*="toolbar"],
+[class*="header"],
+[class*="actions"],
+[class*="filters"] {
+  min-width: 0;
+}
+
+/* ---------- Tables: scroll inside the table, never the page ---------- */
+.bh-table-scroller,
+.bh-table-wrap,
+.bh-roster,
+.bh-table-container,
+.table-scroller,
+.table-wrap,
+.table-container,
+[class*="table-scroller"],
+[class*="table-wrap"] {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.bh-table,
+.bh-reward-table,
+.bh-history-v4-table,
+table {
+  max-width: none;
+}
+
+/* Never allow long text to push a table cell outside its column. */
+td,
+th {
+  overflow-wrap: anywhere;
+}
+
+/* Keep action buttons usable instead of allowing them to overlap. */
+.bh-player-actions,
+.bh-history-actions,
+.table-actions,
+.row-actions,
+[class*="actions"] {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* ---------- Generic cards ---------- */
+.card,
+.panel,
+.bh-panel,
+.bh-stat-card,
+.bh-boss-card,
+.bh-player-detail,
+[class*="card"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ---------- Header ---------- */
+.app-header {
+  width: 100%;
+}
+
+.header-inner {
+  width: 100%;
+  max-width: 1920px;
+  margin-inline: auto;
+  min-width: 0;
+  padding-inline: var(--app-gutter);
+}
+
+.app-header .brand {
+  flex-shrink: 1;
+  min-width: 0;
+  width: clamp(145px, 17vw, 205px);
+}
+
+.brand-text {
+  min-width: 0;
+}
+
+.brand-text strong,
+.brand-text small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.main-nav {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.header-timezone {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.header-timezone select {
+  min-width: 0;
+  max-width: min(280px, 30vw);
+}
+
+.header-user {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* ---------- Form controls ---------- */
+input,
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---------- Modals ---------- */
+.modal-backdrop,
+.bh-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top))
+           max(10px, env(safe-area-inset-right))
+           max(10px, env(safe-area-inset-bottom))
+           max(10px, env(safe-area-inset-left));
+  overflow: auto;
+}
+
+.modal,
+.bh-modal {
+  width: min(1100px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100svh - 24px);
+  min-width: 0;
+  margin: auto;
+  overflow: hidden;
+}
+
+.modal-body,
+.bh-modal-body {
+  min-width: 0;
+  max-height: calc(100svh - 160px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Modal grids collapse based on available viewport width. */
+.bh-edit-field-grid,
+.bh-form-grid,
+[class*="modal"] [class*="grid"] {
+  min-width: 0;
+}
+
+/* ---------- Safe text ---------- */
+.bh-player-name-wrap,
+.bh-player-name,
+.bh-player-class,
+.bh-boss-name,
+.bh-reward-name,
+.bh-notification-title,
+.bh-notification-message,
+[class*="notification"] h1,
+[class*="notification"] h2,
+[class*="notification"] h3,
+[class*="notification"] p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* =========================================================
+   LARGE LAPTOPS: 1100–1399
+   ========================================================= */
+@media (max-width: 1399px) {
+  .header-inner {
+    gap: 12px;
+  }
+
+  .app-header .brand {
+    width: 165px;
+  }
+
+  .nav-button {
+    padding-inline: 12px;
+  }
+
+  .header-timezone {
+    max-width: 280px;
+  }
+
+  .header-timezone label {
+    display: none;
+  }
+
+  .page-container,
+  .page,
+  .raid-page,
+  .bh-page {
+    padding-inline: clamp(16px, 2vw, 28px);
+  }
+}
+
+/* =========================================================
+   LAPTOP / SMALL DESKTOP: <=1100
+   ========================================================= */
+@media (max-width: 1100px) {
+  .header-inner {
+    min-height: 68px;
+    gap: 8px;
+  }
+
+  .app-header .brand {
+    width: 145px;
+    flex-basis: 145px;
+  }
+
+  .brand-mark {
+    width: 48px;
+    flex-basis: 48px;
+  }
+
+  .brand-text strong {
+    font-size: 12px;
+  }
+
+  .brand-text small {
+    font-size: 7px;
+  }
+
+  .main-nav {
+    height: 68px;
+  }
+
+  .nav-button {
+    min-height: 68px;
+    padding-inline: 9px;
+    font-size: 9px;
+  }
+
+  .header-timezone select {
+    max-width: 190px;
+    width: 190px;
+  }
+
+  .header-user {
+    gap: 5px;
+  }
+
+  .button-small {
+    padding-inline: 9px;
+  }
+}
+
+/* =========================================================
+   TABLET: <=900
+   ========================================================= */
+@media (max-width: 900px) {
+  :root {
+    --app-gutter: 16px;
+  }
+
+  .header-inner {
+    min-height: auto;
+    padding-block: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .app-header .brand {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .main-nav {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    height: 48px;
+    border-top: 1px solid rgba(41,64,82,.55);
+  }
+
+  .nav-button {
+    min-height: 48px;
+    padding-inline: 14px;
+  }
+
+  .header-timezone {
+    margin-left: auto;
+  }
+
+  .header-timezone select {
+    width: min(230px, 35vw);
+    max-width: 230px;
+  }
+
+  .header-user {
+    flex: 0 0 auto;
+  }
+
+  .page-container,
+  .page,
+  .raid-page,
+  .bh-page {
+    padding-block: 20px;
+  }
+
+  /* Any four-column stat area becomes two columns. */
+  .bh-player-detail-stats,
+  .bh-spawn-info {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bh-boss-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bh-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .raid-page-header {
+    flex-wrap: wrap;
+  }
+
+  .raid-timezone-control {
+    flex: 1 1 280px;
+    max-width: none;
+  }
+
+  .modal,
+  .bh-modal {
+    width: min(900px, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
+    max-height: calc(100svh - 20px);
+  }
+}
+
+/* =========================================================
+   PHONE LANDSCAPE / LARGE PHONE: <=700
+   ========================================================= */
+@media (max-width: 700px) {
+  :root {
+    --app-gutter: 12px;
+  }
+
+  .header-inner {
+    padding-inline: 12px;
+  }
+
+  .app-header .brand {
+    max-width: 145px;
+  }
+
+  .brand-mark {
+    width: 42px;
+    flex-basis: 42px;
+    height: 38px;
+  }
+
+  .brand-text strong {
+    font-size: 11px;
+  }
+
+  .brand-text small,
+  .brand-text::after {
+    display: none;
+  }
+
+  .header-timezone {
+    max-width: 42vw;
+  }
+
+  .header-timezone select {
+    width: 100%;
+    max-width: 42vw;
+    height: 34px;
+    font-size: 10px;
+  }
+
+  .header-user .user-badge {
+    display: none;
+  }
+
+  .header-user .button-small {
+    min-height: 34px;
+  }
+
+  .main-nav {
+    margin-inline: -12px;
+    padding-inline: 8px;
+  }
+
+  .nav-button {
+    padding-inline: 12px;
+    font-size: 8px;
+  }
+
+  .page-container,
+  .page,
+  .raid-page,
+  .bh-page {
+    padding-inline: 12px;
+    padding-block: 14px;
+  }
+
+  .page-header,
+  .raid-page-header,
+  .bh-hero,
+  .bh-section-header,
+  .bh-subsection-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .bh-spawn-info,
+  .bh-player-detail-stats,
+  .bh-boss-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bh-spawn-info > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--bh-border-soft, #223646);
+  }
+
+  .bh-spawn-info > div:last-child {
+    border-bottom: 0;
+  }
+
+  .bh-filters,
+  .bh-filters-inline {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bh-filters > *,
+  .bh-filters-inline > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .bh-table-scroller,
+  .bh-table-wrap,
+  .bh-roster {
+    max-width: calc(100vw - 24px);
+  }
+
+  .bh-table,
+  .bh-reward-table,
+  .bh-history-v4-table {
+    font-size: 11px;
+  }
+
+  .bh-player-actions,
+  .bh-history-actions {
+    align-items: stretch;
+  }
+
+  .bh-player-action,
+  .bh-history-actions button {
+    min-height: 36px;
+  }
+
+  .modal,
+  .bh-modal {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100svh - 16px);
+    border-radius: 10px;
+  }
+
+  .modal-body,
+  .bh-modal-body {
+    max-height: calc(100svh - 145px);
+  }
+
+  .bh-edit-field-grid,
+  .bh-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .bh-modal-actions,
+  .bh-edit-modal-footer,
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .bh-modal-actions > button,
+  .bh-edit-modal-footer > button,
+  .modal-actions > button {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+}
+
+/* =========================================================
+   PHONE PORTRAIT: <=480
+   ========================================================= */
+@media (max-width: 480px) {
+  :root {
+    --app-gutter: 10px;
+  }
+
+  .header-inner {
+    padding: 7px 10px;
+  }
+
+  .app-header .brand {
+    max-width: 125px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    flex-basis: 38px;
+    height: 36px;
+    font-size: 7px;
+  }
+
+  .brand-text strong {
+    font-size: 10px;
+  }
+
+  .header-timezone {
+    max-width: 46vw;
+  }
+
+  .header-timezone select {
+    max-width: 46vw;
+    font-size: 9px;
+  }
+
+  .header-user {
+    gap: 4px;
+  }
+
+  .header-user .button-small {
+    padding-inline: 7px;
+    font-size: 7px;
+  }
+
+  .main-nav {
+    height: 44px;
+  }
+
+  .nav-button {
+    min-height: 44px;
+    padding-inline: 10px;
+    font-size: 7px;
+  }
+
+  .page-container,
+  .page,
+  .raid-page,
+  .bh-page {
+    padding-inline: 10px;
+    padding-block: 12px;
+  }
+
+  .bh-panel {
+    padding: 11px;
+  }
+
+  .bh-hero h1,
+  .raid-page-header h1 {
+    font-size: clamp(23px, 8vw, 30px);
+    line-height: 1.05;
+  }
+
+  .bh-stat-card {
+    min-height: 90px;
+    padding: 13px;
+  }
+
+  .bh-stat-value {
+    font-size: 25px;
+  }
+
+  .bh-modal-backdrop,
+  .modal-backdrop {
+    padding: 6px;
+  }
+
+  .modal,
+  .bh-modal {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    max-height: calc(100svh - 12px);
+    border-radius: 9px;
+  }
+
+  .modal-header,
+  .bh-modal-header {
+    padding: 13px;
+  }
+
+  .modal-body,
+  .bh-modal-body {
+    max-height: calc(100svh - 125px);
+  }
+
+  .bh-modal-actions,
+  .bh-edit-modal-footer,
+  .modal-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .bh-modal-actions > button,
+  .bh-edit-modal-footer > button,
+  .modal-actions > button {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  /* Keep dense notification/history rows readable. */
+  [class*="notification"] table,
+  [class*="history"] table {
+    min-width: 760px;
+  }
+}
+
+/* =========================================================
+   VERY SMALL PHONES: <=360
+   ========================================================= */
+@media (max-width: 360px) {
+  .header-inner {
+    gap: 6px;
+  }
+
+  .app-header .brand {
+    max-width: 105px;
+  }
+
+  .brand-text strong {
+    font-size: 9px;
+  }
+
+  .header-timezone {
+    max-width: 48vw;
+  }
+
+  .header-timezone select {
+    max-width: 48vw;
+    padding-inline: 6px;
+  }
+
+  .nav-button {
+    padding-inline: 8px;
+    font-size: 6.5px;
+  }
+}
+
+/* =========================================================
+   ACCESSIBILITY / TOUCH
+   ========================================================= */
+@media (pointer: coarse) {
+  button,
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 38px;
+  }
+
+  .nav-button {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

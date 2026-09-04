@@ -66,18 +66,18 @@ export const DEFAULT_RAIDS = [
 
 export const TIMEZONES = [
   { value: "Automatic", label: "Automatic — My Browser" },
-  { value: "Asia/Manila", label: "Philippines — Manila" },
-  { value: "America/Los_Angeles", label: "US Pacific — Los Angeles / Seattle" },
-  { value: "America/Denver", label: "US Mountain — Denver" },
-  { value: "America/Chicago", label: "US Central — Chicago" },
-  { value: "America/New_York", label: "US Eastern — New York" },
-  { value: "Asia/Tokyo", label: "Japan — Tokyo" },
-  { value: "Asia/Seoul", label: "South Korea — Seoul" },
-  { value: "Asia/Singapore", label: "Singapore" },
-  { value: "Asia/Hong_Kong", label: "Hong Kong" },
-  { value: "Australia/Sydney", label: "Australia — Sydney" },
-  { value: "Europe/London", label: "United Kingdom — London" },
-  { value: "UTC", label: "UTC" }
+  { value: "Asia/Manila", label: "Philippines — Manila (PHT)" },
+  { value: "America/Los_Angeles", label: "US Pacific — Los Angeles / Seattle (PST/PDT)" },
+  { value: "America/Denver", label: "US Mountain — Denver (MST/MDT)" },
+  { value: "America/Chicago", label: "US Central — Chicago (CST/CDT)" },
+  { value: "America/New_York", label: "US Eastern — New York (EST/EDT)" },
+  { value: "Asia/Tokyo", label: "Japan — Tokyo (JST)" },
+  { value: "Asia/Seoul", label: "South Korea — Seoul (KST)" },
+  { value: "Asia/Singapore", label: "Singapore (SGT)" },
+  { value: "Asia/Hong_Kong", label: "Hong Kong (HKT)" },
+  { value: "Australia/Sydney", label: "Australia — Sydney (AEST/AEDT)" },
+  { value: "Europe/London", label: "United Kingdom — London (GMT/BST)" },
+  { value: "UTC", label: "UTC (UTC)" }
 ];
 
 export const GUILD_CLASSES = ["Swordman", "Archer", "Gunner", "Shaman", "Extreme", "Brawler"];

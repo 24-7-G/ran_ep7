@@ -8,7 +8,7 @@ import RaidPage from "./pages/RaidPage";
 import BHPage from "./pages/BHPage";
 import CWPage from "./pages/CWPage";
 import TreasuryPage from "./pages/TreasuryPage";
-import AdminPage from "./pages/AdminPage";
+import { DisplayTimezoneProvider } from "./lib/displayTimezone";
 
 export default function App() {
   const [page, setPage] = useState("raid");
@@ -36,18 +36,16 @@ export default function App() {
 
   async function logout() {
     await signOut(auth);
-    if (page === "admin") setPage("raid");
   }
 
   return (
-    <>
+    <DisplayTimezoneProvider>
       <Header {...{page,setPage,user,isAdmin}} onLogin={() => setLoginOpen(true)} onLogout={logout} />
       <main className="app-main">
         {page === "raid" && <RaidPage user={user} isAdmin={isAdmin} />}
         {page === "bh" && <BHPage user={user} isAdmin={isAdmin} />}
         {page === "cw" && <CWPage user={user} isAdmin={isAdmin} />}
         {page === "treasury" && <TreasuryPage user={user} isAdmin={isAdmin} />}
-        {page === "admin" && isAdmin && <AdminPage user={user} isAdmin={isAdmin} />}
       </main>
 
       <Modal open={loginOpen} title="ADMIN LOGIN" onClose={() => setLoginOpen(false)}>
@@ -58,6 +56,6 @@ export default function App() {
           <button className="button primary" type="submit">SIGN IN</button>
         </form>
       </Modal>
-    </>
+    </DisplayTimezoneProvider>
   );
 }

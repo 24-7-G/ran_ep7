@@ -179,39 +179,51 @@ export function getPHTParts(
 ============================================================
 */
 
+function timezoneAbbreviation(date, timezone) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const tz = timezone || browserTimezone;
+  if (tz === "Asia/Manila") return "PHT";
+  if (tz === "UTC") return "UTC";
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }).formatToParts(d);
+    return parts.find((part) => part.type === "timeZoneName")?.value || "";
+  } catch {
+    return "";
+  }
+}
+
 export function formatDateTime(
   date,
   timezone = browserTimezone
 ) {
-  if (!date) return "—";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "—";
 
-  const d =
-    date instanceof Date
-      ? date
-      : new Date(date);
+  const dateText = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || browserTimezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(d);
 
-  if (Number.isNaN(d.getTime())) {
-    return "—";
-  }
+  const timeText = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || browserTimezone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
 
-  try {
-    return new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone || "UTC",
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true
-      }
-    ).format(d);
-  } catch {
-    return "—";
-  }
+  const zone = timezoneAbbreviation(d, timezone);
+  return `${dateText}, ${timeText}${zone ? ` ${zone}` : ""}`;
 }
-
 export function formatPHTDateTime(
   date
 ) {
@@ -258,32 +270,19 @@ export function formatTime(
   date,
   timezone = browserTimezone
 ) {
-  if (!date) return "—";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "—";
 
-  const d =
-    date instanceof Date
-      ? date
-      : new Date(date);
+  const timeText = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone || browserTimezone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
 
-  if (Number.isNaN(d.getTime())) {
-    return "—";
-  }
-
-  try {
-    return new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone: timezone || "UTC",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true
-      }
-    ).format(d);
-  } catch {
-    return "—";
-  }
+  const zone = timezoneAbbreviation(d, timezone);
+  return `${timeText}${zone ? ` ${zone}` : ""}`;
 }
-
 export const formatTimeOnly =
   formatTime;
 

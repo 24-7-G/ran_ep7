@@ -15,13 +15,13 @@ import {
 } from "../lib/constants";
 
 import {
-  browserTimezone,
   formatDateTime,
   getNextRaid,
 } from "../lib/time";
 
 import Modal from "../components/Modal";
 import TimePicker from "../components/TimePicker";
+import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
 
 const MAX_UPCOMING_DAYS = 7;
 
@@ -403,19 +403,6 @@ function formatRecurrence(raid) {
   return "Custom schedule";
 }
 
-function getDisplayTimezone(
-  selectedTimezone
-) {
-  if (
-    !selectedTimezone ||
-    selectedTimezone === "Automatic"
-  ) {
-    return browserTimezone;
-  }
-
-  return selectedTimezone;
-}
-
 function formatTimeOnly(
   raid,
   timezone
@@ -433,17 +420,33 @@ function formatTimeOnly(
       return "—";
     }
 
-    return new Intl.DateTimeFormat(
+    const tz = timezone || PRIMARY_TIMEZONE;
+    const text = new Intl.DateTimeFormat(
       "en-US",
       {
-        timeZone:
-          timezone ||
-          PRIMARY_TIMEZONE,
+        timeZone: tz,
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
       }
     ).format(next);
+
+    let zone = "";
+    if (tz === "Asia/Manila") zone = "PHT";
+    else if (tz === "UTC") zone = "UTC";
+    else {
+      try {
+        zone = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          timeZoneName: "short",
+          hour: "numeric",
+        }).formatToParts(next).find((part) => part.type === "timeZoneName")?.value || "";
+      } catch {
+        zone = "";
+      }
+    }
+
+    return zone ? `${text} ${zone}` : text;
   } catch {
     return "—";
   }
@@ -457,7 +460,7 @@ function formatPHT(date) {
     return "—";
   }
 
-  return new Intl.DateTimeFormat(
+  const text = new Intl.DateTimeFormat(
     "en-US",
     {
       timeZone: "Asia/Manila",
@@ -469,6 +472,8 @@ function formatPHT(date) {
       hour12: true,
     }
   ).format(date);
+
+  return `${text} PHT`;
 }
 
 /* =========================================================
@@ -801,12 +806,7 @@ export default function RaidPage() {
     setLoading,
   ] = useState(true);
 
-  const [
-    displayTimezone,
-    setDisplayTimezone,
-  ] = useState(
-    "Automatic"
-  );
+  const { resolvedTimezone } = useGlobalDisplayTimezone();
 
   const [
     now,
@@ -950,15 +950,6 @@ export default function RaidPage() {
       cancelled = true;
     };
   }, []);
-
-  /* =======================================================
-     TIMEZONE
-  ======================================================= */
-
-  const resolvedTimezone =
-    getDisplayTimezone(
-      displayTimezone
-    );
 
   /* =======================================================
      NEXT RAID
@@ -1428,44 +1419,6 @@ export default function RaidPage() {
 
         </div>
 
-        <div className="raid-timezone-control">
-
-          <label htmlFor="raid-timezone">
-            DISPLAY TIMEZONE
-          </label>
-
-          <select
-            id="raid-timezone"
-            value={
-              displayTimezone
-            }
-            onChange={(
-              event
-            ) =>
-              setDisplayTimezone(
-                event.target.value
-              )
-            }
-          >
-            {TIMEZONES.map(
-              (timezone) => (
-                <option
-                  key={
-                    timezone.value
-                  }
-                  value={
-                    timezone.value
-                  }
-                >
-                  {
-                    timezone.label
-                  }
-                </option>
-              )
-            )}
-          </select>
-
-        </div>
 
       </div>
 

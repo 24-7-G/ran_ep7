@@ -1,3 +1,6 @@
+import { TIMEZONES } from "../lib/constants";
+import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
+
 export default function Header({
   page,
   setPage,
@@ -6,6 +9,7 @@ export default function Header({
   onLogin,
   onLogout,
 }) {
+  const { displayTimezone, setDisplayTimezone } = useGlobalDisplayTimezone();
   const nav = [
     ["raid", "RAID SCHEDULE"],
     ["bh", "BH ATTENDANCE"],
@@ -13,9 +17,6 @@ export default function Header({
     ["treasury", "TREASURY"],
   ];
 
-  if (isAdmin) {
-    nav.push(["admin", "ADMIN"]);
-  }
 
   return (
     <header className="app-header">
@@ -52,6 +53,22 @@ export default function Header({
             </button>
           ))}
         </nav>
+
+        {/* GLOBAL DISPLAY TIMEZONE */}
+        <div className="header-timezone">
+          <label htmlFor="global-display-timezone">DISPLAY TIMEZONE</label>
+          <select
+            id="global-display-timezone"
+            value={displayTimezone}
+            onChange={(event) => setDisplayTimezone(event.target.value)}
+          >
+            {TIMEZONES.map((timezone) => (
+              <option key={timezone.value} value={timezone.value}>
+                {timezone.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* USER AREA */}
         <div className="header-user">

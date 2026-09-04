@@ -109,3 +109,7 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* BH APP OVERRIDE: the dashboard is intentionally full-width. */
+html, body, #root { width: 100%; max-width: none; }
+#root { margin: 0; border-inline: 0; text-align: left; min-height: 100vh; }
