@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+
 import { auth } from "./firebase";
 import { ADMIN_UID } from "./lib/constants";
 import Header from "./components/Header";
@@ -7,7 +12,6 @@ import Modal from "./components/Modal";
 import RaidPage from "./pages/RaidPage";
 import BHPage from "./pages/BHPage";
 import CWPage from "./pages/CWPage";
-import TreasuryPage from "./pages/TreasuryPage";
 import { DisplayTimezoneProvider } from "./lib/displayTimezone";
 
 export default function App() {
@@ -18,13 +22,20 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return unsubscribe;
+  }, []);
 
   const isAdmin = user?.uid === ADMIN_UID;
 
   async function login(e) {
     e.preventDefault();
     setError("");
+
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       setLoginOpen(false);
@@ -35,25 +46,69 @@ export default function App() {
   }
 
   async function logout() {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
   }
 
   return (
     <DisplayTimezoneProvider>
-      <Header {...{page,setPage,user,isAdmin}} onLogin={() => setLoginOpen(true)} onLogout={logout} />
+      <Header
+        page={page}
+        setPage={setPage}
+        user={user}
+        isAdmin={isAdmin}
+        onLogin={() => {
+          setError("");
+          setLoginOpen(true);
+        }}
+        onLogout={logout}
+      />
+
       <main className="app-main">
         {page === "raid" && <RaidPage user={user} isAdmin={isAdmin} />}
         {page === "bh" && <BHPage user={user} isAdmin={isAdmin} />}
         {page === "cw" && <CWPage user={user} isAdmin={isAdmin} />}
-        {page === "treasury" && <TreasuryPage user={user} isAdmin={isAdmin} />}
       </main>
 
-      <Modal open={loginOpen} title="ADMIN LOGIN" onClose={() => setLoginOpen(false)}>
+      <Modal
+        open={loginOpen}
+        title="ADMIN LOGIN"
+        onClose={() => {
+          setLoginOpen(false);
+          setError("");
+        }}
+      >
         <form className="form-stack" onSubmit={login}>
-          <label>Email<input value={email} onChange={e => setEmail(e.target.value)} type="email" required /></label>
-          <label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" required /></label>
+          <label>
+            Email
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoComplete="email"
+              required
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
           {error && <div className="alert error">{error}</div>}
-          <button className="button primary" type="submit">SIGN IN</button>
+
+          <button className="button primary" type="submit">
+            SIGN IN
+          </button>
         </form>
       </Modal>
     </DisplayTimezoneProvider>

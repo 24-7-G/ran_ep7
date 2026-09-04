@@ -6545,8 +6545,8 @@ export default function BHPage() {
       <section className="bh-notice-board">
         <div className="bh-notice-board-header">
           <div>
-            <div className="bh-section-kicker">GUILD NOTIFICATIONS</div>
-            <h2>Guild Notice Board</h2>
+            <div className="bh-section-kicker">GUILD Boss Hunt NOTIFICATIONS</div>
+            <h2>Guild Boss Hunt Notice Board</h2>
             <p>New notices stay NEW for the rest of the local calendar day. At midnight, they move to OLD.</p>
           </div>
 
