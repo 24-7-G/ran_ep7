@@ -1,0 +1,91 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid == "oKGRQDdmiXUFuyRPDw5QsPBmsAD2";
+    }
+
+    // RAID SCHEDULES
+    match /raidSchedules/{id} {
+      allow read, write: if true;
+    }
+
+    // GUILD QUESTIONS
+    // PIN ownership is verified by TicketPage.jsx before a player edit/delete.
+    // Admin can edit/delete any ticket.
+    // This collection intentionally permits client writes so PIN-based players
+    // can edit/delete tickets even when they are not Firebase-authenticated.
+    match /guildTickets/{ticketId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Existing app collections: public read, admin write.
+    match /players/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhAttendance/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhBalances/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhRewards/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwPlayers/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwAttendance/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwSchedules/{id} {
+      allow read: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    match /cwSettings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /guildNotices/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /treasuryEntries/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /treasuryConfig/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

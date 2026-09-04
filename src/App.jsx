@@ -12,6 +12,7 @@ import Modal from "./components/Modal";
 import RaidPage from "./pages/RaidPage";
 import BHPage from "./pages/BHPage";
 import CWPage from "./pages/CWPage";
+import TicketPage from "./pages/TicketPage";
 import { DisplayTimezoneProvider } from "./lib/displayTimezone";
 
 export default function App() {
@@ -71,6 +72,7 @@ export default function App() {
         {page === "raid" && <RaidPage user={user} isAdmin={isAdmin} />}
         {page === "bh" && <BHPage user={user} isAdmin={isAdmin} />}
         {page === "cw" && <CWPage user={user} isAdmin={isAdmin} />}
+        {page === "tickets" && <TicketPage user={user} isAdmin={isAdmin} />}
       </main>
 
       <Modal

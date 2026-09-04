@@ -15,6 +15,7 @@ export default function Header({
     ["raid", "RAID SCHEDULE"],
     ["bh", "BH ATTENDANCE"],
     ["cw", "CW ATTENDANCE"],
+    ["tickets", "GUILD QUESTIONS"],
   ];
 
   const { displayTimezone, setDisplayTimezone } = useGlobalDisplayTimezone();
