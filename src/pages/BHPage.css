@@ -15029,3 +15029,193 @@
         grid-template-columns: 1fr
     }
 }
+/* =========================================================
+   FINAL V8 RESPONSIVE PLAYERS & HISTORY FIT
+   CSS ONLY — no JSX/data/functionality changes.
+   Keeps every roster column, but fits the table to large desktop
+   screens and gives smaller screens a contained horizontal scroll.
+   ========================================================= */
+.bh-players-dashboard-v8 {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-table-card-v8 {
+    width: calc(100% - 28px) !important;
+    max-width: calc(100% - 28px) !important;
+    margin: 0 14px 10px !important;
+    box-sizing: border-box !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-table-card-v8 .bh-table-scroller {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    box-sizing: border-box !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: thin;
+}
+
+/* Large desktop: use the available width instead of forcing 1850px. */
+@media (min-width: 1450px) {
+    .bh-players-dashboard-v8 .bh-players-table-v8 {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        table-layout: fixed !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player { width: 11% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class { width: 10% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss { width: 6.2% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total { width: 6.8% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count { width: 7.1% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted { width: 7.8% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance { width: 7.8% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated { width: 8.1% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by { width: 8.1% !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions { width: 8.5% !important; }
+
+    /* The sticky PLAYER column follows the percentage width. */
+    .bh-players-dashboard-v8 .bh-players-table-v8 thead .bh-v6-player-head,
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td:first-child {
+        width: 11% !important;
+        min-width: 11% !important;
+        max-width: 11% !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
+        height: 92px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
+        padding: 8px 7px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-class-v8 {
+        gap: 7px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-class-v8 img {
+        width: 38px !important;
+        height: 38px !important;
+        flex-basis: 38px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-v6-attendance-cell strong,
+    .bh-players-dashboard-v8 .bh-v6-total-cell strong,
+    .bh-players-dashboard-v8 .bh-v6-sonya-count-cell strong,
+    .bh-players-dashboard-v8 .bh-v6-deduction-cell strong {
+        font-size: 15px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-v6-balance-cell strong {
+        font-size: 17px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-v6-updated-cell,
+    .bh-players-dashboard-v8 .bh-v6-updated-by-cell {
+        font-size: 9px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-action {
+        min-width: 0 !important;
+        width: 100% !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+        font-size: 8px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-actions-v8 {
+        gap: 4px !important;
+        flex-direction: column !important;
+        width: 100% !important;
+    }
+}
+
+/* Mid-size desktop/laptop: keep the full table usable inside its own scroller. */
+@media (min-width: 901px) and (max-width: 1449px) {
+    .bh-players-dashboard-v8 .bh-players-table-v8 {
+        width: 1450px !important;
+        min-width: 1450px !important;
+        table-layout: fixed !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
+        height: 92px !important;
+    }
+}
+
+/* Tablet: cards stack, filters remain comfortable, table scroll is contained. */
+@media (max-width: 900px) {
+    .bh-players-dashboard-v8 {
+        overflow: hidden !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        padding: 12px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        gap: 7px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-stat-v8 {
+        min-width: 0 !important;
+        padding: 9px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
+        width: calc(100% - 16px) !important;
+        max-width: calc(100% - 16px) !important;
+        margin-left: 8px !important;
+        margin-right: 8px !important;
+    }
+}
+
+/* Phone: no page-level horizontal overflow. */
+@media (max-width: 600px) {
+    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
+        border-radius: 7px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-card-v8 .bh-table-scroller {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 {
+        width: 1180px !important;
+        min-width: 1180px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
+        height: 82px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
+        padding: 7px 8px !important;
+    }
+}
+
+@media (max-width: 430px) {
+    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
+        width: calc(100% - 12px) !important;
+        max-width: calc(100% - 12px) !important;
+        margin-left: 6px !important;
+        margin-right: 6px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-table-v8 {
+        width: 1100px !important;
+        min-width: 1100px !important;
+    }
+}
