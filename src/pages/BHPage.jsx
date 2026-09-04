@@ -1090,34 +1090,154 @@ function noticeDayKey(date, timezone) {
   }
 }
 
-function noticeIcon(type) {
-  switch (String(type || "info").toLowerCase()) {
-    case "success":
-      return "✓";
-    case "warning":
-      return "!";
-    case "error":
-      return "×";
-    case "reward":
-      return "◆";
-    default:
-      return "●";
+function isBossHuntNotice(notice) {
+  const scope = lower(notice?.scope || notice?.area || notice?.source);
+  const module = lower(notice?.module);
+  const entityType = lower(notice?.entityType);
+  const text = `${lower(notice?.title)} ${lower(notice?.message)} ${lower(notice?.action)} ${lower(notice?.bossName)} ${entityType}`;
+
+  // HARD MODULE ISOLATION: Castle War, treasury, guild-bank/gold and other
+  // independent systems must never enter the Boss Hunt notification board.
+  if (
+    module.startsWith("cw-") ||
+    module === "castle-war" ||
+    module === "treasury" ||
+    module.startsWith("treasury-") ||
+    module.startsWith("guild-treasury") ||
+    module.startsWith("guild-bank") ||
+    module.startsWith("cw_") ||
+    module === "cw"
+  ) return false;
+
+  if (scope && ["castle-war", "castle_war", "cw", "cw-attendance", "treasury", "guild-treasury", "guild-bank"].includes(scope)) {
+    return false;
   }
+
+  // Explicit BH scopes/modules are accepted, but only after the independent
+  // module rejection above. This prevents a wrongly tagged CW record from
+  // leaking into the BH feed.
+  if (scope) {
+    return ["boss-hunt", "boss_hunt", "bh", "bh-attendance", "bh-rewards", "bh-scoring", "bh-players", "bh-schedule"].includes(scope);
+  }
+
+  if (module) {
+    if (module === "raid-schedule") {
+      return /(sonya|geomancer|giant hawk|reflector|boss hunt|boss spawn|duck race)/.test(text);
+    }
+    return module === "bh" || module === "boss-hunt" || module === "boss-hunt-attendance" || module.startsWith("bh-");
+  }
+
+  // Legacy records without scope/module must contain an unmistakable BH
+  // identifier. Generic words such as "attendance", "item", "gold", or
+  // "reward" alone are NOT enough to classify a record as Boss Hunt.
+  return /(boss hunt|sonya|geomancer|giant hawk|reflector|duck race|bh attendance|boss spawn)/.test(text);
 }
 
-function noticeTypeLabel(type) {
-  switch (String(type || "info").toLowerCase()) {
-    case "success":
-      return "ACTIVITY";
-    case "warning":
-      return "WARNING";
-    case "error":
-      return "ERROR";
-    case "reward":
-      return "REWARD";
-    default:
-      return "NOTICE";
+function resolveBossHuntNoticeModule(module, entityType, title, action) {
+  const explicit = clean(module);
+  if (explicit && explicit !== "bh-attendance") return explicit;
+  const text = `${lower(entityType)} ${lower(title)} ${lower(action)}`;
+  if (/attendance|present|absent/.test(text)) return "bh-attendance";
+  if (/reward|claim|duck race/.test(text)) return "bh-rewards";
+  if (/point|scoring|score/.test(text)) return "bh-scoring";
+  if (/player|roster|character|ign/.test(text)) return "bh-players";
+  if (/schedule|spawn/.test(text)) return "bh-schedule";
+  return "bh-attendance";
+}
+
+function noticeCategoryKey(notice) {
+  const title = lower(notice?.title);
+  const message = lower(notice?.message);
+  const module = lower(notice?.module);
+  const action = lower(notice?.action);
+  const entityType = lower(notice?.entityType);
+
+  // IMPORTANT: legacy BH records may have been stored with an incorrect
+  // category (for example, everything marked ATTENDANCE). Never trust that
+  // persisted category. Derive the category from the actual BH event/action.
+  // Boss names such as Sonya/Geomancer are data, NOT notification categories.
+  const eventText = `${title} ${action} ${module} ${entityType}`;
+  const fullText = `${eventText} ${message}`;
+
+  // REWARD comes first because reward messages can mention attendance points,
+  // players, or a boss. Claims, reward inventory changes and Duck Race events
+  // are all reward activity.
+  if (
+    /reward|rewards|rewarded|claim|claimed|unclaimed|duck\s*race|weapon\s+reward|new\s+boss\s+hunt\s+reward/.test(eventText) ||
+    /new\s+boss\s+hunt\s+reward/.test(fullText)
+  ) {
+    return "reward";
   }
+
+  // ATTENDANCE is reserved for actual presence/attendance records.
+  if (/attendance|present|absent|marked\s+(present|absent)/.test(eventText)) {
+    return "attendance";
+  }
+
+  // POINTS covers explicit scoring/point-balance changes, separate from the
+  // attendance event that may have caused the points to be earned.
+  if (/point|points|scoring|score|balance\s+adjust|adjusted\s+.*point|deducted\s+.*point|awarded\s+.*point/.test(eventText)) {
+    return "points";
+  }
+
+  // PLAYER covers roster/profile/class and player lifecycle changes.
+  if (/player|roster|character|\bign\b|registered\s+player|player\s+profile|disabled\s+player|deleted\s+player/.test(eventText)) {
+    return "player";
+  }
+
+  // SCHEDULE covers Boss Hunt spawn/schedule configuration.
+  if (/schedule|spawn|raid\s+schedule|boss\s+spawn|occurrence|raid\s+time/.test(eventText)) {
+    return "schedule";
+  }
+
+  // ADMIN is for administrative/configuration activity that is not a more
+  // specific BH business event above.
+  if (/admin|permission|settings|configuration|override|administrator/.test(eventText)) {
+    return "admin";
+  }
+
+  return "system";
+}
+
+const NOTICE_CATEGORY_META = {
+  reward: { label: "REWARD", colorClass: "reward" },
+  attendance: { label: "ATTENDANCE", colorClass: "attendance" },
+  points: { label: "POINTS", colorClass: "points" },
+  player: { label: "PLAYER", colorClass: "player" },
+  schedule: { label: "SCHEDULE", colorClass: "schedule" },
+  admin: { label: "ADMIN", colorClass: "admin" },
+  system: { label: "SYSTEM", colorClass: "system" },
+};
+
+function noticeTypeLabel(noticeOrType) {
+  const key = typeof noticeOrType === "object"
+    ? noticeCategoryKey(noticeOrType)
+    : String(noticeOrType || "system").toLowerCase();
+  return NOTICE_CATEGORY_META[key]?.label || "SYSTEM";
+}
+
+function NoticeCategoryIcon({ category }) {
+  const key = category || "system";
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+  };
+
+  if (key === "reward") return <svg {...common}><path d="M4 8h16v12H4z"/><path d="M3 8h18V5H3z"/><path d="M12 5v15"/><path d="M12 5c-3 0-4.5-1.1-4.5-2.5A2 2 0 0 1 9.4.8c1.7 0 2.8 2 2.6 4.2Z"/><path d="M12 5c3 0 4.5-1.1 4.5-2.5A2 2 0 0 0 14.6.8c-1.7 0-2.8 2-2.6 4.2Z"/></svg>;
+  if (key === "attendance") return <svg {...common}><rect x="3.5" y="4.5" width="17" height="16" rx="2"/><path d="M7 2.5v4M17 2.5v4M3.5 9h17"/><path d="m8 14 2.2 2.2L16.5 10"/></svg>;
+  if (key === "points") return <svg {...common}><ellipse cx="8" cy="7" rx="4.5" ry="2.2"/><path d="M3.5 7v4c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V7"/><path d="M12.5 10.5c.8-.4 1.9-.6 3-.6 2.5 0 4.5 1 4.5 2.2v4c0 1.2-2 2.2-4.5 2.2s-4.5-1-4.5-2.2"/><path d="M3.5 11c0 1.2 2 2.2 4.5 2.2"/></svg>;
+  if (key === "player") return <svg {...common}><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.6-4 3-6 7-6s6.4 2 7 6"/><path d="M4 20h16"/></svg>;
+  if (key === "admin") return <svg {...common}><path d="M12 3 20 6v5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z"/><path d="M9 12h6M12 9v6"/></svg>;
+  return <svg {...common}><circle cx="12" cy="12" r="8.5"/><path d="M12 10v5"/><path d="M12 7.2h.01"/></svg>;
+}
+
+function noticeCategoryClass(notice) {
+  return NOTICE_CATEGORY_META[noticeCategoryKey(notice)]?.colorClass || "system";
 }
 
 function noticeSortNewestFirst(a, b) {
@@ -1170,9 +1290,10 @@ function normalizeNotice(
     id: String(snapshot.id),
     ...data,
     ...inferred,
+    scope:
+      clean(data.scope),
     module:
-      clean(data.module) ||
-      "bh-attendance",
+      clean(data.module),
     title:
       clean(data.title) ||
       "Guild Notice",
@@ -1755,7 +1876,7 @@ export default function BHPage() {
   ] = useState(() => {
     try {
       const saved = localStorage.getItem("bh-active-tab");
-      return saved === "rewards" || saved === "notices" || saved === "schedule"
+      return ["schedule", "players", "rewards", "notices"].includes(saved)
         ? saved
         : "schedule";
     } catch {
@@ -1763,28 +1884,19 @@ export default function BHPage() {
     }
   });
 
-  const activeTabRef = useRef(activeTab);
-  const restoringScrollRef = useRef(false);
-  const userScrolledRef = useRef(false);
-
-  const saveTabScroll = (tab = activeTabRef.current) => {
-    try {
-      const y = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-      localStorage.setItem(`bh-scroll-${tab}`, String(y));
-    } catch {
-      // Ignore storage restrictions.
-    }
-  };
-
+  /*
+   * Boss Hunt uses a true view switcher instead of scroll navigation.
+   * Only the selected primary view is mounted, eliminating the old
+   * jump/flicker/double-click behavior while preserving all data logic.
+   */
   const switchActiveTab = (nextTab) => {
-    if (nextTab !== "schedule" && nextTab !== "rewards" && nextTab !== "notices") {
-      return;
-    }
-
-    // Save the page we are leaving BEFORE React swaps the tab content.
-    saveTabScroll(activeTabRef.current);
-    activeTabRef.current = nextTab;
+    if (!["schedule", "players", "rewards", "notices"].includes(nextTab)) return;
     setActiveTab(nextTab);
+    try {
+      localStorage.setItem("bh-active-tab", nextTab);
+    } catch {
+      // Navigation still works if localStorage is unavailable.
+    }
   };
 
   const [noticeNewPage, setNoticeNewPage] = useState(1);
@@ -2150,23 +2262,44 @@ export default function BHPage() {
     [guildNotices]
   );
 
+  const boardNotices = useMemo(() => {
+    const search = noticeSearch.trim().toLowerCase();
+    return sortedGuildNotices.filter((notice) => {
+      if (noticeTypeFilter !== "all" && noticeCategoryKey(notice) !== noticeTypeFilter) {
+        return false;
+      }
+      if (!search) return true;
+      const haystack = [
+        notice.title,
+        notice.message,
+        notice.createdBy,
+        notice.module,
+        notice.type,
+        notice.playerName,
+        notice.rewardName,
+        notice.bossName,
+      ].join(" ").toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [sortedGuildNotices, noticeSearch, noticeTypeFilter]);
+
   const newNotices = useMemo(
     () =>
-      sortedGuildNotices.filter(
+      boardNotices.filter(
         (notice) => noticeDayKey(notice.createdAt, effectiveTimezone) === todayKey
       ),
-    [sortedGuildNotices, effectiveTimezone, todayKey]
+    [boardNotices, effectiveTimezone, todayKey]
   );
 
   const oldNotices = useMemo(
     () =>
-      sortedGuildNotices.filter(
+      boardNotices.filter(
         (notice) => {
           const day = noticeDayKey(notice.createdAt, effectiveTimezone);
           return Boolean(day) && day !== todayKey;
         }
       ),
-    [sortedGuildNotices, effectiveTimezone, todayKey]
+    [boardNotices, effectiveTimezone, todayKey]
   );
 
   const filteredAllNotices = useMemo(() => {
@@ -2174,7 +2307,7 @@ export default function BHPage() {
     const search = noticeSearch.trim().toLowerCase();
 
     return sortedGuildNotices.filter((notice) => {
-      if (noticeTypeFilter !== "all" && String(notice.type || "info") !== noticeTypeFilter) {
+      if (noticeTypeFilter !== "all" && noticeCategoryKey(notice) !== noticeTypeFilter) {
         return false;
       }
 
@@ -2275,12 +2408,6 @@ export default function BHPage() {
 
   const openAllNotifications = () => {
     switchActiveTab("notices");
-    requestAnimationFrame(() => {
-      document.getElementById("bh-notifications-panel")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
   };
 
   /* =========================================================
@@ -2512,7 +2639,8 @@ export default function BHPage() {
             .filter(
               (notice) =>
                 notice.active !==
-                false
+                false &&
+                isBossHuntNotice(notice)
             )
             .sort(
               (a, b) => {
@@ -2819,80 +2947,6 @@ export default function BHPage() {
   }, []);
 
   /* =========================================================
-     PERSIST LAST TAB + EXACT SCROLL POSITION
-     - localStorage is used so it survives a full browser reload/close.
-     - The tab being left is saved BEFORE its DOM is replaced.
-     - The saved position is restored only after data/content is rendered.
-     - A few delayed restores handle images/cards changing document height.
-  ========================================================= */
-  useEffect(() => {
-    activeTabRef.current = activeTab;
-    try {
-      localStorage.setItem("bh-active-tab", activeTab);
-    } catch {
-      // Ignore storage restrictions.
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timers = [];
-    userScrolledRef.current = false;
-
-    const onUserScroll = () => {
-      // Ignore the first tiny amount of programmatic restore movement.
-      if (!restoringScrollRef.current) {
-        userScrolledRef.current = true;
-        saveTabScroll(activeTab);
-      }
-    };
-
-    const restore = () => {
-      if (cancelled || userScrolledRef.current) return;
-
-      let saved = 0;
-      try {
-        saved = Number(localStorage.getItem(`bh-scroll-${activeTab}`) || 0);
-      } catch {
-        saved = 0;
-      }
-
-      if (!Number.isFinite(saved) || saved < 0) saved = 0;
-
-      restoringScrollRef.current = true;
-      window.scrollTo(0, Math.min(saved, Math.max(0, document.documentElement.scrollHeight - window.innerHeight)));
-
-      window.setTimeout(() => {
-        restoringScrollRef.current = false;
-      }, 80);
-    };
-
-    // Wait for the tab/data DOM to exist, then retry as images and cards settle.
-    if (!loading) {
-      [0, 80, 220, 500, 900].forEach((delay) => {
-        timers.push(window.setTimeout(restore, delay));
-      });
-    }
-
-    const onPageHide = () => saveTabScroll(activeTab);
-    const onBeforeUnload = () => saveTabScroll(activeTab);
-
-    window.addEventListener("scroll", onUserScroll, { passive: true });
-    window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("beforeunload", onBeforeUnload);
-
-    return () => {
-      cancelled = true;
-      timers.forEach((timer) => window.clearTimeout(timer));
-      saveTabScroll(activeTab);
-      window.removeEventListener("scroll", onUserScroll);
-      window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-    };
-  }, [activeTab, loading]);
-
-
-  /* =========================================================
      LIVE FIRESTORE DATA
      Keep the dashboard current without manual refresh.
      Long-lived listeners receive changed documents instead of
@@ -2997,7 +3051,7 @@ export default function BHPage() {
     listen(collection(db, "guildNotices"), (snap) => {
       const next = snap.docs
         .map(normalizeNotice)
-        .filter((notice) => notice.active !== false)
+        .filter((notice) => notice.active !== false && isBossHuntNotice(notice))
         .sort((a, b) => sortByTimeDesc(a, b, "createdAt"));
       setGuildNotices(next);
     });
@@ -3709,6 +3763,7 @@ export default function BHPage() {
       message,
       type = "info",
       module = "bh-attendance",
+      scope = "boss-hunt",
       action = "",
       entityType = "",
       entityId = "",
@@ -3732,7 +3787,10 @@ export default function BHPage() {
             "guildNotices"
           ),
           {
-            module,
+            scope: clean(scope) || "boss-hunt",
+
+            module: resolveBossHuntNoticeModule(module, entityType, title, action),
+
             title,
             message,
             type,
@@ -3795,7 +3853,8 @@ export default function BHPage() {
             .filter(
               (notice) =>
                 notice.active !==
-                false
+                false &&
+                isBossHuntNotice(notice)
             )
             .sort(
               (a, b) =>
@@ -4157,12 +4216,7 @@ export default function BHPage() {
 
         await loadAllData();
         await reloadGuildNotices();
-        setTimeout(() => {
-          document.getElementById("players-history")?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        }, 120);
+        switchActiveTab("players");
       } catch (err) {
         console.error(err);
 
@@ -4531,10 +4585,9 @@ export default function BHPage() {
         );
 
         // A new player is immediately shown in Players & History.
-        // This changes only navigation after a successful write; roster/filter logic is unchanged.
         setAddPlayerModalOpen(false);
         setAttendanceModalOpen(false);
-        switchActiveTab("schedule");
+        switchActiveTab("players");
         setPlayerSearch("");
         setPlayerClassFilter("all");
         setPlayerPage(1);
@@ -6459,6 +6512,114 @@ export default function BHPage() {
         </div>
       )}
 
+{activeTab === "notices" && (
+              /* ===================================================
+                  UNIFIED GUILD BOSS HUNT NOTIFICATIONS
+                  One audit feed — no duplicate NEW/OLD tables.
+              =================================================== */
+        
+              <section className="bh-panel bh-notifications-full bh-notifications-unified" id="bh-notifications-panel">
+                  <div className="bh-unified-notice-header">
+                    <div className="bh-unified-notice-title-wrap">
+                      <div className="bh-unified-notice-emblem"><span>♟</span></div>
+                      <div>
+                        <div className="bh-section-kicker">GUILD BOSS HUNT NOTIFICATIONS</div>
+                        <h2>Activity &amp; Notifications</h2>
+                        <p>Track every Boss Hunt activity in one unified audit feed. NEW is based on the current local calendar day.</p>
+                      </div>
+                    </div>
+                    <div className="bh-unified-notice-summary">
+                      <div className="bh-unified-count new"><strong>{newNotices.length}</strong><span>NEW TODAY</span></div>
+                      <div className="bh-unified-count"><strong>{sortedGuildNotices.length}</strong><span>TOTAL</span></div>
+                      <button type="button" className="bh-unified-refresh" onClick={reloadGuildNotices} aria-label="Refresh notifications">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-4L3 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 5v5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 13a8 8 0 0 0 14.8 4L21 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 19v-5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        REFRESH
+                      </button>
+                    </div>
+                  </div>
+        
+                  <div className="bh-unified-notice-filters">
+                    <div className="bh-unified-search">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6" fill="none" stroke="currentColor" strokeWidth="2"/><path d="m16 16 5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                      <input className="bh-input" type="search" placeholder="Search player, action, reward, boss, or admin..." value={noticeSearch} onChange={(e) => { setNoticeSearch(e.target.value); setNoticeAllPage(1); }} />
+                    </div>
+                    <select className="bh-input" value={noticeTypeFilter} onChange={(e) => { setNoticeTypeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification category">
+                      <option value="all">ALL TYPES</option>
+                      <option value="reward">REWARD</option>
+                      <option value="attendance">ATTENDANCE</option>
+                      <option value="points">POINTS</option>
+                      <option value="player">PLAYER</option>
+                      <option value="schedule">SCHEDULE</option>
+                      <option value="admin">ADMIN</option>
+                      <option value="system">SYSTEM</option>
+                    </select>
+                    <select className="bh-input" value={noticeAdminFilter} onChange={(e) => { setNoticeAdminFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification admin">
+                      <option value="all">ALL ADMINS</option>
+                      {noticeAdmins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
+                    </select>
+                    <select className="bh-input" value={noticeTimeFilter} onChange={(e) => { setNoticeTimeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification time">
+                      <option value="all">ALL TIME</option>
+                      <option value="today">TODAY</option>
+                      <option value="7">LAST 7 DAYS</option>
+                      <option value="30">LAST 30 DAYS</option>
+                    </select>
+                    <div className="bh-unified-date-control">
+                      <label>DATE</label>
+                      <div className="bh-unified-date-input">
+                        <input className="bh-input" type="date" aria-label="Choose notification date" value={noticeDateFilter} onChange={(e) => { setNoticeDateFilter(e.target.value); setNoticeAllPage(1); }} />
+                        <span aria-hidden="true">▣</span>
+                      </div>
+                    </div>
+                    <div className="bh-unified-time-control"><label>FROM</label><input className="bh-input" type="time" value={noticeFromTime} onChange={(e) => { setNoticeFromTime(e.target.value); setNoticeAllPage(1); }} /></div>
+                    <div className="bh-unified-time-control"><label>TO</label><input className="bh-input" type="time" value={noticeToTime} onChange={(e) => { setNoticeToTime(e.target.value); setNoticeAllPage(1); }} /></div>
+                    {noticeDateFilter && <button type="button" className="bh-secondary-button bh-unified-clear" onClick={() => { setNoticeDateFilter(""); setNoticeFromTime("11:00"); setNoticeToTime("03:00"); setNoticeAllPage(1); }}>CLEAR DATE</button>}
+                  </div>
+        
+                  <div className="bh-unified-notice-results-head">
+                    <div><strong>{filteredAllNotices.length}</strong> notifications found <span className="bh-results-dot">•</span> <b>{newNotices.length}</b> new today</div>
+                    <div>Showing {filteredAllNotices.length ? `${(safeAllPage - 1) * NOTICE_PAGE_SIZE + 1}–${Math.min(safeAllPage * NOTICE_PAGE_SIZE, filteredAllNotices.length)}` : "0"} of {filteredAllNotices.length}</div>
+                  </div>
+        
+                  <div className="bh-unified-notice-table-wrap">
+                    <table className="bh-unified-notice-table">
+                      <colgroup><col className="c-num"/><col className="c-status"/><col className="c-icon"/><col className="c-category"/><col className="c-message"/><col className="c-time"/><col className="c-by"/><col className="c-open"/></colgroup>
+                      <thead><tr><th>#</th><th>STATUS</th><th>ICON</th><th>CATEGORY</th><th>MESSAGE</th><th>TIME</th><th>BY</th><th aria-label="Open"></th></tr></thead>
+                      <tbody>
+                        {pagedAllNotices.map((notice, index) => {
+                          const category = noticeCategoryKey(notice);
+                          const categoryClass = noticeCategoryClass(notice);
+                          const isNew = noticeDayKey(notice.createdAt, effectiveTimezone) === todayKey;
+                          return (
+                            <tr key={notice.id} className={`bh-unified-notice-row category-${categoryClass}`} onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
+                              <td className="notice-number">{(safeAllPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
+                              <td><span className={`bh-unified-status ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
+                              <td><span className={`bh-unified-icon category-${categoryClass}`}><NoticeCategoryIcon category={category} /></span></td>
+                              <td><span className={`bh-unified-category category-${categoryClass}`}>{noticeTypeLabel(notice)}</span></td>
+                              <td><div className="bh-unified-message"><strong>{notice.title || "Guild Activity"}</strong><span>{notice.message || "No additional message recorded."}</span></div></td>
+                              <td className="notice-time">{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
+                              <td className="notice-by">{notice.createdBy || "System"}</td>
+                              <td className="notice-open"><span>›</span></td>
+                            </tr>
+                          );
+                        })}
+                        {!pagedAllNotices.length && <tr><td colSpan="8" className="bh-unified-empty">No notifications match your filters.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+        
+                  <div className="bh-unified-pagination">
+                    <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage(1)} aria-label="First page">«</button>
+                    <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+                    {Array.from({ length: Math.min(5, allNoticePageCount) }, (_, i) => {
+                      const page = allNoticePageCount <= 5 ? i + 1 : Math.max(1, Math.min(allNoticePageCount - 4, safeAllPage - 2)) + i;
+                      return <button key={page} className={safeAllPage === page ? "active" : ""} onClick={() => setNoticeAllPage(page)}>{page}</button>;
+                    })}
+                    <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage((p) => Math.min(allNoticePageCount, p + 1))} aria-label="Next page">›</button>
+                    <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage(allNoticePageCount)} aria-label="Last page">»</button>
+                  </div>
+                </section>
+      )}
+
       {/* ===================================================
           SUMMARY CARDS
       =================================================== */}
@@ -6535,1016 +6696,995 @@ export default function BHPage() {
       </div>
 
       {/* ===================================================
-          REWARDS + NOTIFICATIONS
-      =================================================== */}
-
-      {/* ===================================================
-          GUILD NOTICE BOARD
-      =================================================== */}
-
-      <section className="bh-notice-board">
-        <div className="bh-notice-board-header">
-          <div>
-            <div className="bh-section-kicker">GUILD Boss Hunt NOTIFICATIONS</div>
-            <h2>Guild Boss Hunt Notice Board</h2>
-            <p>New notices stay NEW for the rest of the local calendar day. At midnight, they move to OLD.</p>
-          </div>
-
-          <div className="bh-notice-board-counts">
-            <div className="bh-notice-count bh-notice-count-new">
-              <strong>{newNotices.length}</strong>
-              <span>NEW TODAY</span>
-            </div>
-            <div className="bh-notice-count">
-              <strong>{oldNotices.length}</strong>
-              <span>OLD</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bh-notice-board-grid">
-          <div className="bh-notice-board-table-wrap">
-            <div className="bh-notice-board-table-heading">
-              <div><span className="bh-notice-status-badge new">NEW</span> NEW TODAY</div>
-              <span>{newNotices.length ? `${(safeNewPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeNewPage * NOTICE_PAGE_SIZE, newNotices.length)} of ${newNotices.length}` : "0 of 0"}</span>
-            </div>
-
-            <div className="bh-notice-table-scroll">
-              <table className="bh-notice-table">
-                <thead>
-                  <tr><th>#</th><th>TYPE</th><th>MESSAGE</th><th>TIME</th><th>BY</th></tr>
-                </thead>
-                <tbody>
-                  {pagedNewNotices.map((notice, index) => (
-                    <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
-                      <td>{(safeNewPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
-                      <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span></td>
-                      <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
-                      <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
-                      <td>{notice.createdBy || "System"}</td>
-                    </tr>
-                  ))}
-                  {!pagedNewNotices.length && <tr><td colSpan="5" className="bh-notice-table-empty">No new notices today.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <div className="bh-notice-pagination">
-              <button disabled={safeNewPage <= 1} onClick={() => setNoticeNewPage(1)}>«</button>
-              <button disabled={safeNewPage <= 1} onClick={() => setNoticeNewPage((p) => Math.max(1, p - 1))}>‹</button>
-              <button className="active">{safeNewPage}</button>
-              <button disabled={safeNewPage >= newNoticePageCount} onClick={() => setNoticeNewPage((p) => Math.min(newNoticePageCount, p + 1))}>›</button>
-              <button disabled={safeNewPage >= newNoticePageCount} onClick={() => setNoticeNewPage(newNoticePageCount)}>»</button>
-            </div>
-          </div>
-
-          <div className="bh-notice-board-table-wrap">
-            <div className="bh-notice-board-table-heading old">
-              <div><span className="bh-notice-status-badge old">OLD</span> OLD NOTICES</div>
-              <span>{oldNotices.length ? `${(safeOldPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeOldPage * NOTICE_PAGE_SIZE, oldNotices.length)} of ${oldNotices.length}` : "0 of 0"}</span>
-            </div>
-
-            <div className="bh-notice-table-scroll">
-              <table className="bh-notice-table">
-                <thead>
-                  <tr><th>#</th><th>TYPE</th><th>MESSAGE</th><th>TIME</th><th>BY</th></tr>
-                </thead>
-                <tbody>
-                  {pagedOldNotices.map((notice, index) => (
-                    <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
-                      <td>{(safeOldPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
-                      <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span></td>
-                      <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
-                      <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
-                      <td>{notice.createdBy || "System"}</td>
-                    </tr>
-                  ))}
-                  {!pagedOldNotices.length && <tr><td colSpan="5" className="bh-notice-table-empty">No old notices.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <div className="bh-notice-pagination">
-              <button disabled={safeOldPage <= 1} onClick={() => setNoticeOldPage(1)}>«</button>
-              <button disabled={safeOldPage <= 1} onClick={() => setNoticeOldPage((p) => Math.max(1, p - 1))}>‹</button>
-              <button className="active">{safeOldPage}</button>
-              <button disabled={safeOldPage >= oldNoticePageCount} onClick={() => setNoticeOldPage((p) => Math.min(oldNoticePageCount, p + 1))}>›</button>
-              <button disabled={safeOldPage >= oldNoticePageCount} onClick={() => setNoticeOldPage(oldNoticePageCount)}>»</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="bh-view-all-notices-cta">
-          <div>
-            <div className="bh-section-kicker">VIEW ALL NOTIFICATIONS</div>
-            <p>View the complete history of guild activity, including attendance, players, rewards and overrides.</p>
-          </div>
-          <button className="bh-secondary-button" onClick={openAllNotifications}>VIEW ALL NOTIFICATIONS <span>›</span></button>
-        </div>
-      </section>
-
-      {/* ===================================================
           TABS
       =================================================== */}
 
-      <div className="bh-tabs">
-        <button
-          className={
-            activeTab ===
-              "schedule"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            switchActiveTab(
-              "schedule"
-            )
-          }
-        >
-          ACTUAL SCHEDULE
+      <nav className="bh-tabs bh-primary-nav" aria-label="Boss Hunt sections">
+        <button type="button" className={`bh-tab ${activeTab === "schedule" ? "active" : ""}`} onClick={() => switchActiveTab("schedule")} aria-selected={activeTab === "schedule"}>
+          <span className="bh-tab-icon bh-tab-icon-schedule" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M7.5 3.5v4M16.5 3.5v4M3.5 9h17M7 13h3M14 13h3M7 16.5h3"/></svg></span>
+          <span className="bh-tab-copy"><strong>ACTUAL SCHEDULE</strong><small>View boss spawns</small></span>
         </button>
-
-
-        <button
-          className={
-            activeTab ===
-              "rewards"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            switchActiveTab(
-              "rewards"
-            )
-          }
-        >
-          REWARDS
+        <button type="button" className={`bh-tab ${activeTab === "players" ? "active" : ""}`} onClick={() => switchActiveTab("players")} aria-selected={activeTab === "players"}>
+          <span className="bh-tab-icon bh-tab-icon-players" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6"/><path d="M15 6.5a3 3 0 0 1 0 5.8M16 14c2.6.3 4.1 2.1 4.5 5.5"/></svg></span>
+          <span className="bh-tab-copy"><strong>PLAYERS &amp; HISTORY</strong><small>Roster &amp; attendance</small></span>
         </button>
-
-        <button
-          className={
-            activeTab ===
-              "notices"
-              ? "active"
-              : ""
-          }
-          onClick={() =>
-            switchActiveTab(
-              "notices"
-            )
-          }
-        >
-          NOTIFICATIONS
+        <button type="button" className={`bh-tab ${activeTab === "rewards" ? "active" : ""}`} onClick={() => switchActiveTab("rewards")} aria-selected={activeTab === "rewards"}>
+          <span className="bh-tab-icon bh-tab-icon-rewards" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8.5h14v11H5z"/><path d="M4 8.5h16v-3H4zM12 5.5v14M12 5.5c-2.8 0-4-1.1-4-2.6 0-1.1.9-1.9 2-1.9 1.7 0 2.8 2.2 2 4.5zm0 0c2.8 0 4-1.1 4-2.6 0-1.1-.9-1.9-2-1.9-1.7 0-2.8 2.2-2 4.5z"/></svg></span>
+          <span className="bh-tab-copy"><strong>REWARDS</strong><small>Claims &amp; inventory</small></span>
         </button>
+        <button type="button" className={`bh-tab ${activeTab === "notices" ? "active" : ""}`} onClick={() => switchActiveTab("notices")} aria-selected={activeTab === "notices"}>
+          <span className="bh-tab-icon bh-tab-icon-notices" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8.5h18C21 16 18 16 18 9Z"/><path d="M10 21h4"/></svg></span>
+          <span className="bh-tab-copy"><strong>ACTIVITY &amp; NOTIFICATIONS</strong><small>Boss Hunt audit feed</small></span>
+        </button>
+      </nav>
 
-      </div>
-
-      {/* ===================================================
-          ACTUAL SCHEDULE
-      =================================================== */}
-
-      {activeTab ===
-        "schedule" && (
-          <section className="bh-panel">
-            <div className="bh-panel-header">
-              <div>
-                <div className="bh-section-kicker">
-                  EXACT SCHEDULED
-                  SPAWN
-                </div>
-
-                <h2>
-                  Actual Raid Schedule
-                </h2>
-
-                <p>
-                  Schedule times come
-                  directly from the
-                  canonical Raid
-                  Schedule.
-                </p>
-              </div>
-
-            </div>
-
-            <div className="bh-schedule-controls">
-              <div className="bh-form-group">
-                <label>
-                  DAYS BACK
-                </label>
-
-                <select
-                  className="bh-select"
-                  value={
-                    scheduleBackDays
-                  }
-                  onChange={(e) =>
-                    setScheduleBackDays(
-                      Number(
-                        e.target.value
-                      )
-                    )
-                  }
-                >
-                  {Array.from(
-                    {
-                      length: 8,
-                    },
-                    (_, i) => (
-                      <option
-                        key={i}
-                        value={i}
-                      >
-                        {i}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-
-              <div className="bh-form-group">
-                <label>
-                  DAYS FORWARD
-                </label>
-
-                <select
-                  className="bh-select"
-                  value={
-                    scheduleForwardDays
-                  }
-                  onChange={(e) =>
-                    setScheduleForwardDays(
-                      Number(
-                        e.target.value
-                      )
-                    )
-                  }
-                >
-                  {Array.from(
-                    {
-                      length: 8,
-                    },
-                    (_, i) => (
-                      <option
-                        key={i}
-                        value={i}
-                      >
-                        {i}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-
-              <div className="bh-form-group">
-                <label>
-                  STATUS
-                </label>
-
-                <select
-                  className="bh-select"
-                  value={
-                    scheduleStatusFilter
-                  }
-                  onChange={(e) =>
-                    setScheduleStatusFilter(
-                      e.target.value
-                    )
-                  }
-                >
-                  <option value="all">
-                    All
-                  </option>
-
-                  <option value="active">
-                    Active
-                  </option>
-
-                  <option value="inactive">
-                    Inactive
-                  </option>
-                </select>
-              </div>
-
-              <div className="bh-form-group">
-                <label>
-                  BOSS
-                </label>
-
-                <select
-                  className="bh-select"
-                  value={
-                    scheduleBossFilter
-                  }
-                  onChange={(e) =>
-                    setScheduleBossFilter(
-                      e.target.value
-                    )
-                  }
-                >
-                  <option value="all">
-                    All Bosses
-                  </option>
-
-                  {bossOptions.map(
-                    (boss) => (
-                      <option
-                        key={
-                          boss.id
-                        }
-                        value={
-                          boss.id
-                        }
-                      >
+{activeTab === "schedule" && (
+              /* ===================================================
+                  ACTUAL SCHEDULE
+              =================================================== */
+        
+              <section id="bh-schedule-panel" className="bh-panel bh-schedule-panel">
+                    <div className="bh-panel-header">
+                      <div>
+                        <div className="bh-section-kicker">
+                          EXACT SCHEDULED
+                          SPAWN
+                        </div>
+        
+                        <h2>
+                          Actual Raid Schedule
+                        </h2>
+        
+                        <p>
+                          Schedule times come
+                          directly from the
+                          canonical Raid
+                          Schedule.
+                        </p>
+                      </div>
+        
+                    </div>
+        
+                    <div className="bh-schedule-controls">
+                      <div className="bh-form-group">
+                        <label>
+                          DAYS BACK
+                        </label>
+        
+                        <select
+                          className="bh-select"
+                          value={
+                            scheduleBackDays
+                          }
+                          onChange={(e) =>
+                            setScheduleBackDays(
+                              Number(
+                                e.target.value
+                              )
+                            )
+                          }
+                        >
+                          {Array.from(
+                            {
+                              length: 8,
+                            },
+                            (_, i) => (
+                              <option
+                                key={i}
+                                value={i}
+                              >
+                                {i}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+        
+                      <div className="bh-form-group">
+                        <label>
+                          DAYS FORWARD
+                        </label>
+        
+                        <select
+                          className="bh-select"
+                          value={
+                            scheduleForwardDays
+                          }
+                          onChange={(e) =>
+                            setScheduleForwardDays(
+                              Number(
+                                e.target.value
+                              )
+                            )
+                          }
+                        >
+                          {Array.from(
+                            {
+                              length: 8,
+                            },
+                            (_, i) => (
+                              <option
+                                key={i}
+                                value={i}
+                              >
+                                {i}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+        
+                      <div className="bh-form-group">
+                        <label>
+                          STATUS
+                        </label>
+        
+                        <select
+                          className="bh-select"
+                          value={
+                            scheduleStatusFilter
+                          }
+                          onChange={(e) =>
+                            setScheduleStatusFilter(
+                              e.target.value
+                            )
+                          }
+                        >
+                          <option value="all">
+                            All
+                          </option>
+        
+                          <option value="active">
+                            Active
+                          </option>
+        
+                          <option value="inactive">
+                            Inactive
+                          </option>
+                        </select>
+                      </div>
+        
+                      <div className="bh-form-group">
+                        <label>
+                          BOSS
+                        </label>
+        
+                        <select
+                          className="bh-select"
+                          value={
+                            scheduleBossFilter
+                          }
+                          onChange={(e) =>
+                            setScheduleBossFilter(
+                              e.target.value
+                            )
+                          }
+                        >
+                          <option value="all">
+                            All Bosses
+                          </option>
+        
+                          {bossOptions.map(
+                            (boss) => (
+                              <option
+                                key={
+                                  boss.id
+                                }
+                                value={
+                                  boss.id
+                                }
+                              >
+                                {
+                                  boss.name
+                                }
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+                    </div>
+        
+                    <div className="bh-window-info">
+                      TODAY is always shown
+                      first. Showing{" "}
+                      <strong>
+                        {scheduleBackDays}
+                      </strong>{" "}
+                      previous day
+                      {scheduleBackDays ===
+                        1
+                        ? ""
+                        : "s"} and{" "}
+                      <strong>
                         {
-                          boss.name
+                          scheduleForwardDays
                         }
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div className="bh-window-info">
-              TODAY is always shown
-              first. Showing{" "}
-              <strong>
-                {scheduleBackDays}
-              </strong>{" "}
-              previous day
-              {scheduleBackDays ===
-                1
-                ? ""
-                : "s"} and{" "}
-              <strong>
-                {
-                  scheduleForwardDays
-                }
-              </strong>{" "}
-              future day
-              {scheduleForwardDays ===
-                1
-                ? ""
-                : "s"}.
-            </div>
-
-            <div className="bh-schedule-list">
-              {orderedScheduleDateKeys.map(
-                (dateKey) => {
-                  const occurrences =
-                    filteredScheduleOccurrences.filter(
-                      (item) =>
-                        item.dateKey ===
-                        dateKey
-                    );
-
-                  const isToday =
-                    dateKey ===
-                    todayKey;
-
-                  const isSelected =
-                    dateKey ===
-                    selectedScheduleDate;
-
-                  return (
-                    <div
-                      key={
-                        dateKey
-                      }
-                      className={`bh-date-section ${isSelected
-                        ? "selected"
-                        : ""
-                        }`}
-                    >
-                      <button
-                        className="bh-date-header"
-                        onClick={() =>
-                          setSelectedScheduleDate(
-                            dateKey
-                          )
-                        }
-                      >
-                        <div>
-                          <span className="bh-date-badge">
-                            {isToday
-                              ? "TODAY"
-                              : dateKey <
-                                todayKey
-                                ? "PREVIOUS"
-                                : "UPCOMING"}
-                          </span>
-
-                          <strong>
-                            {formatLongDate(
-                              zonedLocalToDate(
-                                dateKey,
-                                "12:00",
-                                effectiveTimezone
-                              ),
-                              effectiveTimezone
-                            )}
-                          </strong>
-                        </div>
-
-                        <span>
-                          {
-                            occurrences.length
-                          }{" "}
-                          spawn
-                          {occurrences.length ===
-                            1
-                            ? ""
-                            : "s"}
-                        </span>
-                      </button>
-
-                      {occurrences.length ===
-                        0 ? (
-                        <div className="bh-empty-state">
-                          No scheduled
-                          occurrences
-                          for this
-                          date.
-                        </div>
-                      ) : (
-                        <div className="bh-occurrence-grid">
-                          {occurrences.map(
-                            (
-                              occurrence
-                            ) => {
-                              const recordedCount =
-                                attendanceRows.filter(
-                                  (
-                                    row
-                                  ) =>
-                                    occurrenceMatchesRow(
-                                      row,
-                                      occurrence
-                                    )
-                                ).length;
-
-                              return (
-                                <button
-                                  key={
-                                    occurrence.occurrenceKey
-                                  }
-                                  className={`bh-occurrence-card ${recordedCount
-                                    ? "recorded"
-                                    : ""
-                                    }`}
-                                  onClick={() => {
-                                    setSelectedScheduleDate(
-                                      dateKey
-                                    );
-
-                                    if (
-                                      isAdmin
-                                    ) {
-                                      openAttendanceModal(
+                      </strong>{" "}
+                      future day
+                      {scheduleForwardDays ===
+                        1
+                        ? ""
+                        : "s"}.
+                    </div>
+        
+                    <div className="bh-schedule-list">
+                      {orderedScheduleDateKeys.map(
+                        (dateKey) => {
+                          const occurrences =
+                            filteredScheduleOccurrences.filter(
+                              (item) =>
+                                item.dateKey ===
+                                dateKey
+                            );
+        
+                          const isToday =
+                            dateKey ===
+                            todayKey;
+        
+                          const isSelected =
+                            dateKey ===
+                            selectedScheduleDate;
+        
+                          return (
+                            <div
+                              key={
+                                dateKey
+                              }
+                              className={`bh-date-section ${isSelected
+                                ? "selected"
+                                : ""
+                                }`}
+                            >
+                              <button
+                                className="bh-date-header"
+                                onClick={() =>
+                                  setSelectedScheduleDate(
+                                    dateKey
+                                  )
+                                }
+                              >
+                                <div>
+                                  <span className="bh-date-badge">
+                                    {isToday
+                                      ? "TODAY"
+                                      : dateKey <
+                                        todayKey
+                                        ? "PREVIOUS"
+                                        : "UPCOMING"}
+                                  </span>
+        
+                                  <strong>
+                                    {formatLongDate(
+                                      zonedLocalToDate(
                                         dateKey,
-                                        occurrence
+                                        "12:00",
+                                        effectiveTimezone
+                                      ),
+                                      effectiveTimezone
+                                    )}
+                                  </strong>
+                                </div>
+        
+                                <span>
+                                  {
+                                    occurrences.length
+                                  }{" "}
+                                  spawn
+                                  {occurrences.length ===
+                                    1
+                                    ? ""
+                                    : "s"}
+                                </span>
+                              </button>
+        
+                              {occurrences.length ===
+                                0 ? (
+                                <div className="bh-empty-state">
+                                  No scheduled
+                                  occurrences
+                                  for this
+                                  date.
+                                </div>
+                              ) : (
+                                <div className="bh-occurrence-grid">
+                                  {occurrences.map(
+                                    (
+                                      occurrence
+                                    ) => {
+                                      const recordedCount =
+                                        attendanceRows.filter(
+                                          (
+                                            row
+                                          ) =>
+                                            occurrenceMatchesRow(
+                                              row,
+                                              occurrence
+                                            )
+                                        ).length;
+        
+                                      return (
+                                        <button
+                                          key={
+                                            occurrence.occurrenceKey
+                                          }
+                                          className={`bh-occurrence-card ${recordedCount
+                                            ? "recorded"
+                                            : ""
+                                            }`}
+                                          onClick={() => {
+                                            setSelectedScheduleDate(
+                                              dateKey
+                                            );
+        
+                                            if (
+                                              isAdmin
+                                            ) {
+                                              openAttendanceModal(
+                                                dateKey,
+                                                occurrence
+                                              );
+                                            }
+                                          }}
+                                        >
+                                          <div className="bh-occurrence-media">
+                                            <img
+                                              className="bh-occurrence-image"
+                                              src={bossImagePath(occurrence.bossId)}
+                                              alt={`${occurrence.bossName} boss`}
+                                            />
+                                            <div className="bh-occurrence-media-shade" />
+                                            <span className="bh-occurrence-kind">
+                                              {normalizeBossId(occurrence.bossId) === "sonya" ? "BOSS RAID" : normalizeBossId(occurrence.bossId) === "reflector" ? "MINI BOSS" : "BOSS RAID"}
+                                            </span>
+                                          </div>
+        
+                                          <div className="bh-occurrence-content">
+                                            <div className="bh-occurrence-time">
+                                              {formatTime(
+                                                occurrence.spawnAt,
+                                                effectiveTimezone
+                                              )}
+                                            </div>
+        
+                                            <div className="bh-occurrence-boss">
+                                              {occurrence.bossName}
+                                            </div>
+        
+                                            <div className="bh-occurrence-meta">
+                                              <span className="bh-occurrence-points">
+                                                +{safeNumber(occurrence.points, 0).toFixed(2)} POINTS
+                                              </span>
+                                              <span className="bh-occurrence-status">
+                                                {recordedCount
+                                                  ? `${recordedCount} RECORDED`
+                                                  : "NO ATTENDANCE"}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </button>
                                       );
                                     }
-                                  }}
-                                >
-                                  <div className="bh-occurrence-media">
-                                    <img
-                                      className="bh-occurrence-image"
-                                      src={bossImagePath(occurrence.bossId)}
-                                      alt={`${occurrence.bossName} boss`}
-                                    />
-                                    <div className="bh-occurrence-media-shade" />
-                                    <span className="bh-occurrence-kind">
-                                      {normalizeBossId(occurrence.bossId) === "sonya" ? "BOSS RAID" : normalizeBossId(occurrence.bossId) === "reflector" ? "MINI BOSS" : "BOSS RAID"}
-                                    </span>
-                                  </div>
-
-                                  <div className="bh-occurrence-content">
-                                    <div className="bh-occurrence-time">
-                                      {formatTime(
-                                        occurrence.spawnAt,
-                                        effectiveTimezone
-                                      )}
-                                    </div>
-
-                                    <div className="bh-occurrence-boss">
-                                      {occurrence.bossName}
-                                    </div>
-
-                                    <div className="bh-occurrence-meta">
-                                      <span className="bh-occurrence-points">
-                                        +{safeNumber(occurrence.points, 0).toFixed(2)} POINTS
-                                      </span>
-                                      <span className="bh-occurrence-status">
-                                        {recordedCount
-                                          ? `${recordedCount} RECORDED`
-                                          : "NO ATTENDANCE"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            }
-                          )}
-                        </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
                       )}
                     </div>
-                  );
-                }
-              )}
-            </div>
-          </section>
-        )}
-
-      {/* ===================================================
-          PLAYERS
-      =================================================== */}
-
-      {activeTab === "schedule" && (
-        <section id="players-history" className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
-          <div className="bh-players-hero bh-players-hero-v8">
-            <div className="bh-players-title-wrap bh-players-title-wrap-v8">
-              <div className="bh-players-emblem bh-players-emblem-v8" aria-hidden="true">
-                <span>♟</span>
-              </div>
-              <div>
-                <div className="bh-section-kicker">PLAYER ROSTER</div>
-                <div className="bh-players-title-row">
-                  <h2>Players &amp; History</h2>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="bh-inline-add-player"
-                      onClick={() => {
-                        setNewPlayerIgn("");
-                        setNewPlayerClass(CLASS_OPTIONS[0] || "");
-                        setNewPlayerWeapon("");
-                        setError("");
-                        setAddPlayerModalOpen(true);
-                      }}
-                    >
-                      ＋ ADD NEW PLAYER
-                    </button>
-                  )}
-                </div>
-                <p>Manage registered players, track attendance records and reward activities.</p>
-              </div>
-            </div>
-
-            <div className="bh-players-stat-grid bh-players-stat-grid-v8">
-              <div className="bh-player-stat bh-player-stat-cyan bh-player-stat-v8">
-                <div className="bh-player-stat-icon">♟</div>
-                <div>
-                  <strong>{totalPlayers}</strong>
-                  <span>TOTAL PLAYERS</span>
-                  <small>Registered players in the roster</small>
-                </div>
-              </div>
-
-              <div className="bh-player-stat bh-player-stat-green bh-player-stat-v8">
-                <div className="bh-player-stat-icon">◫</div>
-                <div>
-                  <strong>
-                    {(() => {
-                      const activeCount = players.filter((player) => player.active).length;
-                      const possible = activeCount * Math.max(1, new Set(attendanceRows.map((row) => clean(row.occurrenceKey || row.id))).size);
-                      const attended = new Set(
-                        attendanceRows
-                          .filter((row) => activeCount && attendanceMatchesPlayer(row, row.playerId))
-                          .map((row) => `${clean(row.playerId)}|${clean(row.occurrenceKey || row.id)}`)
-                      ).size;
-                      return possible ? `${Math.min(100, Math.round((attended / possible) * 100))}%` : "0%";
-                    })()}
-                  </strong>
-                  <span>ATTENDANCE RATE</span>
-                  <small>Attendance on recorded scheduled spawns</small>
-                </div>
-              </div>
-
-              <div className="bh-player-stat bh-player-stat-purple bh-player-stat-v8">
-                <div className="bh-player-stat-icon">⚔</div>
-                <div>
-                  <strong>{totalSonyaClaims}</strong>
-                  <span>SONYA WEAPONS CLAIMED</span>
-                  <small>All-time Sonya claims</small>
-                  <em>-6.00 pts per Sonya claim</em>
-                </div>
-              </div>
-
-              <div className="bh-player-stat bh-player-stat-gold bh-player-stat-v8">
-                <div className="bh-player-stat-icon">⚔</div>
-                <div>
-                  <strong>{eligiblePlayers.length}</strong>
-                  <span>ELIGIBLE FOR SONYA WEAPON</span>
-                  <small>Players with {safeNumber(BH_CLAIM_THRESHOLD, 6).toFixed(2)}+ points eligible to claim</small>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bh-players-filters bh-players-filters-v8">
-            <div className="bh-players-search">
-              <span aria-hidden="true">⌕</span>
-              <input
-                className="bh-input"
-                value={playerSearch}
-                placeholder="Search IGN..."
-                onChange={(e) => {
-                  setPlayerSearch(e.target.value);
-                  setPlayerPage(1);
-                }}
-              />
-            </div>
-
-            <div className="bh-players-class-filter">
-              <span aria-hidden="true">☷</span>
-              <select
-                className="bh-select"
-                value={playerClassFilter}
-                onChange={(e) => {
-                  setPlayerClassFilter(e.target.value);
-                  setPlayerPage(1);
-                }}
-              >
-                <option value="all">All Classes</option>
-                {CLASS_OPTIONS.map((className) => (
-                  <option key={className} value={className}>
-                    {className}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="bh-players-table-card bh-players-table-card-v8">
-            <TableScroller>
-              <table className="bh-table bh-players-table bh-players-table-v8">
-                <colgroup>
-                  <col className="bh-col-player" />
-                  <col className="bh-col-class" />
-                  {DEFAULT_BOSS_LIST.map((boss) => (
-                    <col key={`col-${boss.id}`} className="bh-col-boss" />
-                  ))}
-                  <col className="bh-col-total" />
-                  <col className="bh-col-sonya-count" />
-                  <col className="bh-col-sonya-deducted" />
-                  <col className="bh-col-balance" />
-                  <col className="bh-col-updated" />
-                  <col className="bh-col-updated-by" />
-                  <col className="bh-col-actions" />
-                </colgroup>
-                <thead>
-                  <tr className="bh-v6-group-row">
-                    <th rowSpan="2" className="bh-v6-player-head">PLAYER</th>
-                    <th rowSpan="2" className="bh-v6-class-head">CLASS</th>
-                    <th colSpan={DEFAULT_BOSS_LIST.length + 1} className="bh-v6-attendance-group">
-                      ATTENDANCE EARNED (ALL TIME)
-                    </th>
-                    <th colSpan="2" className="bh-v6-sonya-group">
-                      SONYA WEAPON CLAIMS (ALL TIME)
-                    </th>
-                    <th rowSpan="2" className="bh-v6-balance-head">
-                      CURRENT REWARD<br />BALANCE (POINTS)
-                      <small>(EARNED - SONYA CLAIMS)</small>
-                    </th>
-                    <th rowSpan="2" className="bh-v6-update-head">
-                      LAST UPDATED<br />DATE &amp; TIME
-                    </th>
-                    <th rowSpan="2" className="bh-v6-update-head">
-                      UPDATED BY<br />ADMIN
-                    </th>
-                    <th rowSpan="2" className="bh-v6-actions-head">ACTIONS</th>
-                  </tr>
-                  <tr className="bh-v6-sub-row">
-                    {DEFAULT_BOSS_LIST.map((boss) => (
-                      <th key={boss.id}>
-                        {boss.name.toUpperCase()}<small>({safeNumber(boss.points, 0).toFixed(1)} PT)</small>
-                      </th>
-                    ))}
-                    <th>TOTAL<small>POINTS</small></th>
-                    <th>
-                      # SONYA<br />WEAPONS CLAIMED
-                    </th>
-                    <th>
-                      POINTS DEDUCTED<br />(-6.00 EACH)
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {visiblePlayers.map((player) => {
-                    const initials = clean(player.ign || "?").charAt(0).toUpperCase() || "?";
-                    const classIcon = {
-                      Swordman: swordmanIcon,
-                      Archer: archerIcon,
-                      Gunner: gunnerIcon,
-                      Shaman: shamanIcon,
-                      Extreme: extremeIcon,
-                      Brawler: brawlerIcon,
-                    }[player.class] || swordmanIcon;
-
-                    return (
-                      <tr key={String(player.id)} className="bh-player-row bh-player-row-v8">
-                        <td>
-                          <div className="bh-player-identity">
-                            <div className="bh-player-avatar">{initials}</div>
-                            <div className="bh-player-name-wrap">
-                              <strong>{player.ign || "Unknown"}</strong>
-                              <span className={player.active ? "bh-player-online" : "bh-player-disabled"}>
-                                <i /> {player.active ? "ONLINE" : "DISABLED"}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td>
-                          <div className="bh-player-class bh-player-class-v8">
-                            <img src={classIcon} alt="" />
-                            <span>{player.class || "—"}</span>
-                          </div>
-                        </td>
-
-                        {DEFAULT_BOSS_LIST.map((boss) => (
-                          <td key={boss.id} className="bh-v6-attendance-cell">
-                            <strong>{safeNumber(player.attendanceByBoss?.[boss.id], 0).toFixed(2)}</strong>
-                          </td>
-                        ))}
-
-                        <td className="bh-v6-total-cell">
-                          <strong>{safeNumber(player.points, 0).toFixed(2)}</strong>
-                        </td>
-
-                        <td className="bh-v6-sonya-count-cell">
-                          <strong>{safeNumber(player.sonyaClaimsCount, 0)}</strong>
-                        </td>
-
-                        <td className="bh-v6-deduction-cell">
-                          <strong>{player.sonyaDeducted > 0 ? `-${safeNumber(player.sonyaDeducted, 0).toFixed(2)}` : "0.00"}</strong>
-                        </td>
-
-                        <td className="bh-v6-balance-cell">
-                          <strong>{safeNumber(player.available, 0).toFixed(2)}</strong>
-                        </td>
-
-                        <td className="bh-v6-updated-cell">
-                          <span>◫ {formatDate(player.latestUpdatedAt, effectiveTimezone)}</span>
-                          <span>◷ {formatTime(player.latestUpdatedAt, effectiveTimezone)}</span>
-                        </td>
-
-                        <td className="bh-v6-updated-by-cell">
-                          <span>♙ {player.latestUpdatedBy || "SYSTEM"}</span>
-                          <small>ADMIN</small>
-                        </td>
-
-                        <td>
-                          <div className="bh-player-actions bh-player-actions-v8">
-                            <button
-                              type="button"
-                              className="bh-player-action bh-player-action-history"
-                              onClick={() => {
-                                setHistoryPlayer(player);
-                                setHistoryPage(1);
-                                setHistorySearch("");
-                              }}
-                            >
-                              <span>◷</span> HISTORY
-                            </button>
-
-                            {isAdmin && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="bh-player-action bh-player-action-edit"
-                                  onClick={() => setEditingPlayer({ ...player })}
-                                >
-                                  <span>✎</span> EDIT
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="bh-player-action bh-player-action-disable"
-                                  onClick={() => togglePlayerActive(player)}
-                                >
-                                  <span>⊘</span> {player.active ? "DISABLE" : "ENABLE"}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="bh-player-action bh-player-action-delete"
-                                  onClick={() => {
-                                    setDeletePlayerTarget(player);
-                                    setDeletePlayerPin("");
-                                    setError("");
-                                  }}
-                                >
-                                  <span>⌫</span> DELETE
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {!visiblePlayers.length && (
-                    <tr>
-                      <td colSpan={DEFAULT_BOSS_LIST.length + 9} className="bh-empty-cell">
-                        No players found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </TableScroller>
-          </div>
-
-          <div className="bh-players-pagination bh-players-pagination-v6">
-            <div className="bh-v6-page-controls">
-              <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage(1)}>«</button>
-              <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage((p) => Math.max(1, p - 1))}>‹</button>
-              <div className="bh-players-page-number"><span>{playerPage}</span></div>
-              <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage((p) => Math.min(playerPageCount, p + 1))}>›</button>
-              <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage(playerPageCount)}>»</button>
-            </div>
-            <strong>Page {playerPage} of {playerPageCount}</strong>
-            <span>Showing {visiblePlayers.length} of {filteredPlayers.length} players</span>
-          </div>
-        </section>
+                  </section>
       )}
 
-      {/* ===================================================
-          REWARDS
-      =================================================== */}
-
-      {activeTab ===
-        "rewards" && (
-          <section className="bh-panel bh-reward-dashboard" id="bh-reward-center">
-            <div className="bh-reward-dashboard-header">
-              <div>
-                <div className="bh-section-kicker">REWARD CENTER <span className="bh-live-indicator">LIVE</span></div>
-                <h2>Boss Hunt Rewards</h2>
-                <p>Manage Sonya grand rewards, daily Duck Race rewards, winners and claim history.</p>
-              </div>
-              <div className="bh-reward-last-updated">
-                <span>LAST UPDATED</span>
-                <strong>{rewardLastUpdated?.at ? formatDateTime(rewardLastUpdated.at, effectiveTimezone) : "—"}</strong>
-                <small>{rewardLastUpdated?.by || "System"}</small>
-              </div>
-            </div>
-
-            <div className="bh-reward-summary-grid">
-              <div className="bh-reward-summary-card"><span>🎁</span><div><small>TOTAL REWARDS</small><strong>{totalRewardCount}</strong><em>Across all bosses</em></div></div>
-              <div className="bh-reward-summary-card"><span>✓</span><div><small>TOTAL CLAIMED</small><strong>{totalClaimedRewardCount}</strong><em>All time</em></div></div>
-              <div className="bh-reward-summary-card"><span>⌛</span><div><small>UNCLAIMED</small><strong>{totalUnclaimedRewardCount}</strong><em>Available rewards</em></div></div>
-              <div className="bh-reward-summary-card"><span>🏆</span><div><small>TODAY'S WINNERS</small><strong>{Array.from(todayRewardClaimsByBoss.values()).reduce((n, x) => n + x.length, 0)}</strong><em>All bosses</em></div></div>
-            </div>
-
-            <div className="bh-reward-section-title">
-              <div><span className="bh-section-kicker">BOSS OVERVIEW</span><h3>Reward &amp; Duck Race Status</h3></div>
-              {isAdmin && <span className="bh-reward-admin-note">Only Sonya has a 6.00-point cost. Mini bosses use daily Duck Race status.</span>}
-            </div>
-
-            <div className="bh-reward-boss-grid">
-              {rewardBossSummary.map((boss) => {
-                const sonya = boss.id === "sonya";
-                const duck = !sonya ? getDuckRaceStatus(boss.id) : null;
-                const winnerCount = todayRewardClaimsByBoss.get(boss.id)?.length || 0;
-                return (
-                  <article key={boss.id} className={`bh-reward-boss-card bh-reward-boss-card-detailed ${sonya ? "sonya" : "mini"}`}>
-                    <div className="bh-reward-boss-hero">
-                      <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
-                      <div className="bh-reward-boss-hero-overlay">
-                        <span className="bh-reward-boss-kind">{sonya ? "GRAND BOSS" : "MINI BOSS"}</span>
-                        <strong>{boss.name}</strong>
-                        <small>{sonya ? "WEEKLY · WEDNESDAY" : boss.id === "geomancer" ? "EVERY 10 HOURS" : "DAILY · MULTIPLE SPAWNS"}</small>
+{activeTab === "players" && (
+               /* ===================================================
+                  PLAYERS
+              =================================================== */
+        
+              <section id="players-history" className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
+                  <div className="bh-players-hero bh-players-hero-v8">
+                    <div className="bh-players-title-wrap bh-players-title-wrap-v8">
+                      <div className="bh-players-emblem bh-players-emblem-v8" aria-hidden="true">
+                        <span>♟</span>
+                      </div>
+                      <div>
+                        <div className="bh-section-kicker">PLAYER ROSTER</div>
+                        <div className="bh-players-title-row">
+                          <h2>Players &amp; History</h2>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="bh-inline-add-player"
+                              onClick={() => {
+                                setNewPlayerIgn("");
+                                setNewPlayerClass(CLASS_OPTIONS[0] || "");
+                                setNewPlayerWeapon("");
+                                setError("");
+                                setAddPlayerModalOpen(true);
+                              }}
+                            >
+                              ＋ ADD NEW PLAYER
+                            </button>
+                          )}
+                        </div>
+                        <p>Manage registered players, track attendance records and reward activities.</p>
                       </div>
                     </div>
-                    <div className="bh-reward-boss-detail-body">
-                      <div className="bh-reward-boss-score-row">
-                        <div><span>ATTENDANCE POINTS</span><strong>+{safeNumber(boss.points, 0).toFixed(2)}</strong></div>
-                        <div className={`bh-reward-boss-state ${sonya ? "grand" : duck?.status === "duck-raced" ? "done" : "pending"}`}>
-                          <span>{sonya ? "REWARD COST" : "DUCK RACE"}</span>
-                          <strong>{sonya ? "-6.00" : duck?.status === "duck-raced" ? "COMPLETED" : "PENDING"}</strong>
+        
+                    <div className="bh-players-stat-grid bh-players-stat-grid-v8">
+                      <div className="bh-player-stat bh-player-stat-cyan bh-player-stat-v8">
+                        <div className="bh-player-stat-icon">♟</div>
+                        <div>
+                          <strong>{totalPlayers}</strong>
+                          <span>TOTAL PLAYERS</span>
+                          <small>Registered players in the roster</small>
                         </div>
                       </div>
-                      <div className="bh-reward-boss-stat-grid">
-                        <div><small>TOTAL REWARDS</small><strong>{boss.total}</strong></div>
-                        <div><small>CLAIMED</small><strong>{boss.claimed}</strong></div>
-                        <div><small>UNCLAIMED</small><strong>{boss.unclaimed}</strong></div>
+        
+                      <div className="bh-player-stat bh-player-stat-green bh-player-stat-v8">
+                        <div className="bh-player-stat-icon">◫</div>
+                        <div>
+                          <strong>
+                            {(() => {
+                              const activeCount = players.filter((player) => player.active).length;
+                              const possible = activeCount * Math.max(1, new Set(attendanceRows.map((row) => clean(row.occurrenceKey || row.id))).size);
+                              const attended = new Set(
+                                attendanceRows
+                                  .filter((row) => activeCount && attendanceMatchesPlayer(row, row.playerId))
+                                  .map((row) => `${clean(row.playerId)}|${clean(row.occurrenceKey || row.id)}`)
+                              ).size;
+                              return possible ? `${Math.min(100, Math.round((attended / possible) * 100))}%` : "0%";
+                            })()}
+                          </strong>
+                          <span>ATTENDANCE RATE</span>
+                          <small>Attendance on recorded scheduled spawns</small>
+                        </div>
                       </div>
-                      <div className="bh-reward-boss-info-list">
-                        <div><span>SCHEDULE</span><strong>{sonya ? "Weekly Wednesday · 21:00 PH" : boss.id === "geomancer" ? "Every 10 hours" : "Daily · multiple spawns"}</strong></div>
-                        <div><span>REWARD TYPE</span><strong>{sonya ? "Point-funded reward" : "Duck Race reward"}</strong></div>
-                        <div><span>STATUS</span><strong className={sonya ? "status-live" : duck?.status === "duck-raced" ? "status-done" : "status-pending"}>{sonya ? "AVAILABLE" : duck?.status === "duck-raced" ? "DUCK RACED" : "WAITING"}</strong></div>
+        
+                      <div className="bh-player-stat bh-player-stat-purple bh-player-stat-v8 bh-player-stat-sonya">
+                        <div className="bh-player-stat-sonya-art" aria-hidden="true">
+                          <img src={sonyaImage} alt="" />
+                        </div>
+                        <div className="bh-player-stat-sonya-icon bh-player-stat-icon">⚔</div>
+                        <div className="bh-player-stat-content">
+                          <strong>{totalSonyaClaims}</strong>
+                          <span>SONYA WEAPONS CLAIMED</span>
+                          <small>All-time Sonya claims</small>
+                          <em>-6.00 pts per Sonya claim</em>
+                        </div>
                       </div>
-                      {!sonya && isAdmin && (
-                        <button type="button" className="bh-reward-duck-button" disabled={duckRaceSaving} onClick={() => setDuckRaceForToday(boss.id, duck?.status === "duck-raced" ? "not-yet" : "duck-raced")}>
-                          {duck?.status === "duck-raced" ? "RESET DUCK RACE" : "MARK DUCK RACED"}
+        
+                      <div className="bh-player-stat bh-player-stat-gold bh-player-stat-v8">
+                        <div className="bh-player-stat-icon">⚔</div>
+                        <div>
+                          <strong>{eligiblePlayers.length}</strong>
+                          <span>ELIGIBLE FOR SONYA WEAPON</span>
+                          <small>Players with {safeNumber(BH_CLAIM_THRESHOLD, 6).toFixed(2)}+ points eligible to claim</small>
+                        </div>
+                      </div>
+        
+                      <div className="bh-mini-boss-rewards-card bh-mini-boss-rewards-card-v10">
+                        <div className="bh-mini-boss-rewards-head">
+                          <div className="bh-mini-boss-rewards-title">
+                            <span className="bh-mini-boss-rewards-gift" aria-hidden="true">🎁</span>
+                            <div>
+                              <span>MINI BOSS REWARDS</span>
+                              <small>CLAIMED / AVAILABLE</small>
+                            </div>
+                          </div>
+                        </div>
+        
+                        <div className="bh-mini-boss-rewards-list">
+                          {[
+                            { id: "geomancer", name: "Geomancer", color: "blue" },
+                            { id: "reflector", name: "Reflector", color: "green" },
+                            { id: "giant-hawk", name: "Giant Hawk", color: "gold" },
+                          ].map((miniBoss) => {
+                            const summary = rewardBossSummary.find((boss) => boss.id === miniBoss.id) || {
+                              total: 0,
+                              claimed: 0,
+                              unclaimed: 0,
+                            };
+                            const total = safeNumber(summary.total, 0);
+                            const claimed = safeNumber(summary.claimed, 0);
+                            const unclaimed = safeNumber(summary.unclaimed, Math.max(0, total - claimed));
+                            const percent = total > 0 ? Math.min(100, Math.round((claimed / total) * 100)) : 0;
+        
+                            return (
+                              <div className={`bh-mini-boss-row bh-mini-boss-${miniBoss.color}`} key={miniBoss.id}>
+                                <div className="bh-mini-boss-icon-wrap">
+                                  <img
+                                    src={bossImagePath(miniBoss.id)}
+                                    alt={`${miniBoss.name} boss`}
+                                    className="bh-mini-boss-icon"
+                                  />
+                                </div>
+                                <div className="bh-mini-boss-main">
+                                  <div className="bh-mini-boss-topline">
+                                    <strong>{miniBoss.name}</strong>
+                                    <b>{claimed} / {total}</b>
+                                  </div>
+                                  <div className="bh-mini-boss-track" aria-hidden="true">
+                                    <span style={{ width: `${percent}%` }} />
+                                  </div>
+                                  <div className="bh-mini-boss-bottomline">
+                                    <span>{claimed} CLAIMED</span>
+                                    <span>{unclaimed} AVAILABLE</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+        
+                  <div className="bh-players-filters bh-players-filters-v8">
+                    <div className="bh-players-search">
+                      <span aria-hidden="true">⌕</span>
+                      <input
+                        className="bh-input"
+                        value={playerSearch}
+                        placeholder="Search IGN..."
+                        onChange={(e) => {
+                          setPlayerSearch(e.target.value);
+                          setPlayerPage(1);
+                        }}
+                      />
+                    </div>
+        
+                    <div className="bh-players-class-filter">
+                      <span aria-hidden="true">☷</span>
+                      <select
+                        className="bh-select"
+                        value={playerClassFilter}
+                        onChange={(e) => {
+                          setPlayerClassFilter(e.target.value);
+                          setPlayerPage(1);
+                        }}
+                      >
+                        <option value="all">All Classes</option>
+                        {CLASS_OPTIONS.map((className) => (
+                          <option key={className} value={className}>
+                            {className}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+        
+                  <div className="bh-players-table-card bh-players-table-card-v8">
+                    <TableScroller>
+                      <table className="bh-table bh-players-table bh-players-table-v8">
+                        <colgroup>
+                          <col className="bh-col-player" />
+                          <col className="bh-col-class" />
+                          {DEFAULT_BOSS_LIST.map((boss) => (
+                            <col key={`col-${boss.id}`} className="bh-col-boss" />
+                          ))}
+                          <col className="bh-col-total" />
+                          <col className="bh-col-sonya-count" />
+                          <col className="bh-col-sonya-deducted" />
+                          <col className="bh-col-balance" />
+                          <col className="bh-col-updated" />
+                          <col className="bh-col-updated-by" />
+                          <col className="bh-col-actions" />
+                        </colgroup>
+                        <thead>
+                          <tr className="bh-v6-group-row">
+                            <th rowSpan="2" className="bh-v6-player-head">PLAYER</th>
+                            <th rowSpan="2" className="bh-v6-class-head">CLASS</th>
+                            <th colSpan={DEFAULT_BOSS_LIST.length + 1} className="bh-v6-attendance-group">
+                              ATTENDANCE EARNED (ALL TIME)
+                            </th>
+                            <th colSpan="2" className="bh-v6-sonya-group">
+                              SONYA WEAPON CLAIMS (ALL TIME)
+                            </th>
+                            <th rowSpan="2" className="bh-v6-balance-head">
+                              CURRENT REWARD<br />BALANCE (POINTS)
+                              <small>(EARNED - SONYA CLAIMS)</small>
+                            </th>
+                            <th rowSpan="2" className="bh-v6-update-head">
+                              LAST UPDATED<br />DATE &amp; TIME
+                            </th>
+                            <th rowSpan="2" className="bh-v6-update-head">
+                              UPDATED BY<br />ADMIN
+                            </th>
+                            <th rowSpan="2" className="bh-v6-actions-head">ACTIONS</th>
+                          </tr>
+                          <tr className="bh-v6-sub-row">
+                            {DEFAULT_BOSS_LIST.map((boss) => {
+                              const bossKey = String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+                              const bossGlyph = {
+                                sonya: "⚔",
+                                geomancer: "⚔",
+                                reflector: "✥",
+                                "giant-hawk": "✦",
+                              }[bossKey] || "✦";
+                              return (
+                                <th key={boss.id} className={`bh-boss-head-${bossKey}`}>
+                                  <span className="bh-boss-head-icon" aria-hidden="true">{bossGlyph}</span>
+                                  {boss.name.toUpperCase()}<small>({safeNumber(boss.points, 0).toFixed(1)} PT)</small>
+                                </th>
+                              );
+                            })}
+                            <th>TOTAL<small>POINTS</small></th>
+                            <th>
+                              # SONYA<br />WEAPONS CLAIMED
+                            </th>
+                            <th>
+                              POINTS DEDUCTED<br />(-6.00 EACH)
+                            </th>
+                          </tr>
+                        </thead>
+        
+                        <tbody>
+                          {visiblePlayers.map((player) => {
+                            const initials = clean(player.ign || "?").charAt(0).toUpperCase() || "?";
+                            const classIcon = {
+                              Swordman: swordmanIcon,
+                              Archer: archerIcon,
+                              Gunner: gunnerIcon,
+                              Shaman: shamanIcon,
+                              Extreme: extremeIcon,
+                              Brawler: brawlerIcon,
+                            }[player.class] || swordmanIcon;
+        
+                            return (
+                              <tr key={String(player.id)} className="bh-player-row bh-player-row-v8">
+                                <td>
+                                  <div className="bh-player-identity">
+                                    <div className="bh-player-avatar">{initials}</div>
+                                    <div className="bh-player-name-wrap">
+                                      <strong>{player.ign || "Unknown"}</strong>
+                                      <span className={player.active ? "bh-player-online" : "bh-player-disabled"}>
+                                        <i /> {player.active ? "ONLINE" : "DISABLED"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+        
+                                <td>
+                                  <div className="bh-player-class bh-player-class-v8">
+                                    <img src={classIcon} alt="" />
+                                    <span>{player.class || "—"}</span>
+                                  </div>
+                                </td>
+        
+                                {DEFAULT_BOSS_LIST.map((boss) => (
+                                  <td key={boss.id} className={`bh-v6-attendance-cell bh-attendance-${String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                                    <strong>{safeNumber(player.attendanceByBoss?.[boss.id], 0).toFixed(2)}+</strong>
+                                  </td>
+                                ))}
+        
+                                <td className="bh-v6-total-cell">
+                                  <strong>{safeNumber(player.points, 0).toFixed(2)}</strong>
+                                </td>
+        
+                                <td className="bh-v6-sonya-count-cell">
+                                  <strong>{safeNumber(player.sonyaClaimsCount, 0)}</strong>
+                                </td>
+        
+                                <td className={`bh-v6-deduction-cell ${player.sonyaDeducted > 0 ? "bh-deduction-negative" : "bh-deduction-zero"}`}>
+                                  <strong>{player.sonyaDeducted > 0 ? `-${safeNumber(player.sonyaDeducted, 0).toFixed(2)}` : "0.00"}</strong>
+                                </td>
+        
+                                {(() => {
+                                  const balance = safeNumber(player.available, 0);
+                                  const eligible = balance >= BH_CLAIM_THRESHOLD;
+                                  const negative = balance < 0;
+                                  const balanceClass = negative
+                                    ? "bh-balance-negative"
+                                    : eligible
+                                      ? "bh-balance-eligible"
+                                      : "bh-balance-pending";
+                                  return (
+                                    <td className={`bh-v6-balance-cell ${balanceClass}`}>
+                                      <div className="bh-balance-status-card">
+                                        <strong>{balance.toFixed(2)}</strong>
+                                        <span>{eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</span>
+                                      </div>
+                                    </td>
+                                  );
+                                })()}
+        
+                                <td className="bh-v6-updated-cell">
+                                  <span>◫ {formatDate(player.latestUpdatedAt, effectiveTimezone)}</span>
+                                  <span>◷ {formatTime(player.latestUpdatedAt, effectiveTimezone)}</span>
+                                </td>
+        
+                                <td className="bh-v6-updated-by-cell">
+                                  <span>♙ {player.latestUpdatedBy || "SYSTEM"}</span>
+                                  <small>ADMIN</small>
+                                </td>
+        
+                                <td>
+                                  <div className="bh-player-actions bh-player-actions-v8">
+                                    <button
+                                      type="button"
+                                      className="bh-player-action bh-player-action-history"
+                                      onClick={() => {
+                                        setHistoryPlayer(player);
+                                        setHistoryPage(1);
+                                        setHistorySearch("");
+                                      }}
+                                    >
+                                      <span>◷</span> HISTORY
+                                    </button>
+        
+                                    {isAdmin && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="bh-player-action bh-player-action-edit"
+                                          onClick={() => setEditingPlayer({ ...player })}
+                                        >
+                                          <span>✎</span> EDIT
+                                        </button>
+        
+                                        <button
+                                          type="button"
+                                          className="bh-player-action bh-player-action-disable"
+                                          onClick={() => togglePlayerActive(player)}
+                                        >
+                                          <span>⊘</span> {player.active ? "DISABLE" : "ENABLE"}
+                                        </button>
+        
+                                        <button
+                                          type="button"
+                                          className="bh-player-action bh-player-action-delete"
+                                          onClick={() => {
+                                            setDeletePlayerTarget(player);
+                                            setDeletePlayerPin("");
+                                            setError("");
+                                          }}
+                                        >
+                                          <span>⌫</span> DELETE
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+        
+                          {!visiblePlayers.length && (
+                            <tr>
+                              <td colSpan={DEFAULT_BOSS_LIST.length + 9} className="bh-empty-cell">
+                                No players found.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </TableScroller>
+                  </div>
+        
+                  <div className="bh-players-pagination bh-players-pagination-v6">
+                    <div className="bh-v6-page-controls">
+                      <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage(1)}>«</button>
+                      <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage((p) => Math.max(1, p - 1))}>‹</button>
+                      <div className="bh-players-page-number"><span>{playerPage}</span></div>
+                      <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage((p) => Math.min(playerPageCount, p + 1))}>›</button>
+                      <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage(playerPageCount)}>»</button>
+                    </div>
+                    <strong>Page {playerPage} of {playerPageCount}</strong>
+                    <span>Showing {visiblePlayers.length} of {filteredPlayers.length} players</span>
+                  </div>
+        
+                  <div className="bh-player-table-legend" aria-label="Players table color legend">
+                    <div className="bh-player-legend-attendance">
+                      <span className="legend-sonya"><b>＋</b> Sonya Points <small>(1.0 per attendance)</small></span>
+                      <span className="legend-geomancer"><b>＋</b> Geomancer Points <small>(0.2 per attendance)</small></span>
+                      <span className="legend-reflector"><b>＋</b> Reflector Points <small>(0.2 per attendance)</small></span>
+                      <span className="legend-hawk"><b>＋</b> Giant Hawk Points <small>(0.2 per attendance)</small></span>
+                      <span className="legend-total"><b>＋</b> Total Points <small>(Lifetime total)</small></span>
+                    </div>
+                    <div className="bh-player-legend-balance">
+                      <span className="legend-negative"><b>●</b> Balance &lt; 0 <small>Red + NOT ELIGIBLE</small></span>
+                      <span className="legend-pending"><b>●</b> 0.00 – 5.99 <small>Gold + NOT ELIGIBLE</small></span>
+                      <span className="legend-eligible"><b>●</b> 6.00+ <small>Green + ELIGIBLE</small></span>
+                    </div>
+                  </div>
+                </section>
+      )}
+
+{activeTab === "rewards" && (
+              /* ===================================================
+                  REWARDS
+              =================================================== */
+        
+              <section className="bh-panel bh-reward-dashboard" id="bh-reward-center">
+                    <div className="bh-reward-dashboard-header">
+                      <div>
+                        <div className="bh-section-kicker">REWARD CENTER <span className="bh-live-indicator">LIVE</span></div>
+                        <h2>Boss Hunt Rewards</h2>
+                        <p>Manage Sonya grand rewards, daily Duck Race rewards, winners and claim history.</p>
+                      </div>
+                      <div className="bh-reward-last-updated">
+                        <span>LAST UPDATED</span>
+                        <strong>{rewardLastUpdated?.at ? formatDateTime(rewardLastUpdated.at, effectiveTimezone) : "—"}</strong>
+                        <small>{rewardLastUpdated?.by || "System"}</small>
+                      </div>
+                    </div>
+        
+                    <div className="bh-reward-summary-grid">
+                      <div className="bh-reward-summary-card"><span>🎁</span><div><small>TOTAL REWARDS</small><strong>{totalRewardCount}</strong><em>Across all bosses</em></div></div>
+                      <div className="bh-reward-summary-card"><span>✓</span><div><small>TOTAL CLAIMED</small><strong>{totalClaimedRewardCount}</strong><em>All time</em></div></div>
+                      <div className="bh-reward-summary-card"><span>⌛</span><div><small>UNCLAIMED</small><strong>{totalUnclaimedRewardCount}</strong><em>Available rewards</em></div></div>
+                      <div className="bh-reward-summary-card"><span>🏆</span><div><small>TODAY'S WINNERS</small><strong>{Array.from(todayRewardClaimsByBoss.values()).reduce((n, x) => n + x.length, 0)}</strong><em>All bosses</em></div></div>
+                    </div>
+        
+                    <div className="bh-reward-section-title">
+                      <div><span className="bh-section-kicker">BOSS OVERVIEW</span><h3>Reward &amp; Duck Race Status</h3></div>
+                      {isAdmin && <span className="bh-reward-admin-note">Only Sonya has a 6.00-point cost. Mini bosses use daily Duck Race status.</span>}
+                    </div>
+        
+                    <div className="bh-reward-boss-grid">
+                      {rewardBossSummary.map((boss) => {
+                        const sonya = boss.id === "sonya";
+                        const duck = !sonya ? getDuckRaceStatus(boss.id) : null;
+                        const winnerCount = todayRewardClaimsByBoss.get(boss.id)?.length || 0;
+        
+                        /*
+                         * UNIFIED REWARD STATUS
+                         * Sonya: available while at least one unclaimed reward remains.
+                         * Mini bosses: today's Duck Race must be completed first.
+                         *   not raced -> WAITING FOR DUCK RACE
+                         *   raced + stock -> AVAILABLE
+                         *   raced + no stock -> CLAIMED OUT
+                         * Player eligibility is intentionally separate from this status.
+                         */
+                        const hasRewards = safeNumber(boss.unclaimed, 0) > 0;
+                        const duckRaced = duck?.status === "duck-raced";
+                        const rewardStatus = sonya
+                          ? hasRewards
+                            ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
+                            : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" }
+                          : !duckRaced
+                            ? { key: "waiting", label: "WAITING FOR DUCK RACE", detail: "Today's Duck Race has not been completed" }
+                            : hasRewards
+                              ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
+                              : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" };
+        
+                        return (
+                          <article key={boss.id} className={`bh-reward-boss-card bh-reward-boss-card-detailed ${sonya ? "sonya" : "mini"}`}>
+                            <div className="bh-reward-boss-hero">
+                              <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
+                              <div className="bh-reward-boss-hero-overlay">
+                                <span className="bh-reward-boss-kind">{sonya ? "GRAND BOSS" : "MINI BOSS"}</span>
+                                <strong>{boss.name}</strong>
+                                <small>{sonya ? "WEEKLY · WEDNESDAY" : boss.id === "geomancer" ? "EVERY 10 HOURS" : "DAILY · MULTIPLE SPAWNS"}</small>
+                              </div>
+                            </div>
+                            <div className="bh-reward-boss-detail-body">
+                              <div className="bh-reward-boss-score-row">
+                                <div><span>ATTENDANCE POINTS</span><strong>+{safeNumber(boss.points, 0).toFixed(2)}</strong></div>
+                                <div className={`bh-reward-boss-state ${sonya ? "grand" : duck?.status === "duck-raced" ? "done" : "pending"}`}>
+                                  <span>{sonya ? "REWARD COST" : "DUCK RACE"}</span>
+                                  <strong>{sonya ? "-6.00" : duck?.status === "duck-raced" ? "COMPLETED" : "PENDING"}</strong>
+                                </div>
+                              </div>
+                              <div className="bh-reward-boss-stat-grid">
+                                <div><small>TOTAL REWARDS</small><strong>{boss.total}</strong></div>
+                                <div><small>CLAIMED</small><strong>{boss.claimed}</strong></div>
+                                <div><small>UNCLAIMED</small><strong>{boss.unclaimed}</strong></div>
+                              </div>
+                              <div className="bh-reward-boss-info-list">
+                                <div><span>SCHEDULE</span><strong>{sonya ? "Weekly Wednesday · 21:00 PH" : boss.id === "geomancer" ? "Every 10 hours" : "Daily · multiple spawns"}</strong></div>
+                                <div><span>REWARD TYPE</span><strong>{sonya ? "Point-funded reward" : "Duck Race reward"}</strong></div>
+                                <div className="bh-reward-status-row"><span>STATUS</span><strong className={`status-${rewardStatus.key}`}>{rewardStatus.label}</strong></div>
+                                <div className="bh-reward-status-detail"><span>DETAIL</span><em>{rewardStatus.detail}</em></div>
+                              </div>
+                              {!sonya && isAdmin && (
+                                <button type="button" className="bh-reward-duck-button" disabled={duckRaceSaving} onClick={() => setDuckRaceForToday(boss.id, duck?.status === "duck-raced" ? "not-yet" : "duck-raced")}>
+                                  {duck?.status === "duck-raced" ? "RESET DUCK RACE" : "MARK DUCK RACED"}
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+        
+                    <div className="bh-reward-section-title winners"><div><span className="bh-section-kicker">🏆 TODAY'S WINNERS</span><h3>{formatDate(new Date(), effectiveTimezone)}</h3></div></div>
+                    <div className="bh-reward-winners-grid">
+                      {rewardBossSummary.map((boss) => {
+                        const claims = todayRewardClaimsByBoss.get(boss.id) || [];
+                        const last = lastWinnerByBoss.get(boss.id);
+                        const sonya = boss.id === "sonya";
+                        return (
+                          <div key={boss.id} className={`bh-reward-winner-card ${sonya ? "grand" : "duck"}`}>
+                            <div className="bh-reward-winner-title">{sonya ? "👑 SONYA — GRAND BOSS WINNERS" : <><img src={duckRaceIcon} alt="" /> {boss.name.toUpperCase()} — DUCK RACE WINNERS</>}</div>
+                            {claims.length ? <div className="bh-reward-winner-list">{claims.map((claim) => {
+                              const reward = rewards.find((r) => String(r.id) === String(claim.rewardId));
+                              const wc = claim.weaponClass || reward?.weaponClass || "";
+                              const icon = weaponClassIconPath(wc);
+                              return <div className={`bh-reward-winner-row ${sonya ? "grand-winner" : "duck-winner"}`} key={claim.id}><div className="bh-reward-winner-player"><strong>{claim.playerName || "Unknown"}</strong>{wc && <span>{icon && <img src={icon} alt="" />}{wc}</span>}</div><div><small>{claim.rewardName || "Reward"}</small><b>{sonya ? "-6.00 points" : "CLAIMED"}</b></div><time>{formatTime(claim.claimedAt, effectiveTimezone)}</time>{!sonya && <img className="bh-reward-winner-duck" src={duckRaceIcon} alt="Duck Race pick" title="Duck Race pick" />}</div>;
+                            })}</div> : <div className="bh-reward-no-winner"><strong>NO WINNER TODAY</strong><span>No reward claims for {boss.name} today.</span>{last && <div><small>LAST WINNER</small><b>{last.playerName || "Unknown"}</b><span>{formatDateTime(last.claimedAt, effectiveTimezone)}</span></div>}</div>}
+                            {claims.length > 0 && <div className="bh-reward-winner-total">TOTAL WINNERS: {claims.length}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+        
+                    <div className="bh-reward-section-title bh-reward-inventory-title">
+                      <div>
+                        <span className="bh-section-kicker">REWARD MANAGEMENT</span>
+                        <h3>Reward Inventory</h3>
+                        <p>Click any reward to view its complete claim history and details.</p>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="bh-reward-add-inline"
+                          onClick={openNewRewardModal}
+                        >
+                          ＋ ADD NEW REWARD
                         </button>
                       )}
                     </div>
-                  </article>
-                );
-              })}
-            </div>
-
-            <div className="bh-reward-section-title winners"><div><span className="bh-section-kicker">🏆 TODAY'S WINNERS</span><h3>{formatDate(new Date(), effectiveTimezone)}</h3></div></div>
-            <div className="bh-reward-winners-grid">
-              {rewardBossSummary.map((boss) => {
-                const claims = todayRewardClaimsByBoss.get(boss.id) || [];
-                const last = lastWinnerByBoss.get(boss.id);
-                const sonya = boss.id === "sonya";
-                return (
-                  <div key={boss.id} className={`bh-reward-winner-card ${sonya ? "grand" : "duck"}`}>
-                    <div className="bh-reward-winner-title">{sonya ? "👑 SONYA — GRAND BOSS WINNERS" : <><img src={duckRaceIcon} alt="" /> {boss.name.toUpperCase()} — DUCK RACE WINNERS</>}</div>
-                    {claims.length ? <div className="bh-reward-winner-list">{claims.map((claim) => {
-                      const reward = rewards.find((r) => String(r.id) === String(claim.rewardId));
-                      const wc = claim.weaponClass || reward?.weaponClass || "";
-                      const icon = weaponClassIconPath(wc);
-                      return <div className={`bh-reward-winner-row ${sonya ? "grand-winner" : "duck-winner"}`} key={claim.id}><div className="bh-reward-winner-player"><strong>{claim.playerName || "Unknown"}</strong>{wc && <span>{icon && <img src={icon} alt="" />}{wc}</span>}</div><div><small>{claim.rewardName || "Reward"}</small><b>{sonya ? "-6.00 points" : "CLAIMED"}</b></div><time>{formatTime(claim.claimedAt, effectiveTimezone)}</time>{!sonya && <img className="bh-reward-winner-duck" src={duckRaceIcon} alt="Duck Race pick" title="Duck Race pick" />}</div>;
-                    })}</div> : <div className="bh-reward-no-winner"><strong>NO WINNER TODAY</strong><span>No reward claims for {boss.name} today.</span>{last && <div><small>LAST WINNER</small><b>{last.playerName || "Unknown"}</b><span>{formatDateTime(last.claimedAt, effectiveTimezone)}</span></div>}</div>}
-                    {claims.length > 0 && <div className="bh-reward-winner-total">TOTAL WINNERS: {claims.length}</div>}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="bh-reward-section-title bh-reward-inventory-title">
-              <div>
-                <span className="bh-section-kicker">REWARD MANAGEMENT</span>
-                <h3>Reward Inventory</h3>
-                <p>Click any reward to view its complete claim history and details.</p>
-              </div>
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="bh-reward-add-inline"
-                  onClick={openNewRewardModal}
-                >
-                  ＋ ADD NEW REWARD
-                </button>
-              )}
-            </div>
-
-            <div id="reward-inventory" className="bh-filter-row bh-reward-filters">
-              <input className="bh-input" value={rewardSearch} placeholder="Search reward, boss or player..." onChange={(e) => { setRewardSearch(e.target.value); setRewardPage(1); }} />
-              <select className="bh-select" value={rewardBossFilter} onChange={(e) => { setRewardBossFilter(e.target.value); setRewardPage(1); }}><option value="all">All Bosses</option>{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select>
-              <select className="bh-select" value={rewardStatusFilter} onChange={(e) => { setRewardStatusFilter(e.target.value); setRewardPage(1); }}><option value="all">All Status</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="disabled">Disabled</option></select>
-            </div>
-
-            <TableScroller><table className="bh-table bh-reward-management-table"><thead><tr><th>REWARD</th><th>BOSS</th><th>WEAPON CLASS</th><th>COST</th><th>DUCK RACE</th><th>STATUS</th><th>CLAIMS</th><th>UNCLAIMED</th><th>CREATED BY</th><th>CREATED AT</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
-              {visibleRewards.map((reward) => {
-                const bossId = normalizeBossId(reward.bossId); const isSonya = bossId === "sonya"; const icon = weaponClassIconPath(reward.weaponClass); const rewardClaimsForReward = rewardClaims.filter((c) => String(c.rewardId) === String(reward.id) && lower(c.status) !== "cancelled"); const claimed = claimedRewardIds.has(String(reward.id)); const duck = !isSonya ? getDuckRaceStatus(bossId) : null;
-                return (
-                  <tr
-                    key={reward.id}
-                    className="bh-reward-inventory-row"
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`View details and claim history for ${reward.name || "reward"}`}
-                    onClick={() => openRewardInventoryDetails(reward)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        openRewardInventoryDetails(reward);
-                      }
-                    }}
-                  >
-                    <td>
-                      <strong>{reward.name}</strong>
-                      {reward.playerName && <small className="bh-reward-assignee">Assigned: {reward.playerName}</small>}
-                      <small className="bh-reward-row-hint">CLICK FOR HISTORY &amp; DETAILS</small>
-                    </td>
-                    <td>{reward.bossName}</td>
-                    <td><span className="bh-reward-class-cell">{icon && <img src={icon} alt="" />}{reward.weaponClass || "—"}</span></td>
-                    <td>{isSonya ? <strong className="bh-reward-cost">-6.00</strong> : <span>—</span>}</td>
-                    <td>{isSonya ? <span className="bh-reward-na">N/A</span> : <span className={`bh-reward-duck-pill ${duck?.status === "duck-raced" ? "done" : "pending"}`}>{duck?.status === "duck-raced" ? "DUCK RACED" : "NOT YET"}</span>}</td>
-                    <td><span className={`bh-status-pill bh-status-${reward.status}`}>{reward.status}</span></td>
-                    <td>{rewardClaimsForReward.length + (claimed && !rewardClaimsForReward.length ? 1 : 0)}</td>
-                    <td>{claimed ? 0 : reward.status === "available" ? 1 : 0}</td>
-                    <td>{reward.createdBy || "System"}</td>
-                    <td>{formatDateTime(reward.createdAt, effectiveTimezone)}</td>
-                    <td>{formatDateTime(reward.updatedAt, effectiveTimezone)}</td>
-                    <td>
-                      <div className="bh-action-row" onClick={(e) => e.stopPropagation()}>
-                        {reward.playerId && reward.status === "available" && <button className="bh-small-button" onClick={() => claimReward(reward)}>CLAIM</button>}
-                        {isAdmin && (
-                          <>
-                            <button className="bh-small-button" onClick={() => setEditingReward({ ...reward })}>EDIT</button>
-                            <button className="bh-small-button danger" onClick={() => deleteReward(reward)}>DELETE</button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!visibleRewards.length && <tr><td colSpan="12" className="bh-empty-cell">No rewards found.</td></tr>}
-            </tbody></table></TableScroller>
-            <div className="bh-pagination"><button disabled={rewardPage <= 1} onClick={() => setRewardPage((p) => Math.max(1, p - 1))}>PREVIOUS</button><span>Page {rewardPage} of {rewardPageCount}</span><button disabled={rewardPage >= rewardPageCount} onClick={() => setRewardPage((p) => Math.min(rewardPageCount, p + 1))}>NEXT</button></div>
-
-          </section>
-        )}
+        
+                    <div id="reward-inventory" className="bh-filter-row bh-reward-filters">
+                      <input className="bh-input" value={rewardSearch} placeholder="Search reward, boss or player..." onChange={(e) => { setRewardSearch(e.target.value); setRewardPage(1); }} />
+                      <select className="bh-select" value={rewardBossFilter} onChange={(e) => { setRewardBossFilter(e.target.value); setRewardPage(1); }}><option value="all">All Bosses</option>{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select>
+                      <select className="bh-select" value={rewardStatusFilter} onChange={(e) => { setRewardStatusFilter(e.target.value); setRewardPage(1); }}><option value="all">All Status</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="disabled">Disabled</option></select>
+                    </div>
+        
+                    <TableScroller><table className="bh-table bh-reward-management-table"><thead><tr><th>REWARD</th><th>BOSS</th><th>WEAPON CLASS</th><th>COST</th><th>DUCK RACE</th><th>STATUS</th><th>CLAIMS</th><th>UNCLAIMED</th><th>CREATED BY</th><th>CREATED AT</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
+                      {visibleRewards.map((reward) => {
+                        const bossId = normalizeBossId(reward.bossId); const isSonya = bossId === "sonya"; const icon = weaponClassIconPath(reward.weaponClass); const rewardClaimsForReward = rewardClaims.filter((c) => String(c.rewardId) === String(reward.id) && lower(c.status) !== "cancelled"); const claimed = claimedRewardIds.has(String(reward.id)); const duck = !isSonya ? getDuckRaceStatus(bossId) : null;
+                        return (
+                          <tr
+                            key={reward.id}
+                            className="bh-reward-inventory-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`View details and claim history for ${reward.name || "reward"}`}
+                            onClick={() => openRewardInventoryDetails(reward)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openRewardInventoryDetails(reward);
+                              }
+                            }}
+                          >
+                            <td>
+                              <strong>{reward.name}</strong>
+                              {reward.playerName && <small className="bh-reward-assignee">Assigned: {reward.playerName}</small>}
+                              <small className="bh-reward-row-hint">CLICK FOR HISTORY &amp; DETAILS</small>
+                            </td>
+                            <td>{reward.bossName}</td>
+                            <td><span className="bh-reward-class-cell">{icon && <img src={icon} alt="" />}{reward.weaponClass || "—"}</span></td>
+                            <td>{isSonya ? <strong className="bh-reward-cost">-6.00</strong> : <span>—</span>}</td>
+                            <td>{isSonya ? <span className="bh-reward-na">N/A</span> : <span className={`bh-reward-duck-pill ${duck?.status === "duck-raced" ? "done" : "pending"}`}>{duck?.status === "duck-raced" ? "DUCK RACED" : "NOT YET"}</span>}</td>
+                            <td><span className={`bh-status-pill bh-status-${reward.status}`}>{reward.status}</span></td>
+                            <td>{rewardClaimsForReward.length + (claimed && !rewardClaimsForReward.length ? 1 : 0)}</td>
+                            <td>{claimed ? 0 : reward.status === "available" ? 1 : 0}</td>
+                            <td>{reward.createdBy || "System"}</td>
+                            <td>{formatDateTime(reward.createdAt, effectiveTimezone)}</td>
+                            <td>{formatDateTime(reward.updatedAt, effectiveTimezone)}</td>
+                            <td>
+                              <div className="bh-action-row" onClick={(e) => e.stopPropagation()}>
+                                {reward.playerId && reward.status === "available" && <button className="bh-small-button" onClick={() => claimReward(reward)}>CLAIM</button>}
+                                {isAdmin && (
+                                  <>
+                                    <button className="bh-small-button" onClick={() => setEditingReward({ ...reward })}>EDIT</button>
+                                    <button className="bh-small-button danger" onClick={() => deleteReward(reward)}>DELETE</button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {!visibleRewards.length && <tr><td colSpan="12" className="bh-empty-cell">No rewards found.</td></tr>}
+                    </tbody></table></TableScroller>
+                    <div className="bh-pagination"><button disabled={rewardPage <= 1} onClick={() => setRewardPage((p) => Math.max(1, p - 1))}>PREVIOUS</button><span>Page {rewardPage} of {rewardPageCount}</span><button disabled={rewardPage >= rewardPageCount} onClick={() => setRewardPage((p) => Math.min(rewardPageCount, p + 1))}>NEXT</button></div>
+        
+                  </section>
+      )}
 
       {/* ===================================================
           REWARD INVENTORY DETAIL / CLAIM HISTORY MODAL
@@ -7671,94 +7811,7 @@ export default function BHPage() {
         );
       })()}
 
-      {/* ===================================================
-          NOTIFICATIONS
-      =================================================== */}
 
-      {activeTab ===
-        "notices" && (
-          <section className="bh-panel bh-notifications-full" id="bh-notifications-panel">
-            <div className="bh-panel-header">
-              <div>
-                <div className="bh-section-kicker">GUILD NOTIFICATIONS</div>
-                <h2>Activity &amp; Notifications</h2>
-                <p>Complete notification history. NEW is based on the current local calendar day.</p>
-              </div>
-              <button className="bh-secondary-button" onClick={reloadGuildNotices}>REFRESH</button>
-            </div>
-
-            <div className="bh-notifications-toolbar">
-              <input
-                className="bh-input"
-                type="search"
-                placeholder="Search messages, players, or admin..."
-                value={noticeSearch}
-                onChange={(e) => { setNoticeSearch(e.target.value); setNoticeAllPage(1); }}
-              />
-              <select className="bh-input" value={noticeTypeFilter} onChange={(e) => { setNoticeTypeFilter(e.target.value); setNoticeAllPage(1); }}>
-                <option value="all">All Types</option>
-                <option value="success">Activity</option>
-                <option value="warning">Warning</option>
-                <option value="error">Error</option>
-                <option value="reward">Reward</option>
-                <option value="info">Notice</option>
-              </select>
-              <select className="bh-input" value={noticeTimeFilter} onChange={(e) => { setNoticeTimeFilter(e.target.value); setNoticeAllPage(1); }}>
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="7">Last 7 Days</option>
-                <option value="30">Last 30 Days</option>
-              </select>
-              <select className="bh-input" value={noticeAdminFilter} onChange={(e) => { setNoticeAdminFilter(e.target.value); setNoticeAllPage(1); }}>
-                <option value="all">All Admins</option>
-                {noticeAdmins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
-              </select>
-              <div className="bh-notice-date-filter">
-                <label>DATE <input className="bh-input" type="date" value={noticeDateFilter} onChange={(e) => { setNoticeDateFilter(e.target.value); setNoticeAllPage(1); }} /></label>
-                <label>FROM <input className="bh-input" type="time" value={noticeFromTime} onChange={(e) => { setNoticeFromTime(e.target.value); setNoticeAllPage(1); }} /></label>
-                <label>TO <input className="bh-input" type="time" value={noticeToTime} onChange={(e) => { setNoticeToTime(e.target.value); setNoticeAllPage(1); }} /></label>
-                {noticeDateFilter && <button type="button" className="bh-secondary-button bh-notice-clear-filter" onClick={() => { setNoticeDateFilter(""); setNoticeFromTime("11:00"); setNoticeToTime("03:00"); setNoticeAllPage(1); }}>CLEAR DATE</button>}
-              </div>
-            </div>
-
-            <div className="bh-notifications-results-head">
-              <strong>{filteredAllNotices.length}</strong> notifications found
-              <span>{filteredAllNotices.length ? `${(safeAllPage - 1) * NOTICE_PAGE_SIZE + 1}-${Math.min(safeAllPage * NOTICE_PAGE_SIZE, filteredAllNotices.length)}` : "0"} shown</span>
-            </div>
-
-            <div className="bh-notice-table-scroll bh-notifications-full-table-scroll">
-              <table className="bh-notice-table bh-notifications-full-table">
-                <thead>
-                  <tr><th>#</th><th>STATUS</th><th>TYPE</th><th>MESSAGE</th><th>DATE &amp; TIME</th><th>ADMIN</th></tr>
-                </thead>
-                <tbody>
-                  {pagedAllNotices.map((notice, index) => {
-                    const isNew = noticeDayKey(notice.createdAt, effectiveTimezone) === todayKey;
-                    return (
-                      <tr key={notice.id} className="bh-notice-clickable" onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
-                        <td>{(safeAllPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
-                        <td><span className={`bh-notice-status-badge ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
-                        <td><span className={`bh-notice-type-icon bh-notice-${notice.type}`}>{noticeIcon(notice.type)}</span><span className="bh-notice-type-label">{noticeTypeLabel(notice.type)}</span></td>
-                        <td><div className="bh-notice-table-message"><strong>{notice.title}</strong><span>{notice.message}</span></div></td>
-                        <td>{formatDateTime(notice.createdAt, effectiveTimezone)}</td>
-                        <td>{notice.createdBy || "System"}</td>
-                      </tr>
-                    );
-                  })}
-                  {!pagedAllNotices.length && <tr><td colSpan="6" className="bh-notice-table-empty">No notifications match your filters.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="bh-notice-pagination bh-notifications-pagination">
-              <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage(1)}>«</button>
-              <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage((p) => Math.max(1, p - 1))}>‹</button>
-              <button className="active">{safeAllPage}</button>
-              <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage((p) => Math.min(allNoticePageCount, p + 1))}>›</button>
-              <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage(allNoticePageCount)}>»</button>
-            </div>
-          </section>
-        )}
 
       {/* ===================================================
           ADMIN
@@ -9313,7 +9366,7 @@ export default function BHPage() {
               <div className="bh-form-group"><label>STATUS</label><select className="bh-select" value={editingReward.__new ? rewardForm.status : editingReward.status || "available"} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, status: e.target.value })) : setEditingReward((x) => ({ ...x, status: e.target.value }))}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></div>
               <div className="bh-form-group full"><label>NOTES</label><textarea className="bh-textarea" value={editingReward.__new ? rewardForm.notes : editingReward.notes || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, notes: e.target.value })) : setEditingReward((x) => ({ ...x, notes: e.target.value }))} placeholder="Optional reward note..." /></div>
             </div>
-            <div className="bh-modal-actions"><button className="bh-secondary-button" onClick={() => setEditingReward(null)}>CANCEL</button><button className="bh-primary-button" disabled={rewardSaving} onClick={async () => { if (editingReward.__new) { setRewardSaving(true); const ok = await addReward(); setRewardSaving(false); if (ok) { setEditingReward(null); setTimeout(() => document.getElementById("reward-inventory")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); } } else { await saveEditedReward(); } }}>{editingReward.__new ? "ADD REWARD" : "SAVE REWARD"}</button></div>
+            <div className="bh-modal-actions"><button className="bh-secondary-button" onClick={() => setEditingReward(null)}>CANCEL</button><button className="bh-primary-button" disabled={rewardSaving} onClick={async () => { if (editingReward.__new) { setRewardSaving(true); const ok = await addReward(); setRewardSaving(false); if (ok) { setEditingReward(null); switchActiveTab("rewards"); } } else { await saveEditedReward(); } }}>{editingReward.__new ? "ADD REWARD" : "SAVE REWARD"}</button></div>
           </div>
         </div>
       )}
@@ -9339,8 +9392,8 @@ export default function BHPage() {
                   <span className={`bh-notice-status-badge ${noticeDayKey(selectedNotice.createdAt, effectiveTimezone) === todayKey ? "new" : "old"}`}>
                     {noticeDayKey(selectedNotice.createdAt, effectiveTimezone) === todayKey ? "NEW TODAY" : "OLD"}
                   </span>
-                  <span className={`bh-notice-type-icon bh-notice-${selectedNotice.type}`}>{noticeIcon(selectedNotice.type)}</span>
-                  <strong>{noticeTypeLabel(selectedNotice.type)}</strong>
+                  <span className={`bh-unified-icon category-${noticeCategoryClass(selectedNotice)}`}><NoticeCategoryIcon category={noticeCategoryKey(selectedNotice)} /></span>
+                  <strong>{noticeTypeLabel(selectedNotice)}</strong>
                 </div>
                 <div className="bh-notice-detail-message">{selectedNotice.message || "No additional message was recorded."}</div>
 

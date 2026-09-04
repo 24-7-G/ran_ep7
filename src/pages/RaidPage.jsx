@@ -23,6 +23,12 @@ import Modal from "../components/Modal";
 import TimePicker from "../components/TimePicker";
 import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
 
+// Real boss artwork used throughout the Raid Schedule UI.
+import sonyaBossImage from "../bosses/sonya.png";
+import geomancerBossImage from "../bosses/geomancer.png";
+import giantHawkBossImage from "../bosses/giant-hawk.png";
+import reflectorBossImage from "../bosses/reflector.png";
+
 const MAX_UPCOMING_DAYS = 7;
 
 /* =========================================================
@@ -339,26 +345,26 @@ function raidAccentClass(raid) {
   return "raid-accent-default";
 }
 
-function raidIcon(raid) {
+function raidBossImage(raid) {
   const id = canonicalRaidId(raid);
 
   if (id === "sonya") {
-    return "☠";
+    return sonyaBossImage;
   }
 
   if (id === "geomancer") {
-    return "◆";
+    return geomancerBossImage;
   }
 
   if (id === "reflector") {
-    return "◈";
+    return reflectorBossImage;
   }
 
   if (id === "giant-hawk") {
-    return "♜";
+    return giantHawkBossImage;
   }
 
-  return "⚔";
+  return sonyaBossImage;
 }
 
 function formatRecurrence(raid) {
@@ -1484,9 +1490,17 @@ export default function RaidPage() {
                   <div className="raid-card-top">
 
                     <div className="raid-boss-icon">
-                      {raidIcon(
-                        raid
-                      )}
+                      <img
+                        src={raidBossImage(raid)}
+                        alt={`${raid.name} boss`}
+                        className="raid-boss-icon-image"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                          display: "block",
+                        }}
+                      />
                     </div>
 
                     <div className="raid-card-title">
@@ -1898,9 +1912,17 @@ export default function RaidPage() {
                               item.raid
                             )}`}
                           >
-                            {raidIcon(
-                              item.raid
-                            )}
+                            <img
+                              src={raidBossImage(item.raid)}
+                              alt={`${item.raid.name} boss`}
+                              className="raid-table-icon-image"
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "contain",
+                                display: "block",
+                              }}
+                            />
                           </span>
 
                           <strong>

@@ -483,57 +483,144 @@
 
 .bh-tabs,
 .bh-mode-tabs {
-    max-width: 1540px;
-    margin: 0 auto 14px;
+    max-width: 1360px;
+    margin: 0 auto 18px;
     display: flex;
     align-items: stretch;
     justify-content: center;
-    gap: 2px;
+    gap: 0;
+}
+
+/* BH PAGE-ONLY SCHEDULE / REWARDS SWITCHER.
+   This is intentionally different from the global site header. */
+.bh-tabs {
+    position: relative;
+    width: calc(100% - 24px);
+    min-height: 86px;
+    padding: 4px;
+    border: 1px solid #17648a;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #071a29, #061521);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 8px 25px rgba(0,0,0,.18);
+    overflow: hidden;
+}
+
+.bh-tabs > button {
+    position: relative;
+    flex: 0 1 50%;
+    min-width: 0;
+    min-height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 8px 30px;
+    border: 0;
+    border-right: 1px solid #224257;
+    border-bottom: 0;
+    border-radius: 0;
+    color: #93a8b8;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 950;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+    cursor: pointer;
+    overflow: visible;
+    transition: color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.bh-tabs > button:last-child { border-right: 0; }
+.bh-tabs > button::before,
+.bh-tabs > button::after { content: ""; position: absolute; pointer-events: none; }
+
+.bh-tabs > button.active:first-child {
+    color: #f4fbff;
+    background: linear-gradient(180deg, #0d8fc4 0%, #0875a7 100%);
+    box-shadow: 0 0 20px rgba(0,183,255,.28), inset 0 1px 0 rgba(255,255,255,.16);
+    clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%);
+}
+.bh-tabs > button.active:first-child::after {
+    right: -1px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #00c9ff;
+    box-shadow: 0 0 12px #00c9ff;
+}
+.bh-tabs > button:not(.active):last-child {
+    color: #c9a735;
+    background: linear-gradient(180deg, rgba(25,40,51,.60), rgba(9,23,33,.72));
+    clip-path: polygon(0 0, 96% 0, 100% 50%, 96% 100%, 0 100%);
+}
+.bh-tabs > button.active:last-child {
+    color: #fff1ba;
+    background: linear-gradient(180deg, #765c10, #4f3e0e);
+    box-shadow: 0 0 20px rgba(223,177,38,.18);
+    clip-path: polygon(0 0, 96% 0, 100% 50%, 96% 100%, 0 100%);
+}
+.bh-tabs > button:hover { color: #f2f9fd; }
+
+.bh-tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+}
+.bh-tab-icon svg {
+    width: 38px;
+    height: 38px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.65;
+    filter: drop-shadow(0 0 5px currentColor);
+}
+.bh-tab-icon-schedule { color: #20d4ff; }
+.bh-tab-icon-rewards { color: #e6b927; }
+.bh-tabs > button.active:first-child .bh-tab-icon { color: #baf4ff; }
+.bh-tabs > button.active:last-child .bh-tab-icon { color: #ffd55b; }
+
+
+/* Tab destinations: keep the selected BH page clear of the global header. */
+#bh-schedule-panel,
+#bh-reward-center {
+    scroll-margin-top: 96px;
+}
+
+/* keep the admin attendance-mode controls distinct */
+.bh-mode-tabs {
+    width: 100%;
     border-bottom: 1px solid #253b4d;
 }
-
-/* Main BH navigation: four public sections only.
-   Admin actions remain protected inside the page; there is no separate
-   ADMIN navigation tab. */
-.bh-tabs {
-    width: 100%;
-}
-
-.bh-tabs>button {
+.bh-mode-tabs button {
     flex: 0 1 210px;
     min-width: 150px;
-    text-align: center;
-}
-
-.bh-tabs button,
-.bh-mode-tabs button {
-    appearance: none;
+    padding: 10px 16px;
     border: 1px solid transparent;
     border-bottom: 2px solid transparent;
-    padding: 10px 16px;
     color: #71899d;
     background: transparent;
     font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.8px;
+    letter-spacing: .8px;
     text-transform: uppercase;
-    cursor: pointer;
-    transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.bh-mode-tabs button:hover { color: #d9edf7; background: rgba(53,201,255,.04); }
+.bh-mode-tabs button.active { color: #eef9ff; border-bottom-color: var(--bh-cyan); background: rgba(40,135,178,.08); }
+
+@media (max-width: 900px) {
+    .bh-tabs { min-height: 72px; }
+    .bh-tabs > button { min-height: 64px; padding: 7px 18px; gap: 10px; font-size: 11px; }
+    .bh-tab-icon { width: 32px; height: 32px; flex-basis: 32px; }
+    .bh-tab-icon svg { width: 29px; height: 29px; }
 }
 
-.bh-tabs button:hover,
-.bh-mode-tabs button:hover {
-    color: #d9edf7;
-    background: rgba(53, 201, 255, 0.04);
-}
-
-.bh-tabs button.active,
-.bh-mode-tabs button.active,
-.bh-tabs button[aria-selected="true"],
-.bh-mode-tabs button[aria-selected="true"] {
-    color: #eef9ff;
-    border-bottom-color: var(--bh-cyan);
-    background: rgba(40, 135, 178, 0.08);
+@media (max-width: 560px) {
+    .bh-tabs { width: calc(100% - 12px); min-height: 62px; padding: 3px; }
+    .bh-tabs > button { min-height: 54px; padding: 6px 8px; gap: 7px; font-size: 8px; letter-spacing: .025em; }
+    .bh-tab-icon { width: 26px; height: 26px; flex-basis: 26px; }
+    .bh-tab-icon svg { width: 23px; height: 23px; }
 }
 
 .bh-filter-row {
@@ -15030,192 +15117,2935 @@
     }
 }
 /* =========================================================
-   FINAL V8 RESPONSIVE PLAYERS & HISTORY FIT
-   CSS ONLY — no JSX/data/functionality changes.
-   Keeps every roster column, but fits the table to large desktop
-   screens and gives smaller screens a contained horizontal scroll.
-   ========================================================= */
-.bh-players-dashboard-v8 {
+   FINAL WIDTH ALIGNMENT — BH HEADER + SUMMARY
+   Keep the top dashboard sections aligned with the full-width
+   notification board and all sections below. CSS ONLY.
+========================================================= */
+.bh-page-header,
+.bh-summary-grid {
     width: 100% !important;
-    max-width: 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+.bh-page-header {
+    min-height: 82px !important;
+    padding: 14px 16px !important;
+    margin-bottom: 10px !important;
+}
+
+.bh-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+}
+
+.bh-summary-card {
+    min-height: 82px !important;
+    padding: 13px 15px !important;
+}
+
+@media (max-width: 900px) {
+    .bh-page-header,
+    .bh-summary-grid {
+        width: 100% !important;
+        max-width: none !important;
+    }
+
+    .bh-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .bh-summary-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-page-header {
+        min-height: 76px !important;
+    }
+}
+
+
+/* =========================================================
+   BH NOTIFICATION BOARD — MATCH CW NOTIFICATION STYLE
+   This block intentionally comes LAST so legacy BH notice
+   rules cannot hide or resize the toolbar.
+========================================================= */
+.bh-notice-board > div:nth-child(2) {
+    display: flex !important;
+    grid-template-columns: none !important;
+    gap: 8px !important;
+    padding: 10px 18px !important;
+    width: 100% !important;
     min-width: 0 !important;
-    overflow: hidden !important;
+    box-sizing: border-box !important;
+    border-bottom: 1px solid #17384b !important;
+    background: #06131d !important;
+}
+
+.bh-notice-board-toolbar {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
 }
 
-.bh-players-dashboard-v8 .bh-players-table-card-v8 {
-    width: calc(100% - 28px) !important;
-    max-width: calc(100% - 28px) !important;
-    margin: 0 14px 10px !important;
+.bh-notice-board-search {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 34px !important;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    border: 1px solid #19435a !important;
+    border-radius: 4px !important;
+    outline: none !important;
+    background: #06131d !important;
+    color: #e6f7ff !important;
+    font-size: 9px !important;
     box-sizing: border-box !important;
 }
 
+.bh-notice-board-search::placeholder {
+    color: #5f8091 !important;
+    opacity: 1 !important;
+}
+
+.bh-notice-board-search:focus {
+    border-color: #21bff2 !important;
+    box-shadow: 0 0 0 1px rgba(33,191,242,.08) !important;
+}
+
+.bh-notice-board-type-filter {
+    flex: 0 0 150px !important;
+    width: 150px !important;
+    min-width: 150px !important;
+    height: 34px !important;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    border: 1px solid #19435a !important;
+    border-radius: 4px !important;
+    outline: none !important;
+    background: #06131d !important;
+    color: #e6f7ff !important;
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    box-sizing: border-box !important;
+    cursor: pointer !important;
+}
+
+.bh-notice-board-type-filter:focus {
+    border-color: #21bff2 !important;
+}
+
+.bh-notice-board-view-all {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 158px !important;
+    height: 34px !important;
+    margin: 0 !important;
+    padding: 0 13px !important;
+    border: 1px solid #194d67 !important;
+    border-radius: 4px !important;
+    background: #071b29 !important;
+    color: #e6f7ff !important;
+    font-size: 8px !important;
+    font-weight: 900 !important;
+    letter-spacing: .03em !important;
+    box-sizing: border-box !important;
+    cursor: pointer !important;
+}
+
+.bh-notice-board-view-all:hover {
+    border-color: #21bff2 !important;
+    background: #0a2636 !important;
+    color: #fff !important;
+}
+
+/* The two notification columns start immediately below the
+   toolbar, exactly like CW. */
+.bh-notice-board-grid {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+}
+
+.bh-notice-board-table-wrap {
+    min-width: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
+}
+
+.bh-notice-board-table-wrap + .bh-notice-board-table-wrap {
+    border-left: 1px solid #173b50 !important;
+}
+
+@media (max-width: 900px) {
+    .bh-notice-board > div:nth-child(2) {
+        display: block !important;
+        padding: 10px !important;
+    }
+
+    .bh-notice-board-toolbar {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) 150px !important;
+    }
+
+    .bh-notice-board-search {
+        width: 100% !important;
+    }
+
+    .bh-notice-board-type-filter {
+        width: 150px !important;
+    }
+
+    .bh-notice-board-view-all {
+        grid-column: 1 / -1 !important;
+        width: 100% !important;
+    }
+
+    .bh-notice-board-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-notice-board-table-wrap + .bh-notice-board-table-wrap {
+        border-left: 0 !important;
+        border-top: 1px solid #173b50 !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .bh-notice-board > div:nth-child(2) {
+        padding: 8px !important;
+    }
+
+    .bh-notice-board-toolbar {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-notice-board-search,
+    .bh-notice-board-type-filter,
+    .bh-notice-board-view-all {
+        width: 100% !important;
+        min-width: 0 !important;
+        grid-column: 1 !important;
+    }
+}
+
+/* =========================================================
+   CUMULATIVE FIXES — BH NOTIFICATION BOARD + PLAYER TABLE
+   ========================================================= */
+.bh-notice-board-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 180px 250px;gap:8px;padding:10px 14px;border-top:1px solid rgba(0,190,255,.16);border-bottom:1px solid rgba(0,190,255,.16);background:rgba(2,15,25,.62)}
+.bh-notice-board-toolbar .bh-input{min-width:0;height:36px}
+.bh-notice-board-toolbar .bh-secondary-button{height:36px;white-space:nowrap;margin:0}
+.bh-notice-board .bh-notice-board-grid{min-width:0}
+.bh-notice-board .bh-notice-table-scroll{overflow-x:auto}
+.bh-notice-board .bh-notice-table{min-width:650px}
+
+/* Attendance boss-specific colors */
+.bh-players-dashboard-v8 .bh-v6-attendance-cell strong{font-weight:900}
+.bh-players-dashboard-v8 .bh-attendance-sonya strong{color:#ff4f68}
+.bh-players-dashboard-v8 .bh-attendance-geomancer strong{color:#a879ff}
+.bh-players-dashboard-v8 .bh-attendance-reflector strong{color:#18e0c0}
+.bh-players-dashboard-v8 .bh-attendance-giant-hawk strong{color:#ffad38}
+.bh-players-dashboard-v8 .bh-v6-total-cell strong{color:#42e38b}
+.bh-players-dashboard-v8 .bh-v6-deduction-cell strong{color:#ff405b!important}
+.bh-players-dashboard-v8 .bh-v6-balance-cell strong{display:block;font-weight:950}
+.bh-players-dashboard-v8 .bh-v6-balance-cell small{display:block;margin-top:5px;font-size:8px;line-height:1;font-weight:900;letter-spacing:.08em}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-negative strong,.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-negative small{color:#ff405b}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-eligible strong,.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-eligible small{color:#42e38b}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-pending strong,.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-pending small{color:#ffc52f}
+
+/* Fit the player table without changing the data or actions */
+.bh-players-dashboard-v8 .bh-players-table-v8{width:100%;table-layout:fixed}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player{width:11%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class{width:9.5%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss{width:6.1%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total{width:6.5%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count{width:6.8%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted{width:7.6%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance{width:8%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated{width:8.7%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by{width:8.2%}
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions{width:10.3%}
+.bh-players-dashboard-v8 .bh-players-table-v8 th,.bh-players-dashboard-v8 .bh-players-table-v8 td{overflow:hidden}
+.bh-players-dashboard-v8 .bh-players-table-v8 .bh-player-name-wrap strong,.bh-players-dashboard-v8 .bh-players-table-v8 .bh-player-name-wrap span,.bh-players-dashboard-v8 .bh-players-table-v8 .bh-v6-updated-by-cell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bh-players-dashboard-v8 .bh-player-actions-v8{gap:5px}
+.bh-players-dashboard-v8 .bh-player-actions-v8 .bh-player-action{min-width:0;padding:7px 6px;font-size:9px}
+
+@media (max-width:1400px){
+  .bh-notice-board-toolbar{grid-template-columns:minmax(0,1fr) 150px 220px}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player{width:10%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class{width:9%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss{width:5.8%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total{width:6.1%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count{width:6.4%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted{width:7.2%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance{width:8%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated{width:8.5%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by{width:8%}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions{width:11.2%}
+}
+@media (max-width:1050px){
+  .bh-notice-board-toolbar{grid-template-columns:1fr 160px}
+  .bh-notice-board-toolbar .bh-secondary-button{grid-column:1 / -1}
+  .bh-players-dashboard-v8 .bh-players-table-v8{min-width:1180px;table-layout:auto}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col{width:auto!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player{width:150px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class{width:130px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss{width:95px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total{width:95px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count{width:105px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted{width:115px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance{width:120px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated{width:135px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by{width:135px!important}
+  .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions{width:160px!important}
+}
+@media (max-width:700px){
+  .bh-notice-board-toolbar{grid-template-columns:1fr}
+  .bh-notice-board-toolbar .bh-secondary-button{grid-column:auto;width:100%}
+  .bh-notice-board-header{gap:12px}
+  .bh-notice-board-counts{width:100%}
+  .bh-notice-board-counts>*{flex:1}
+  .bh-players-dashboard-v8 .bh-players-table-v8{min-width:1160px}
+}
+
+/* =========================================================
+   LATEST PLAYER ROSTER POLISH — MATCH FINAL DESIGN
+   This is the final override layer. It removes the old 1850px
+   desktop lock, keeps the table aligned, and makes the balance
+   status visually clear without changing data/functionality.
+   ========================================================= */
 .bh-players-dashboard-v8 .bh-players-table-card-v8 .bh-table-scroller {
     width: 100% !important;
     max-width: 100% !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
-    box-sizing: border-box !important;
     -webkit-overflow-scrolling: touch !important;
     scrollbar-width: thin;
 }
 
-/* Large desktop: use the available width instead of forcing 1850px. */
-@media (min-width: 1450px) {
+.bh-players-dashboard-v8 .bh-players-table-v8 {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    table-layout: fixed !important;
+}
+
+/* Percentage columns deliberately total 100%. */
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player { width: 11% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class { width: 9.5% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss { width: 6.1% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total { width: 6.5% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count { width: 6.8% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted { width: 7.6% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance { width: 8% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated { width: 8.7% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by { width: 8.2% !important; }
+.bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions { width: 10.3% !important; }
+
+/* Frozen player column follows the percentage column instead of the old
+   180px desktop width. */
+.bh-players-dashboard-v8 .bh-players-table-v8 thead .bh-v6-player-head,
+.bh-players-dashboard-v8 .bh-players-table-v8 tbody td:first-child {
+    width: 11% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-table-v8 thead .bh-v6-player-head {
+    background: linear-gradient(180deg, #0b1e2c 0%, #06131e 100%) !important;
+}
+
+/* Boss-specific header/cell colors. Sonya stays purple throughout. */
+.bh-players-dashboard-v8 .bh-boss-head-sonya,
+.bh-players-dashboard-v8 .bh-attendance-sonya strong { color: #bd78ff !important; }
+.bh-players-dashboard-v8 .bh-boss-head-geomancer,
+.bh-players-dashboard-v8 .bh-attendance-geomancer strong { color: #19bfff !important; }
+.bh-players-dashboard-v8 .bh-boss-head-reflector,
+.bh-players-dashboard-v8 .bh-attendance-reflector strong { color: #20dcae !important; }
+.bh-players-dashboard-v8 .bh-boss-head-giant-hawk,
+.bh-players-dashboard-v8 .bh-attendance-giant-hawk strong { color: #ffb62e !important; }
+
+.bh-players-dashboard-v8 .bh-boss-head-icon {
+    display: block !important;
+    font-size: 21px !important;
+    line-height: 1 !important;
+    margin-bottom: 5px !important;
+    font-weight: 900 !important;
+}
+.bh-players-dashboard-v8 .bh-boss-head-sonya .bh-boss-head-icon,
+.bh-players-dashboard-v8 .bh-boss-head-geomancer .bh-boss-head-icon { color: inherit !important; }
+
+/* Total is green. Sonya claim count remains purple. Only an actual
+   negative deduction is red; zero is neutral. */
+.bh-players-dashboard-v8 .bh-v6-total-cell strong { color: #20dcae !important; }
+.bh-players-dashboard-v8 .bh-v6-sonya-count-cell strong { color: #bd78ff !important; }
+.bh-players-dashboard-v8 .bh-v6-deduction-cell .bh-deduction-negative,
+.bh-players-dashboard-v8 .bh-v6-deduction-cell.bh-deduction-negative strong {
+    color: #ff405b !important;
+}
+.bh-players-dashboard-v8 .bh-v6-deduction-cell.bh-deduction-zero strong {
+    color: #d8e7ee !important;
+}
+
+/* Balance card: red negative, gold pending, green eligible. */
+.bh-players-dashboard-v8 .bh-v6-balance-cell {
+    padding: 8px !important;
+}
+.bh-players-dashboard-v8 .bh-balance-status-card {
+    min-height: 78px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    padding: 10px 7px !important;
+    border: 1px solid rgba(255, 194, 0, .35) !important;
+    border-radius: 7px !important;
+    background: rgba(255, 194, 0, .06) !important;
+}
+.bh-players-dashboard-v8 .bh-balance-status-card strong {
+    margin: 0 !important;
+    font-size: clamp(16px, 1.25vw, 23px) !important;
+    line-height: 1 !important;
+}
+.bh-players-dashboard-v8 .bh-balance-status-card span {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 24px !important;
+    padding: 3px 8px !important;
+    border: 1px solid currentColor !important;
+    border-radius: 5px !important;
+    font-size: 8px !important;
+    font-weight: 950 !important;
+    letter-spacing: .08em !important;
+    line-height: 1 !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-negative .bh-balance-status-card {
+    border-color: rgba(255, 64, 91, .48) !important;
+    background: rgba(255, 64, 91, .09) !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-negative .bh-balance-status-card strong,
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-negative .bh-balance-status-card span {
+    color: #ff405b !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-pending .bh-balance-status-card {
+    border-color: rgba(255, 194, 0, .42) !important;
+    background: rgba(255, 194, 0, .07) !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-pending .bh-balance-status-card strong,
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-pending .bh-balance-status-card span {
+    color: #ffc52f !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-eligible .bh-balance-status-card {
+    border-color: rgba(32, 220, 174, .55) !important;
+    background: rgba(32, 220, 174, .09) !important;
+}
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-eligible .bh-balance-status-card strong,
+.bh-players-dashboard-v8 .bh-v6-balance-cell.bh-balance-eligible .bh-balance-status-card span {
+    color: #20dcae !important;
+}
+
+/* Color legend under the pagination, matching the dashboard language. */
+.bh-player-table-legend {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1fr) !important;
+    gap: 12px !important;
+    margin: 0 18px 14px !important;
+    padding: 9px 12px !important;
+    border: 1px solid rgba(0, 195, 255, .16) !important;
+    border-radius: 5px !important;
+    background: rgba(3, 20, 31, .72) !important;
+}
+.bh-player-legend-attendance,
+.bh-player-legend-balance {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    gap: 14px !important;
+    min-width: 0 !important;
+}
+.bh-player-legend-balance {
+    border-left: 1px solid rgba(0, 195, 255, .22) !important;
+    padding-left: 12px !important;
+}
+.bh-player-table-legend span {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    min-width: 0 !important;
+    color: #e7f7fb !important;
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
+}
+.bh-player-table-legend b { font-size: 15px !important; }
+.bh-player-table-legend small {
+    display: block !important;
+    margin-left: 1px !important;
+    font-size: 7px !important;
+    font-weight: 700 !important;
+    opacity: .85 !important;
+}
+.bh-player-table-legend .legend-sonya { color: #bd78ff !important; }
+.bh-player-table-legend .legend-geomancer { color: #19bfff !important; }
+.bh-player-table-legend .legend-reflector { color: #20dcae !important; }
+.bh-player-table-legend .legend-hawk { color: #ffb62e !important; }
+.bh-player-table-legend .legend-total { color: #20dcae !important; }
+.bh-player-table-legend .legend-negative { color: #ff405b !important; }
+.bh-player-table-legend .legend-pending { color: #ffc52f !important; }
+.bh-player-table-legend .legend-eligible { color: #20dcae !important; }
+
+/* Desktop/tablet sizing. */
+@media (max-width: 1250px) and (min-width: 901px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: minmax(300px, .9fr) minmax(0, 1.6fr) !important;
+    }
+    .bh-players-dashboard-v8 .bh-player-stat-v8 {
+        padding: 9px 8px !important;
+    }
+    .bh-players-dashboard-v8 .bh-player-stat-v8 strong { font-size: 20px !important; }
+    .bh-player-table-legend {
+        grid-template-columns: 1fr !important;
+    }
+    .bh-player-legend-balance {
+        border-left: 0 !important;
+        border-top: 1px solid rgba(0,195,255,.16) !important;
+        padding: 8px 0 0 !important;
+    }
+}
+
+/* At narrower widths the table becomes a contained touch-scroll surface;
+   the rest of the page remains responsive and never gains page-wide overflow. */
+@media (max-width: 900px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: 1fr !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
     .bh-players-dashboard-v8 .bh-players-table-v8 {
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
+        min-width: 1180px !important;
         table-layout: fixed !important;
     }
-
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player { width: 11% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class { width: 10% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss { width: 6.2% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total { width: 6.8% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count { width: 7.1% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted { width: 7.8% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance { width: 7.8% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated { width: 8.1% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by { width: 8.1% !important; }
-    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions { width: 8.5% !important; }
-
-    /* The sticky PLAYER column follows the percentage width. */
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-player { width: 130px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-class { width: 115px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-boss { width: 88px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-total { width: 82px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-count { width: 95px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-sonya-deducted { width: 105px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-balance { width: 120px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated { width: 125px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-updated-by { width: 125px !important; }
+    .bh-players-dashboard-v8 .bh-players-table-v8 col.bh-col-actions { width: 145px !important; }
     .bh-players-dashboard-v8 .bh-players-table-v8 thead .bh-v6-player-head,
     .bh-players-dashboard-v8 .bh-players-table-v8 tbody td:first-child {
-        width: 11% !important;
-        min-width: 11% !important;
-        max-width: 11% !important;
+        width: 130px !important;
+        min-width: 130px !important;
     }
-
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
-        height: 92px !important;
+    .bh-player-table-legend {
+        grid-template-columns: 1fr !important;
     }
-
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
-        padding: 8px 7px !important;
+    .bh-player-legend-balance {
+        border-left: 0 !important;
+        border-top: 1px solid rgba(0,195,255,.16) !important;
+        padding: 8px 0 0 !important;
     }
+}
 
-    .bh-players-dashboard-v8 .bh-player-class-v8 {
+@media (max-width: 600px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        padding: 10px !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-title-wrap-v8 {
+        padding: 5px 4px !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-title-wrap-v8 h2 {
+        font-size: 22px !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: 1fr !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-filters-v8 {
+        margin: 8px !important;
+        grid-template-columns: 1fr !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
+        margin: 0 8px 8px !important;
+    }
+    .bh-player-table-legend {
+        margin: 0 8px 10px !important;
+        padding: 8px !important;
+    }
+    .bh-player-legend-attendance,
+    .bh-player-legend-balance {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        justify-content: stretch !important;
         gap: 7px !important;
     }
-
-    .bh-players-dashboard-v8 .bh-player-class-v8 img {
-        width: 38px !important;
-        height: 38px !important;
-        flex-basis: 38px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-v6-attendance-cell strong,
-    .bh-players-dashboard-v8 .bh-v6-total-cell strong,
-    .bh-players-dashboard-v8 .bh-v6-sonya-count-cell strong,
-    .bh-players-dashboard-v8 .bh-v6-deduction-cell strong {
-        font-size: 15px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-v6-balance-cell strong {
-        font-size: 17px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-v6-updated-cell,
-    .bh-players-dashboard-v8 .bh-v6-updated-by-cell {
-        font-size: 9px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-player-action {
-        min-width: 0 !important;
-        width: 100% !important;
-        padding-left: 6px !important;
-        padding-right: 6px !important;
+    .bh-player-table-legend span {
+        white-space: normal !important;
         font-size: 8px !important;
     }
+    .bh-player-table-legend small { font-size: 6px !important; }
+    .bh-player-legend-balance span:last-child { grid-column: 1 / -1; }
+}
 
-    .bh-players-dashboard-v8 .bh-player-actions-v8 {
-        gap: 4px !important;
-        flex-direction: column !important;
-        width: 100% !important;
+
+/* =========================================================
+   MINOR FINAL POLISH — PAGINATION + NOTIFICATION TOOLBAR
+   Keeps the approved design; fixes clipping/centering only.
+   ========================================================= */
+.bh-players-dashboard-v8 .bh-players-pagination-v6 {
+    width: calc(100% - 28px) !important;
+    max-width: calc(100% - 28px) !important;
+    margin-left: 14px !important;
+    margin-right: 14px !important;
+    box-sizing: border-box !important;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-pagination-v6 > strong {
+    min-width: 0 !important;
+    width: auto !important;
+    justify-self: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-pagination-v6 > span {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    justify-self: end !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+.bh-players-dashboard-v8 .bh-v6-page-controls {
+    min-width: 0 !important;
+    max-width: 100% !important;
+}
+
+.bh-notice-board-toolbar {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    grid-template-columns: minmax(0, 1fr) minmax(145px, 180px) minmax(200px, 250px) !important;
+}
+
+.bh-notice-board-toolbar > * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.bh-notice-board-toolbar .bh-secondary-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+}
+
+@media (max-width: 1100px) {
+    .bh-notice-board-toolbar {
+        grid-template-columns: minmax(0, 1fr) minmax(140px, 160px) !important;
+    }
+    .bh-notice-board-toolbar .bh-secondary-button {
+        grid-column: 1 / -1 !important;
     }
 }
 
-/* Mid-size desktop/laptop: keep the full table usable inside its own scroller. */
-@media (min-width: 901px) and (max-width: 1449px) {
-    .bh-players-dashboard-v8 .bh-players-table-v8 {
-        width: 1450px !important;
-        min-width: 1450px !important;
-        table-layout: fixed !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
-        height: 92px !important;
-    }
-}
-
-/* Tablet: cards stack, filters remain comfortable, table scroll is contained. */
-@media (max-width: 900px) {
-    .bh-players-dashboard-v8 {
-        overflow: hidden !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-players-hero-v8 {
-        padding: 12px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
-        gap: 7px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-player-stat-v8 {
-        min-width: 0 !important;
-        padding: 9px !important;
-    }
-
-    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
+@media (max-width: 700px) {
+    .bh-players-dashboard-v8 .bh-players-pagination-v6 {
         width: calc(100% - 16px) !important;
         max-width: calc(100% - 16px) !important;
         margin-left: 8px !important;
         margin-right: 8px !important;
+        grid-template-columns: 1fr !important;
+        justify-items: center !important;
+        gap: 8px !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-pagination-v6 > strong,
+    .bh-players-dashboard-v8 .bh-players-pagination-v6 > span {
+        justify-self: center !important;
+        text-align: center !important;
+        max-width: 100% !important;
+    }
+    .bh-players-dashboard-v8 .bh-v6-page-controls {
+        justify-content: center !important;
+        flex-wrap: wrap !important;
     }
 }
 
-/* Phone: no page-level horizontal overflow. */
+/* =========================================================
+   BH V10 — CATEGORY TABS / NOTICE HEADER POLISH
+   ========================================================= */
+.bh-tabs > button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 9px !important;
+}
+
+.bh-tab-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6e8798;
+  transition: color .16s ease, transform .16s ease, filter .16s ease;
+}
+.bh-tab-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bh-tabs > button:hover .bh-tab-icon { color: #31c8ff; transform: translateY(-1px); }
+.bh-tabs > button.active .bh-tab-icon { color: #fff; filter: drop-shadow(0 0 7px rgba(255,255,255,.22)); }
+.bh-tab-icon-rewards { color: #d7aa4a; }
+.bh-tabs > button.active .bh-tab-icon-rewards { color: #fff; }
+
+.bh-notice-kicker { display: inline-flex !important; align-items: center; gap: 7px; }
+.bh-notice-kicker-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #1aa7db;
+  border-radius: 6px;
+  color: #20c6ff;
+  background: rgba(16,111,151,.12);
+  box-shadow: 0 0 10px rgba(20,169,221,.10);
+  font-size: 11px;
+}
+
 @media (max-width: 600px) {
-    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
-        border-radius: 7px !important;
+  .bh-tabs > button { gap: 6px !important; font-size: 9px !important; }
+  .bh-tab-icon { width: 19px; height: 19px; }
+  .bh-tab-icon svg { width: 17px; height: 17px; }
+}
+
+/* =========================================================
+   FINAL BH CATEGORY TABS — APPROVED REFERENCE
+   ========================================================= */
+.bh-tabs {
+  position:relative;
+  display:grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  width:100% !important;
+  max-width: 860px !important;
+  min-height:52px !important;
+  margin: 8px auto 16px !important;
+  padding:0 !important;
+  overflow:hidden !important;
+  border:1px solid #155b7b !important;
+  border-radius:6px !important;
+  background:linear-gradient(180deg,#071a2a,#061522) !important;
+  box-shadow:0 0 0 1px rgba(0,0,0,.25), inset 0 0 18px rgba(0,150,220,.05) !important;
+}
+.bh-tabs > button {
+  position:relative !important;
+  min-height:50px !important;
+  height:50px !important;
+  margin:0 !important;
+  border:0 !important;
+  border-right:1px solid #7d5d17 !important;
+  border-radius:0 !important;
+  background:linear-gradient(180deg,#0a1b29,#071520) !important;
+  color:#8ea0ad !important;
+  font-size:9px !important;
+  font-weight:900 !important;
+  letter-spacing:.09em !important;
+  text-transform:uppercase !important;
+  box-shadow:none !important;
+}
+.bh-tabs > button:last-child { border-right:0 !important; }
+.bh-tabs > button:first-child.active {
+  color:#eafaff !important;
+  background:linear-gradient(180deg,#1597cf 0%,#0876ae 55%,#075d8b 100%) !important;
+  box-shadow:inset 0 0 18px rgba(0,220,255,.28),0 0 12px rgba(0,177,238,.15) !important;
+  clip-path:polygon(0 0,96% 0,100% 50%,96% 100%,0 100%,5% 50%) !important;
+  border:1px solid #22c9ff !important;
+}
+.bh-tabs > button:first-child:not(.active) { border-right-color:#0f5b79 !important; }
+.bh-tabs > button:last-child { color:#aeb1aa !important; }
+.bh-tabs > button:last-child:not(.active) { border-right:1px solid #806018 !important; }
+.bh-tabs > button:last-child.active {
+  color:#ffe7a0 !important;
+  background:linear-gradient(180deg,#4a3b16,#261f0d) !important;
+  border:1px solid #b88922 !important;
+  clip-path:polygon(0 0,96% 0,100% 50%,96% 100%,0 100%,5% 50%) !important;
+  box-shadow:inset 0 0 15px rgba(218,169,50,.12),0 0 10px rgba(210,158,34,.10) !important;
+}
+.bh-tabs > button .bh-tab-icon { width:20px !important; height:20px !important; color:#cfa534 !important; }
+.bh-tabs > button:first-child .bh-tab-icon { color:#17c8ff !important; }
+.bh-tabs > button.active .bh-tab-icon { color:#fff !important; filter:drop-shadow(0 0 6px currentColor) !important; }
+.bh-tabs > button > span:last-child { line-height:1.1 !important; }
+@media (max-width:700px) {
+  .bh-tabs { max-width:none !important; min-height:48px !important; margin:6px auto 12px !important; }
+  .bh-tabs > button { min-height:46px !important; height:46px !important; font-size:8px !important; gap:6px !important; }
+  .bh-tabs > button .bh-tab-icon { width:18px !important; height:18px !important; }
+}
+@media (max-width:420px) {
+  .bh-tabs > button { font-size:7px !important; letter-spacing:.05em !important; }
+  .bh-tabs > button .bh-tab-icon { width:17px !important; height:17px !important; }
+}
+
+/* =========================================================
+   BH TABS — FINAL REFERENCE FIX
+   Full-width BH tab rail with a centered two-tab control.
+   The rail belongs to BH only; it is NOT the global header.
+   ========================================================= */
+.bh-tabs,
+.bh-main-column > .bh-tabs {
+  position: relative !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  width: calc(100% - 52px) !important;
+  max-width: none !important;
+  min-height: 54px !important;
+  height: 54px !important;
+  margin: 12px 26px 16px !important;
+  padding: 3px !important;
+  box-sizing: border-box !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid #17648a !important;
+  border-radius: 7px !important;
+  background: linear-gradient(180deg, #071a29 0%, #061521 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 8px 25px rgba(0,0,0,.18) !important;
+}
+
+.bh-tabs > button {
+  position: relative !important;
+  flex: 0 1 430px !important;
+  width: 430px !important;
+  max-width: 430px !important;
+  min-width: 0 !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  margin: 0 !important;
+  padding: 7px 24px !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, rgba(10,27,41,.95), rgba(7,21,32,.95)) !important;
+  color: #91a6b5 !important;
+  font-size: 9px !important;
+  font-weight: 950 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  clip-path: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.bh-tabs > button:first-child {
+  border-right: 1px solid #17445c !important;
+}
+
+.bh-tabs > button:last-child {
+  border-right: 0 !important;
+  color: #c9a735 !important;
+}
+
+/* Cyan active schedule tab — angled edges only on the active tab. */
+.bh-tabs > button:first-child.active {
+  color: #f2fbff !important;
+  background: linear-gradient(180deg, #1599d2 0%, #0878ad 58%, #075d8b 100%) !important;
+  border: 1px solid #21c9ff !important;
+  box-shadow: inset 0 0 18px rgba(0,220,255,.24), 0 0 15px rgba(0,177,238,.18) !important;
+  clip-path: polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%) !important;
+  z-index: 2 !important;
+}
+
+.bh-tabs > button:last-child:not(.active) {
+  background: linear-gradient(180deg, rgba(25,40,51,.62), rgba(9,23,33,.78)) !important;
+  color: #d0a92d !important;
+  clip-path: polygon(0 0, 96% 0, 100% 50%, 96% 100%, 0 100%) !important;
+}
+
+.bh-tabs > button:last-child.active {
+  color: #fff1ba !important;
+  background: linear-gradient(180deg, #765c10, #4f3e0e) !important;
+  border: 1px solid #b88922 !important;
+  box-shadow: inset 0 0 15px rgba(218,169,50,.12), 0 0 12px rgba(210,158,34,.12) !important;
+  clip-path: polygon(0 0, 96% 0, 100% 50%, 96% 100%, 0 100%) !important;
+  z-index: 2 !important;
+}
+
+.bh-tabs > button::before,
+.bh-tabs > button::after {
+  display: none !important;
+}
+
+.bh-tabs > button .bh-tab-icon {
+  width: 22px !important;
+  height: 22px !important;
+  flex: 0 0 22px !important;
+}
+
+.bh-tabs > button .bh-tab-icon svg {
+  width: 21px !important;
+  height: 21px !important;
+}
+
+.bh-tabs > button:first-child .bh-tab-icon {
+  color: #20d4ff !important;
+}
+
+.bh-tabs > button:last-child .bh-tab-icon {
+  color: #e6b927 !important;
+}
+
+.bh-tabs > button.active .bh-tab-icon {
+  color: currentColor !important;
+  filter: drop-shadow(0 0 6px currentColor) !important;
+}
+
+@media (max-width: 900px) {
+  .bh-tabs,
+  .bh-main-column > .bh-tabs {
+    width: calc(100% - 28px) !important;
+    margin-left: 14px !important;
+    margin-right: 14px !important;
+  }
+
+  .bh-tabs > button {
+    flex: 0 1 360px !important;
+    width: 360px !important;
+    max-width: 360px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .bh-tabs,
+  .bh-main-column > .bh-tabs {
+    width: calc(100% - 16px) !important;
+    height: 50px !important;
+    min-height: 50px !important;
+    margin: 8px 8px 12px !important;
+    padding: 2px !important;
+  }
+
+  .bh-tabs > button {
+    flex: 1 1 50% !important;
+    width: 50% !important;
+    max-width: none !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 6px 8px !important;
+    gap: 7px !important;
+    font-size: 8px !important;
+    letter-spacing: .04em !important;
+  }
+
+  .bh-tabs > button .bh-tab-icon {
+    width: 19px !important;
+    height: 19px !important;
+    flex-basis: 19px !important;
+  }
+
+  .bh-tabs > button .bh-tab-icon svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .bh-tabs > button {
+    gap: 5px !important;
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+    font-size: 7px !important;
+  }
+}
+
+
+/* =========================================================
+   BH TAB NAVIGATION TARGETS
+   Clicking REWARDS must land on the Boss Hunt Rewards panel
+   itself, not on the tab rail or a stale saved scroll position.
+========================================================= */
+#bh-reward-center,
+#bh-schedule-panel,
+#bh-notifications-panel {
+  scroll-margin-top: 96px;
+}
+
+@media (max-width: 900px) {
+  #bh-reward-center,
+  #bh-schedule-panel,
+  #bh-notifications-panel {
+    scroll-margin-top: 78px;
+  }
+}
+
+
+/* =========================================================
+   FINAL REWARD STATUS LOGIC / PRESENTATION
+   AVAILABLE | WAITING FOR DUCK RACE | CLAIMED OUT
+   ========================================================= */
+.bh-reward-status-row {
+  display:grid !important;
+  grid-template-columns:92px minmax(0,1fr) !important;
+  gap:8px !important;
+  align-items:center !important;
+}
+.bh-reward-status-row strong {
+  display:inline-flex !important;
+  justify-content:flex-end !important;
+  align-items:center !important;
+  min-width:0 !important;
+  text-align:right !important;
+  font-size:10px !important;
+  font-weight:900 !important;
+  letter-spacing:.045em !important;
+}
+.bh-reward-status-detail {
+  display:grid !important;
+  grid-template-columns:92px minmax(0,1fr) !important;
+  gap:8px !important;
+  align-items:center !important;
+  padding:0 0 8px !important;
+  border-bottom:1px solid rgba(38,84,108,.32) !important;
+}
+.bh-reward-status-detail em {
+  min-width:0 !important;
+  color:#6f91a5 !important;
+  font-size:9px !important;
+  line-height:1.35 !important;
+  font-style:normal !important;
+  text-align:right !important;
+  overflow-wrap:anywhere !important;
+}
+.bh-reward-boss-info-list .status-available { color:#54e39f !important; }
+.bh-reward-boss-info-list .status-waiting { color:#ffc84e !important; }
+.bh-reward-boss-info-list .status-claimed-out { color:#9bb0bd !important; }
+.bh-reward-boss-card-detailed:has(.status-available) {
+  box-shadow:0 0 18px rgba(42,220,150,.055);
+}
+.bh-reward-boss-card-detailed:has(.status-claimed-out) { opacity:.94; }
+@media (max-width:680px) {
+  .bh-reward-status-row,
+  .bh-reward-status-detail {
+    grid-template-columns:1fr !important;
+    gap:3px !important;
+  }
+  .bh-reward-status-row strong,
+  .bh-reward-status-detail em {
+    justify-content:flex-start !important;
+    text-align:left !important;
+  }
+}
+
+/* =========================================================
+   FINAL REWARD INVENTORY TABLE — RESPONSIVE / FIT POLISH
+   Keeps the latest BH design while fixing the inventory table
+   spacing, filter layout, action sizing and mobile overflow.
+========================================================= */
+.bh-reward-filters {
+    display: grid !important;
+    grid-template-columns: minmax(0, 2fr) minmax(170px, 1fr) minmax(170px, 1fr) !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 10px 18px !important;
+    margin: 0 !important;
+    border-bottom: 1px solid rgba(31, 83, 108, .65) !important;
+}
+
+.bh-reward-filters .bh-input,
+.bh-reward-filters .bh-select {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 38px !important;
+    box-sizing: border-box !important;
+}
+
+.bh-reward-management-table {
+    width: 100% !important;
+    min-width: 1320px !important;
+    table-layout: fixed !important;
+}
+
+.bh-reward-management-table th,
+.bh-reward-management-table td {
+    box-sizing: border-box !important;
+    padding: 10px 11px !important;
+    overflow: hidden !important;
+}
+
+/* Balanced desktop column widths. */
+.bh-reward-management-table th:nth-child(1),
+.bh-reward-management-table td:nth-child(1) { width: 16%; }
+.bh-reward-management-table th:nth-child(2),
+.bh-reward-management-table td:nth-child(2) { width: 8%; }
+.bh-reward-management-table th:nth-child(3),
+.bh-reward-management-table td:nth-child(3) { width: 10%; }
+.bh-reward-management-table th:nth-child(4),
+.bh-reward-management-table td:nth-child(4) { width: 6%; }
+.bh-reward-management-table th:nth-child(5),
+.bh-reward-management-table td:nth-child(5) { width: 9%; }
+.bh-reward-management-table th:nth-child(6),
+.bh-reward-management-table td:nth-child(6) { width: 8%; }
+.bh-reward-management-table th:nth-child(7),
+.bh-reward-management-table td:nth-child(7) { width: 6%; }
+.bh-reward-management-table th:nth-child(8),
+.bh-reward-management-table td:nth-child(8) { width: 7%; }
+.bh-reward-management-table th:nth-child(9),
+.bh-reward-management-table td:nth-child(9) { width: 9%; }
+.bh-reward-management-table th:nth-child(10),
+.bh-reward-management-table td:nth-child(10) { width: 10%; }
+.bh-reward-management-table th:nth-child(11),
+.bh-reward-management-table td:nth-child(11) { width: 10%; }
+.bh-reward-management-table th:nth-child(12),
+.bh-reward-management-table td:nth-child(12) { width: 11%; }
+
+.bh-reward-management-table td:first-child > strong {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.bh-reward-management-table .bh-reward-assignee,
+.bh-reward-management-table .bh-reward-row-hint {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.bh-reward-management-table .bh-reward-class-cell {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.bh-reward-management-table .bh-reward-class-cell img {
+    width: 17px !important;
+    height: 17px !important;
+    flex: 0 0 17px !important;
+    object-fit: contain !important;
+}
+
+.bh-reward-management-table .bh-action-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 0 !important;
+    width: 100% !important;
+}
+
+.bh-reward-management-table .bh-small-button {
+    min-width: 52px !important;
+    min-height: 30px !important;
+    padding: 0 9px !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+}
+
+.bh-reward-management-table .bh-empty-cell {
+    height: 120px !important;
+    text-align: center !important;
+}
+
+/* The reward inventory pagination belongs to the inventory table,
+   so keep it visually centered and prevent the page text from
+   colliding with the buttons on narrow screens. */
+#reward-inventory + .bh-table-scroller + .bh-pagination,
+.bh-reward-management-table + .bh-pagination {
+    min-height: 56px !important;
+    margin: 0 !important;
+    padding: 10px 14px 14px !important;
+    box-sizing: border-box !important;
+}
+
+#reward-inventory + .bh-table-scroller + .bh-pagination span,
+.bh-reward-management-table + .bh-pagination span {
+    min-width: 105px !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+}
+
+@media (max-width: 1050px) {
+    .bh-reward-filters {
+        grid-template-columns: minmax(0, 1.6fr) minmax(150px, 1fr) minmax(150px, 1fr) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    .bh-reward-filters {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+        padding: 10px 12px !important;
     }
 
-    .bh-players-dashboard-v8 .bh-players-table-card-v8 .bh-table-scroller {
-        max-width: 100% !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
+    .bh-reward-filters .bh-input,
+    .bh-reward-filters .bh-select {
+        height: 40px !important;
     }
 
-    .bh-players-dashboard-v8 .bh-players-table-v8 {
-        width: 1180px !important;
-        min-width: 1180px !important;
+    .bh-reward-inventory-title {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
     }
 
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody tr.bh-player-row-v8,
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
-        height: 82px !important;
+    .bh-reward-management-table {
+        min-width: 1320px !important;
     }
 
-    .bh-players-dashboard-v8 .bh-players-table-v8 tbody td {
-        padding: 7px 8px !important;
+    .bh-reward-management-table th,
+    .bh-reward-management-table td {
+        padding: 9px 9px !important;
     }
+
+    #reward-inventory + .bh-table-scroller + .bh-pagination,
+    .bh-reward-management-table + .bh-pagination {
+        gap: 6px !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .bh-reward-add-inline {
+        width: 100% !important;
+    }
+
+    .bh-reward-management-table {
+        min-width: 1320px !important;
+    }
+}
+
+/* =========================================================
+   FINAL PAGINATION FIX — latest BH layout
+   Prevent PREVIOUS / Page / NEXT from overlapping.
+   Responsive for desktop, laptop, iOS and Android.
+   ========================================================= */
+.bh-pagination {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 58px !important;
+    display: grid !important;
+    grid-template-columns: minmax(82px, auto) minmax(110px, 1fr) minmax(82px, auto) !important;
+    align-items: center !important;
+    justify-items: center !important;
+    column-gap: 10px !important;
+    padding: 12px 16px !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+}
+
+.bh-pagination > button {
+    width: auto !important;
+    min-width: 82px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 0 12px !important;
+    margin: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap !important;
+    flex: none !important;
+    box-sizing: border-box !important;
+}
+
+.bh-pagination > span {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    box-sizing: border-box !important;
+}
+
+/* Reward inventory pagination sits directly under the table. */
+#reward-inventory + .bh-table-scroller + .bh-pagination,
+.bh-reward-management-table + .bh-pagination {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 16px !important;
+}
+
+@media (max-width: 600px) {
+    .bh-pagination {
+        grid-template-columns: minmax(76px, 1fr) minmax(100px, 1.35fr) minmax(76px, 1fr) !important;
+        column-gap: 6px !important;
+        padding: 10px 8px !important;
+    }
+
+    .bh-pagination > button {
+        min-width: 0 !important;
+        width: 100% !important;
+        height: 34px !important;
+        padding: 0 8px !important;
+        font-size: 9px !important;
+    }
+
+    .bh-pagination > span {
+        padding: 0 2px !important;
+        font-size: 10px !important;
+    }
+}
+
+@media (max-width: 380px) {
+    .bh-pagination {
+        grid-template-columns: 1fr 1.2fr 1fr !important;
+        column-gap: 4px !important;
+        padding-left: 5px !important;
+        padding-right: 5px !important;
+    }
+
+    .bh-pagination > button {
+        font-size: 8px !important;
+        padding: 0 5px !important;
+    }
+
+    .bh-pagination > span {
+        font-size: 9px !important;
+        padding: 0 !important;
+    }
+}
+
+
+/* =========================================================
+   PLAYERS & HISTORY — MINI BOSS REWARDS SUMMARY CARD
+   Latest header addition. Keeps the existing four stat cards
+   intact and uses the real rewardBossSummary data.
+   ========================================================= */
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+    min-width: 0 !important;
+    min-height: 118px !important;
+    padding: 13px 14px 11px !important;
+    border: 1px solid rgba(0, 195, 255, .34) !important;
+    border-radius: 8px !important;
+    background:
+        linear-gradient(145deg, rgba(5, 25, 39, .98), rgba(2, 12, 21, .98)) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+}
+
+.bh-mini-boss-rewards-head {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 8px !important;
+}
+
+.bh-mini-boss-rewards-title {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+}
+
+.bh-mini-boss-rewards-gift {
+    width: 29px !important;
+    height: 29px !important;
+    display: grid !important;
+    place-items: center !important;
+    flex: 0 0 29px !important;
+    border: 1px solid rgba(0, 195, 255, .35) !important;
+    border-radius: 7px !important;
+    background: rgba(0, 153, 214, .08) !important;
+    font-size: 16px !important;
+}
+
+.bh-mini-boss-rewards-title > div {
+    min-width: 0 !important;
+}
+
+.bh-mini-boss-rewards-title span:not(.bh-mini-boss-rewards-gift) {
+    display: block !important;
+    color: #8ddcff !important;
+    font-size: 9px !important;
+    font-weight: 950 !important;
+    letter-spacing: .08em !important;
+    line-height: 1.2 !important;
+}
+
+.bh-mini-boss-rewards-title small {
+    display: block !important;
+    margin-top: 3px !important;
+    color: #62899d !important;
+    font-size: 7px !important;
+    font-weight: 800 !important;
+    letter-spacing: .06em !important;
+}
+
+.bh-mini-boss-rewards-list {
+    display: grid !important;
+    gap: 5px !important;
+}
+
+.bh-mini-boss-row {
+    display: grid !important;
+    grid-template-columns: 27px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-width: 0 !important;
+}
+
+.bh-mini-boss-icon-wrap {
+    width: 27px !important;
+    height: 27px !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 50% !important;
+    background: rgba(4, 25, 38, .95) !important;
+    overflow: hidden !important;
+}
+
+.bh-mini-boss-icon {
+    width: 24px !important;
+    height: 24px !important;
+    object-fit: contain !important;
+    display: block !important;
+    filter: drop-shadow(0 0 6px currentColor) !important;
+}
+
+.bh-mini-boss-main {
+    min-width: 0 !important;
+}
+
+.bh-mini-boss-topline,
+.bh-mini-boss-bottomline {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 7px !important;
+    min-width: 0 !important;
+}
+
+.bh-mini-boss-topline strong {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 8px !important;
+    font-weight: 950 !important;
+    letter-spacing: .06em !important;
+}
+
+.bh-mini-boss-topline b {
+    flex: 0 0 auto !important;
+    font-size: 9px !important;
+    font-weight: 950 !important;
+}
+
+.bh-mini-boss-track {
+    width: 100% !important;
+    height: 4px !important;
+    margin: 3px 0 2px !important;
+    border-radius: 99px !important;
+    background: #112c3c !important;
+    overflow: hidden !important;
+}
+
+.bh-mini-boss-track span {
+    display: block !important;
+    height: 100% !important;
+    border-radius: inherit !important;
+    min-width: 0 !important;
+    transition: width .2s ease !important;
+}
+
+.bh-mini-boss-bottomline span {
+    font-size: 6px !important;
+    font-weight: 850 !important;
+    letter-spacing: .05em !important;
+    white-space: nowrap !important;
+}
+
+.bh-mini-boss-blue { color: #19bfff !important; }
+.bh-mini-boss-blue .bh-mini-boss-topline strong,
+.bh-mini-boss-blue .bh-mini-boss-topline b,
+.bh-mini-boss-blue .bh-mini-boss-bottomline span { color: #19bfff !important; }
+.bh-mini-boss-blue .bh-mini-boss-track span { background: #19bfff !important; box-shadow: 0 0 8px rgba(25,191,255,.45) !important; }
+
+.bh-mini-boss-green { color: #20dcae !important; }
+.bh-mini-boss-green .bh-mini-boss-topline strong,
+.bh-mini-boss-green .bh-mini-boss-topline b,
+.bh-mini-boss-green .bh-mini-boss-bottomline span { color: #20dcae !important; }
+.bh-mini-boss-green .bh-mini-boss-track span { background: #20dcae !important; box-shadow: 0 0 8px rgba(32,220,174,.42) !important; }
+
+.bh-mini-boss-gold { color: #ffb62e !important; }
+.bh-mini-boss-gold .bh-mini-boss-topline strong,
+.bh-mini-boss-gold .bh-mini-boss-topline b,
+.bh-mini-boss-gold .bh-mini-boss-bottomline span { color: #ffb62e !important; }
+.bh-mini-boss-gold .bh-mini-boss-track span { background: #ffb62e !important; box-shadow: 0 0 8px rgba(255,182,46,.42) !important; }
+
+/* Five summary columns on wide desktop: title + five cards remain
+   balanced without creating a large empty area. */
+@media (min-width: 1500px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: minmax(350px, .82fr) minmax(0, 2.18fr) !important;
+        gap: 16px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+        gap: 9px !important;
+    }
+}
+
+@media (max-width: 1499px) and (min-width: 1101px) {
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: span 3 !important;
+    }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        min-height: 0 !important;
+        padding: 12px !important;
+    }
+
+    .bh-mini-boss-rewards-list {
+        gap: 7px !important;
+    }
+
+    .bh-mini-boss-row {
+        grid-template-columns: 31px minmax(0, 1fr) !important;
+    }
+
+    .bh-mini-boss-icon-wrap {
+        width: 31px !important;
+        height: 31px !important;
+    }
+
+    .bh-mini-boss-icon {
+        width: 28px !important;
+        height: 28px !important;
+    }
+}
+
+/* =========================================================
+   LATEST V9 — COMPACT PLAYER HEADER / MINI-BOSS CARD
+   Keeps the established design but removes the excessive empty
+   space in the Players & History hero. The Sonya eligibility icon
+   remains unchanged.
+   ========================================================= */
+.bh-players-dashboard-v8 .bh-players-hero-v8 {
+    grid-template-columns: minmax(390px, .72fr) minmax(0, 2.28fr) !important;
+    gap: 12px !important;
+    padding: 12px 14px 14px !important;
+    align-items: stretch !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-title-wrap-v8 {
+    min-width: 0 !important;
+    padding: 4px 8px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-title-wrap-v8 > div:last-child {
+    min-width: 0 !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-emblem-v8 {
+    width: 70px !important;
+    height: 86px !important;
+    flex: 0 0 70px !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-title-wrap-v8 h2 {
+    font-size: 25px !important;
+    line-height: 1.05 !important;
+    margin: 2px 0 4px !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-title-wrap-v8 p {
+    max-width: 360px !important;
+    font-size: 10px !important;
+    line-height: 1.45 !important;
+    margin: 0 !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+    min-width: 0 !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8,
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+    min-width: 0 !important;
+    min-height: 104px !important;
+    height: 100% !important;
+    padding: 11px 10px !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 9px !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 > div:last-child {
+    min-width: 0 !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 strong {
+    font-size: 22px !important;
+    line-height: 1 !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 span {
+    display: block !important;
+    font-size: 8px !important;
+    line-height: 1.2 !important;
+    letter-spacing: .8px !important;
+    overflow-wrap: anywhere !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 small {
+    display: block !important;
+    margin-top: 3px !important;
+    font-size: 7px !important;
+    line-height: 1.25 !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8 em {
+    display: block !important;
+    margin-top: 2px !important;
+    font-size: 7px !important;
+    line-height: 1.2 !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-icon {
+    width: 38px !important;
+    height: 38px !important;
+    flex: 0 0 38px !important;
+    font-size: 17px !important;
+}
+
+/* Mini-boss card: compact but readable, with the actual boss artwork. */
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+    padding: 10px 10px 8px !important;
+}
+
+.bh-mini-boss-rewards-head {
+    margin-bottom: 5px !important;
+}
+
+.bh-mini-boss-rewards-title {
+    gap: 6px !important;
+}
+
+.bh-mini-boss-rewards-gift {
+    width: 25px !important;
+    height: 25px !important;
+    flex-basis: 25px !important;
+    font-size: 14px !important;
+}
+
+.bh-mini-boss-rewards-title span:not(.bh-mini-boss-rewards-gift) {
+    font-size: 8px !important;
+}
+
+.bh-mini-boss-rewards-title small {
+    margin-top: 2px !important;
+    font-size: 6px !important;
+}
+
+.bh-mini-boss-rewards-list {
+    gap: 4px !important;
+}
+
+.bh-mini-boss-row {
+    grid-template-columns: 25px minmax(0, 1fr) !important;
+    gap: 6px !important;
+}
+
+.bh-mini-boss-icon-wrap {
+    width: 25px !important;
+    height: 25px !important;
+}
+
+.bh-mini-boss-icon {
+    width: 23px !important;
+    height: 23px !important;
+}
+
+.bh-mini-boss-topline strong {
+    font-size: 7px !important;
+}
+
+.bh-mini-boss-topline b {
+    font-size: 8px !important;
+}
+
+.bh-mini-boss-track {
+    height: 3px !important;
+    margin: 2px 0 1px !important;
+}
+
+.bh-mini-boss-bottomline span {
+    font-size: 5.5px !important;
+}
+
+/* Prevent the compact header from becoming cramped at laptop widths. */
+@media (max-width: 1499px) and (min-width: 1101px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: minmax(330px, .68fr) minmax(0, 1.32fr) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: span 3 !important;
+        min-height: 92px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-stat-v8 {
+        min-height: 92px !important;
+    }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: minmax(290px, .65fr) minmax(0, 1.35fr) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: 1fr !important;
+        padding: 12px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-title-wrap-v8 {
+        padding: 4px 2px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        gap: 9px !important;
+        padding: 10px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-title-wrap-v8 {
+        align-items: flex-start !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-emblem-v8 {
+        width: 58px !important;
+        height: 72px !important;
+        flex-basis: 58px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-title-wrap-v8 h2 {
+        font-size: 21px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: 1fr !important;
+        gap: 7px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-stat-v8,
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card {
+        min-height: 76px !important;
+    }
+}
+
+/* =========================================================
+   V10 — APPROVED DASHBOARD COMPOSITION
+   Uses the full desktop width, gives Sonya a real boss image,
+   and turns Mini Boss Rewards into the wider three-boss card
+   shown in the approved design.
+   ========================================================= */
+.bh-players-dashboard-v8 .bh-players-hero-v8 {
+    display: grid !important;
+    grid-template-columns: minmax(405px, 0.88fr) minmax(0, 2.12fr) !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+}
+
+.bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, .82fr) minmax(0, .82fr) minmax(0, 1.12fr) minmax(0, .95fr) minmax(0, 1.72fr) !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-v8,
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-card-v10 {
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+}
+
+/* Sonya: the approved purple boss-art treatment. */
+.bh-players-dashboard-v8 .bh-player-stat-sonya {
+    position: relative !important;
+    isolation: isolate !important;
+    padding-left: 86px !important;
+    overflow: hidden !important;
+    border-color: rgba(177, 93, 255, .42) !important;
+    background:
+        linear-gradient(90deg, rgba(78, 30, 115, .32), rgba(9, 20, 35, .96) 58%),
+        linear-gradient(145deg, rgba(18, 12, 40, .98), rgba(3, 12, 22, .98)) !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-sonya-art {
+    position: absolute !important;
+    z-index: -1 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 92px !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    opacity: .95 !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-sonya-art::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(90deg, rgba(8, 13, 25, 0) 35%, rgba(8, 13, 25, .72) 100%) !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-sonya-art img {
+    width: 92px !important;
+    height: 112px !important;
+    max-width: none !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+    filter: drop-shadow(0 0 14px rgba(180, 82, 255, .26)) !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-sonya-icon {
+    position: relative !important;
+    z-index: 2 !important;
+    flex: 0 0 40px !important;
+}
+
+.bh-players-dashboard-v8 .bh-player-stat-sonya .bh-player-stat-content {
+    position: relative !important;
+    z-index: 2 !important;
+    min-width: 0 !important;
+}
+
+/* Mini-boss summary: wide, horizontal, image-led. */
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-card-v10 {
+    min-height: 118px !important;
+    padding: 10px 11px !important;
+    border-color: rgba(0, 195, 255, .40) !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-head {
+    margin-bottom: 7px !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-rewards-list {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-row {
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: 35px minmax(0, 1fr) !important;
+    gap: 7px !important;
+    padding: 5px !important;
+    border: 1px solid rgba(20, 83, 111, .34) !important;
+    border-radius: 7px !important;
+    background: rgba(2, 14, 24, .62) !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-icon-wrap {
+    width: 35px !important;
+    height: 35px !important;
+    align-self: center !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-icon {
+    width: 35px !important;
+    height: 35px !important;
+    object-fit: contain !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-main {
+    min-width: 0 !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-topline strong {
+    font-size: 8px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-topline b {
+    font-size: 8px !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-track {
+    height: 3px !important;
+    margin: 4px 0 !important;
+}
+
+.bh-players-dashboard-v8 .bh-mini-boss-bottomline span {
+    font-size: 6px !important;
+    white-space: nowrap !important;
+}
+
+/* Large desktop: use every available pixel without stretching the title too far. */
+@media (min-width: 1500px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: minmax(410px, .82fr) minmax(0, 2.18fr) !important;
+    }
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: minmax(135px, .78fr) minmax(135px, .78fr) minmax(175px, 1fr) minmax(155px, .9fr) minmax(360px, 1.8fr) !important;
+    }
+}
+
+/* Laptop/tablet: preserve readability and avoid tiny cards. */
+@media (max-width: 1499px) and (min-width: 901px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card-v10 {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .bh-players-dashboard-v8 .bh-players-hero-v8 {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-card-v10 {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .bh-players-dashboard-v8 .bh-players-stat-grid-v8 {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-stat-sonya {
+        padding-left: 78px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-player-stat-sonya-art,
+    .bh-players-dashboard-v8 .bh-player-stat-sonya-art img {
+        width: 78px !important;
+    }
+
+    .bh-players-dashboard-v8 .bh-mini-boss-rewards-list {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* =========================================================
+   V11 — NOTIFICATIONS COMPACT / CALENDAR DATE FILTER
+   Keeps the approved V10 design and tightens only the full
+   notification history layout.
+   ========================================================= */
+.bh-notifications-full {
+    box-sizing: border-box !important;
+    padding: 18px 20px !important;
+}
+
+.bh-notifications-full .bh-panel-header {
+    min-height: 0 !important;
+    margin-bottom: 10px !important;
+    padding-bottom: 10px !important;
+    align-items: center !important;
+}
+
+.bh-notifications-full .bh-panel-header h2 {
+    margin: 2px 0 3px !important;
+}
+
+.bh-notifications-full .bh-panel-header p {
+    margin: 0 !important;
+}
+
+.bh-notifications-full .bh-panel-header .bh-secondary-button {
+    flex: 0 0 auto !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 7px 14px !important;
+}
+
+/* First filter row: one compact line on desktop/laptop. */
+.bh-notifications-full .bh-notifications-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(280px, 1.65fr) minmax(145px, .9fr) minmax(145px, .9fr) minmax(145px, .9fr) !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+    margin: 0 0 7px !important;
+    padding: 0 !important;
+}
+
+.bh-notifications-full .bh-notifications-toolbar > .bh-input {
+    min-width: 0 !important;
+    width: 100% !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    box-sizing: border-box !important;
+    padding: 7px 10px !important;
+    font-size: 10px !important;
+}
+
+/* Date/time controls occupy a short second row instead of wrapping awkwardly. */
+.bh-notifications-full .bh-notice-date-filter {
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 1px 0 0 !important;
+    border: 0 !important;
+}
+
+.bh-notifications-full .bh-notice-date-filter label {
+    gap: 3px !important;
+    flex: 0 0 auto !important;
+}
+
+.bh-notifications-full .bh-notice-date-filter .bh-input {
+    width: 142px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    box-sizing: border-box !important;
+    padding: 7px 9px !important;
+    font-size: 10px !important;
+}
+
+.bh-notifications-full .bh-notice-date-filter label:nth-child(2) .bh-input,
+.bh-notifications-full .bh-notice-date-filter label:nth-child(3) .bh-input {
+    width: 100px !important;
+}
+
+/* Native date picker gives desktop, iOS and Android users their familiar calendar UI. */
+.bh-notifications-full .bh-notice-date-filter input[type="date"] {
+    color-scheme: dark !important;
+    cursor: pointer !important;
+}
+
+.bh-notifications-full .bh-notice-date-filter input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: .95 !important;
+    cursor: pointer !important;
+    filter: none !important;
+}
+
+.bh-notifications-full .bh-notice-clear-filter {
+    flex: 0 0 auto !important;
+    margin-bottom: 0 !important;
+}
+
+/* Compact result header. */
+.bh-notifications-full .bh-notifications-results-head {
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0 10px !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    box-sizing: border-box !important;
+}
+
+/* Tighter rows without sacrificing readability. */
+.bh-notifications-full .bh-notifications-full-table-scroll {
+    max-height: none !important;
+    margin: 0 !important;
+}
+
+.bh-notifications-full .bh-notifications-full-table th,
+.bh-notifications-full .bh-notifications-full-table td {
+    padding: 7px 9px !important;
+    line-height: 1.2 !important;
+}
+
+.bh-notifications-full .bh-notifications-full-table tbody tr {
+    height: 42px !important;
+}
+
+.bh-notifications-full .bh-notice-table-message {
+    gap: 2px !important;
+}
+
+.bh-notifications-full .bh-notice-table-message strong {
+    line-height: 1.15 !important;
+}
+
+.bh-notifications-full .bh-notice-table-message span {
+    line-height: 1.15 !important;
+}
+
+.bh-notifications-full .bh-notifications-pagination {
+    min-height: 42px !important;
+    height: 42px !important;
+    margin-top: 7px !important;
+    padding: 4px 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* Laptop/tablet: keep controls compact but allow a clean two-column filter row. */
+@media (max-width: 1100px) {
+    .bh-notifications-full .bh-notifications-toolbar {
+        grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(120px, 1fr)) !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter {
+        grid-column: 1 / -1 !important;
+    }
+}
+
+@media (max-width: 760px) {
+    .bh-notifications-full {
+        padding: 14px !important;
+    }
+
+    .bh-notifications-full .bh-panel-header {
+        align-items: flex-start !important;
+        gap: 8px !important;
+    }
+
+    .bh-notifications-full .bh-panel-header .bh-secondary-button {
+        width: auto !important;
+    }
+
+    .bh-notifications-full .bh-notifications-toolbar {
+        grid-template-columns: 1fr 1fr !important;
+    }
+
+    .bh-notifications-full .bh-notifications-toolbar > .bh-input:first-child {
+        grid-column: 1 / -1 !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 7px !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter label:first-child {
+        grid-column: 1 / -1 !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter label,
+    .bh-notifications-full .bh-notice-date-filter .bh-input,
+    .bh-notifications-full .bh-notice-date-filter label:nth-child(2) .bh-input,
+    .bh-notifications-full .bh-notice-date-filter label:nth-child(3) .bh-input {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .bh-notifications-full .bh-notice-clear-filter {
+        width: 100% !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .bh-notifications-full .bh-panel-header {
+        flex-direction: column !important;
+    }
+
+    .bh-notifications-full .bh-panel-header .bh-secondary-button {
+        width: 100% !important;
+    }
+
+    .bh-notifications-full .bh-notifications-toolbar {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-notifications-full .bh-notifications-toolbar > .bh-input,
+    .bh-notifications-full .bh-notifications-toolbar > .bh-input:first-child {
+        grid-column: 1 !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter {
+        grid-template-columns: 1fr !important;
+    }
+
+    .bh-notifications-full .bh-notice-date-filter label:first-child {
+        grid-column: 1 !important;
+    }
+
+    .bh-notifications-full .bh-notifications-results-head {
+        padding: 0 6px !important;
+        font-size: 9px !important;
+    }
+}
+
+/* =========================================================
+   V12 — UNIFIED GUILD BOSS HUNT NOTIFICATIONS
+   One feed, precise categories, compact spacing, responsive.
+========================================================= */
+.bh-notifications-unified {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: clamp(16px, 2vw, 24px) !important;
+}
+
+.bh-unified-notice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(31, 91, 119, .72);
+}
+
+.bh-unified-notice-title-wrap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.bh-unified-notice-emblem {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #008fc9;
+  border-radius: 15px;
+  background: radial-gradient(circle at 50% 35%, rgba(0, 174, 239, .18), rgba(3, 20, 33, .9) 68%);
+  box-shadow: inset 0 0 18px rgba(0, 174, 239, .08), 0 0 18px rgba(0, 174, 239, .06);
+  color: #20c4ff;
+  font-size: 28px;
+}
+
+.bh-unified-notice-title-wrap h2 {
+  margin: 2px 0 4px;
+  color: #f2f7fa;
+  font-size: clamp(20px, 2vw, 27px);
+  line-height: 1.1;
+}
+
+.bh-unified-notice-title-wrap p {
+  margin: 0;
+  color: #7f9bad;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.bh-unified-notice-summary {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.bh-unified-count {
+  min-width: 82px;
+  padding: 9px 12px;
+  border: 1px solid #29465c;
+  border-radius: 8px;
+  background: #071521;
+  text-align: center;
+}
+
+.bh-unified-count strong,
+.bh-unified-count span { display: block; }
+.bh-unified-count strong { color: #edf5f8; font-size: 18px; line-height: 1; }
+.bh-unified-count span { margin-top: 5px; color: #7895a7; font-size: 8px; font-weight: 900; letter-spacing: .08em; }
+.bh-unified-count.new { border-color: rgba(0, 174, 239, .55); }
+.bh-unified-count.new strong { color: #20c4ff; }
+.bh-unified-count.new span { color: #20c4ff; }
+
+.bh-unified-refresh {
+  min-width: 112px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #008fc9;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(0, 143, 201, .16), rgba(4, 24, 38, .92));
+  color: #20c4ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  cursor: pointer;
+}
+.bh-unified-refresh:hover { background: rgba(0, 143, 201, .25); }
+.bh-unified-refresh svg { width: 18px; height: 18px; }
+
+.bh-unified-notice-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(130px, 1fr)) minmax(150px, 1fr) minmax(120px, .8fr) minmax(120px, .8fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin: 14px 0 10px;
+}
+
+.bh-unified-search {
+  position: relative;
+  min-width: 0;
+}
+.bh-unified-search svg {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  top: 50%;
+  width: 17px;
+  height: 17px;
+  transform: translateY(-50%);
+  color: #20c4ff;
+  pointer-events: none;
+}
+.bh-unified-search .bh-input { padding-left: 37px !important; width: 100%; box-sizing: border-box; }
+
+.bh-unified-notice-filters > .bh-input { width: 100%; min-width: 0; box-sizing: border-box; }
+.bh-unified-date-control,
+.bh-unified-time-control { min-width: 0; }
+.bh-unified-date-control label,
+.bh-unified-time-control label {
+  display: block;
+  margin: 0 0 4px 2px;
+  color: #7895a7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+.bh-unified-date-input { position: relative; }
+.bh-unified-date-input .bh-input { width: 100%; box-sizing: border-box; }
+.bh-unified-date-input > span {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #20c4ff;
+  pointer-events: none;
+  font-size: 13px;
+}
+.bh-unified-date-input input::-webkit-calendar-picker-indicator { opacity: .85; cursor: pointer; }
+.bh-unified-clear { white-space: nowrap; height: 36px; }
+
+.bh-unified-notice-results-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  color: #7895a7;
+  font-size: 10px;
+}
+.bh-unified-notice-results-head strong { color: #20c4ff; font-size: 12px; }
+.bh-unified-notice-results-head b { color: #20c4ff; }
+.bh-results-dot { color: #405a6a; padding: 0 4px; }
+
+.bh-unified-notice-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #29465c;
+  border-radius: 8px;
+  background: #06131f;
+}
+
+.bh-unified-notice-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.bh-unified-notice-table .c-num { width: 42px; }
+.bh-unified-notice-table .c-status { width: 70px; }
+.bh-unified-notice-table .c-icon { width: 46px; }
+.bh-unified-notice-table .c-category { width: 118px; }
+.bh-unified-notice-table .c-message { width: auto; }
+.bh-unified-notice-table .c-time { width: 158px; }
+.bh-unified-notice-table .c-by { width: 150px; }
+.bh-unified-notice-table .c-open { width: 34px; }
+
+.bh-unified-notice-table th {
+  height: 34px;
+  padding: 0 9px;
+  background: #091c2a;
+  border-bottom: 1px solid #29465c;
+  color: #7895a7;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-align: left;
+  white-space: nowrap;
+}
+.bh-unified-notice-table th:first-child { text-align: center; }
+
+.bh-unified-notice-table td {
+  height: 54px;
+  padding: 7px 9px;
+  border-bottom: 1px solid rgba(41, 70, 92, .58);
+  color: #b4c8d3;
+  font-size: 10px;
+  vertical-align: middle;
+}
+.bh-unified-notice-table tbody tr:last-child td { border-bottom: 0; }
+.bh-unified-notice-row { transition: background .14s ease, box-shadow .14s ease; cursor: pointer; }
+.bh-unified-notice-row:hover { background: rgba(0, 157, 219, .055); }
+.bh-unified-notice-row:hover .notice-open span { transform: translateX(2px); }
+.notice-number { text-align: center; color: #7290a0 !important; }
+.notice-time { color: #a9c0cc !important; white-space: nowrap; }
+.notice-by { color: #a9c0cc !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notice-open { text-align: center; }
+.notice-open span { display: inline-block; color: #20c4ff; font-size: 21px; line-height: 1; transition: transform .14s ease; }
+
+.bh-unified-status,
+.bh-unified-category {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.bh-unified-status.new { border: 1px solid #00a9e9; color: #20c4ff; background: rgba(0, 169, 233, .08); }
+.bh-unified-status.old { border: 1px solid #496172; color: #a7bac5; background: rgba(73, 97, 114, .08); }
+
+.bh-unified-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: rgba(255,255,255,.015);
+}
+.bh-unified-icon svg { width: 18px; height: 18px; }
+.bh-unified-category { border: 1px solid currentColor; background: rgba(255,255,255,.025); }
+
+.bh-unified-icon.category-reward, .bh-unified-category.category-reward { color: #ef4e9b; }
+.bh-unified-icon.category-attendance, .bh-unified-category.category-attendance { color: #35d88f; }
+.bh-unified-icon.category-points, .bh-unified-category.category-points { color: #ffc43d; }
+.bh-unified-icon.category-sonya, .bh-unified-category.category-sonya { color: #b47cff; }
+.bh-unified-icon.category-player, .bh-unified-category.category-player { color: #20aef4; }
+.bh-unified-icon.category-treasury, .bh-unified-category.category-treasury { color: #e7ad32; }
+.bh-unified-icon.category-item, .bh-unified-category.category-item { color: #4f9cff; }
+.bh-unified-icon.category-admin, .bh-unified-category.category-admin { color: #ff5b67; }
+.bh-unified-icon.category-system, .bh-unified-category.category-system { color: #9aafbb; }
+
+.bh-unified-message { min-width: 0; }
+.bh-unified-message strong,
+.bh-unified-message span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.bh-unified-message strong {
+  margin-bottom: 3px;
+  color: #f1f7fa;
+  font-size: 11px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.bh-unified-message span {
+  color: #8fa8b8;
+  font-size: 9px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.bh-unified-empty { height: 110px; text-align: center; color: #627d8e !important; }
+
+.bh-unified-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 12px 4px 2px;
+}
+.bh-unified-pagination button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #29465c;
+  border-radius: 5px;
+  background: #091a28;
+  color: #9bb1bd;
+  font-size: 10px;
+  cursor: pointer;
+}
+.bh-unified-pagination button:hover:not(:disabled) { border-color: #00a9e9; color: #20c4ff; }
+.bh-unified-pagination button.active { border-color: #00a9e9; background: #008fc9; color: #fff; }
+.bh-unified-pagination button:disabled { opacity: .32; cursor: not-allowed; }
+
+/* Existing detail modal now uses the same category/icon language. */
+.bh-notice-detail-modal .bh-unified-icon { flex: 0 0 auto; }
+
+@media (max-width: 1250px) {
+  .bh-unified-notice-filters {
+    grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(120px, 1fr));
+  }
+  .bh-unified-date-control,
+  .bh-unified-time-control { min-width: 0; }
+  .bh-unified-date-control { grid-column: span 2; }
+}
+
+@media (max-width: 900px) {
+  .bh-unified-notice-header { align-items: flex-start; flex-direction: column; }
+  .bh-unified-notice-summary { width: 100%; }
+  .bh-unified-count { flex: 1; }
+  .bh-unified-refresh { flex: 1; }
+
+  .bh-unified-notice-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bh-unified-search,
+  .bh-unified-notice-filters > .bh-input:first-of-type { grid-column: 1 / -1; }
+  .bh-unified-date-control { grid-column: span 1; }
+  .bh-unified-clear { width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .bh-notifications-unified { padding: 12px !important; }
+  .bh-unified-notice-title-wrap { align-items: flex-start; }
+  .bh-unified-notice-emblem { width: 44px; height: 44px; flex-basis: 44px; border-radius: 11px; font-size: 21px; }
+  .bh-unified-notice-title-wrap h2 { font-size: 19px; }
+  .bh-unified-notice-title-wrap p { font-size: 10px; }
+  .bh-unified-notice-summary { gap: 6px; }
+  .bh-unified-count { min-width: 0; padding: 8px 5px; }
+  .bh-unified-refresh { min-width: 0; padding: 0 7px; }
+
+  .bh-unified-notice-filters { grid-template-columns: 1fr; gap: 7px; }
+  .bh-unified-search,
+  .bh-unified-notice-filters > .bh-input:first-of-type,
+  .bh-unified-date-control { grid-column: 1; }
+  .bh-unified-notice-filters > .bh-input { min-height: 36px; }
+  .bh-unified-date-control,
+  .bh-unified-time-control { width: 100%; }
+
+  .bh-unified-notice-results-head { align-items: flex-start; flex-direction: column; gap: 3px; padding: 8px 2px; }
+
+  /* Mobile becomes notification cards rather than a squeezed desktop table. */
+  .bh-unified-notice-table-wrap { overflow: visible; border: 0; background: transparent; }
+  .bh-unified-notice-table { min-width: 0; display: block; }
+  .bh-unified-notice-table thead { display: none; }
+  .bh-unified-notice-table tbody,
+  .bh-unified-notice-table tr { display: block; }
+  .bh-unified-notice-table tr {
+    position: relative;
+    margin-bottom: 7px;
+    padding: 10px 36px 10px 10px;
+    border: 1px solid #29465c;
+    border-radius: 8px;
+    background: #071521;
+  }
+  .bh-unified-notice-table td {
+    display: block;
+    width: auto !important;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+  .bh-unified-notice-table td.notice-number { display: none; }
+  .bh-unified-notice-table td:nth-child(2) { position: absolute; top: 10px; right: 10px; }
+  .bh-unified-notice-table td:nth-child(3) { display: inline-block; margin: 8px 7px 8px 0; vertical-align: middle; }
+  .bh-unified-notice-table td:nth-child(4) { display: inline-flex; vertical-align: middle; }
+  .bh-unified-notice-table td:nth-child(5) { clear: both; padding: 2px 0 8px; }
+  .bh-unified-notice-table td:nth-child(6),
+  .bh-unified-notice-table td:nth-child(7) { display: inline-block; margin-right: 10px; color: #829aa8 !important; font-size: 9px; }
+  .bh-unified-notice-table td:nth-child(6)::before { content: "TIME • "; color: #536f80; font-weight: 800; }
+  .bh-unified-notice-table td:nth-child(7)::before { content: "BY • "; color: #536f80; font-weight: 800; }
+  .bh-unified-notice-table td:nth-child(8) { position: absolute; right: 10px; bottom: 10px; }
+  .bh-unified-message strong { font-size: 11px; white-space: normal; }
+  .bh-unified-message span { white-space: normal; overflow: visible; text-overflow: clip; }
+  .notice-open span { font-size: 24px; }
+}
+
+@media (max-width: 380px) {
+  .bh-unified-notice-summary { display: grid; grid-template-columns: 1fr 1fr; }
+  .bh-unified-refresh { grid-column: 1 / -1; min-height: 34px; }
+}
+
+/* V13 — persistent BH sections + stable one-shot navigation */
+#bh-schedule-panel,
+#players-history,
+#bh-reward-center,
+#bh-notifications-panel {
+  scroll-margin-top: 110px;
+}
+
+@media (max-width: 900px) {
+  #bh-schedule-panel,
+  #players-history,
+  #bh-reward-center,
+  #bh-notifications-panel {
+    scroll-margin-top: 82px;
+  }
+}
+
+/* =====================================================================
+   V15 — TRUE BOSS HUNT VIEW NAVIGATION
+   Only one primary BH view is mounted at a time. The navigation itself
+   stays in place; switching tabs never scrolls the document.
+   ===================================================================== */
+
+.bh-primary-nav {
+  position: sticky;
+  top: 8px;
+  z-index: 40;
+  width: 100%;
+  min-height: 92px;
+  margin: 18px 0 20px;
+  padding: 5px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(24, 180, 239, .55);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(5, 30, 47, .98), rgba(2, 15, 27, .98)),
+    radial-gradient(circle at 50% 0%, rgba(0, 190, 255, .14), transparent 55%);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, .35),
+    inset 0 1px 0 rgba(255, 255, 255, .04),
+    0 0 22px rgba(0, 174, 255, .08);
+  backdrop-filter: blur(12px);
+}
+
+.bh-primary-nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(0, 199, 255, .05), transparent);
+}
+
+.bh-primary-nav .bh-tab {
+  position: relative;
+  min-width: 0;
+  min-height: 80px;
+  margin: 0;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #7897aa;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+  overflow: hidden;
+}
+
+.bh-primary-nav .bh-tab::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 99px;
+  background: transparent;
+  box-shadow: none;
+  transition: background .18s ease, box-shadow .18s ease;
+}
+
+.bh-primary-nav .bh-tab:hover:not(.active) {
+  color: #d8f5ff;
+  border-color: rgba(18, 158, 211, .25);
+  background: rgba(8, 56, 78, .35);
+}
+
+.bh-primary-nav .bh-tab.active {
+  color: #effbff;
+  border-color: rgba(25, 193, 245, .48);
+  background:
+    linear-gradient(135deg, rgba(0, 151, 218, .82), rgba(0, 82, 124, .78)),
+    radial-gradient(circle at 50% 0%, rgba(0, 238, 255, .22), transparent 70%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .10),
+    inset 0 -12px 28px rgba(0, 0, 0, .16),
+    0 0 22px rgba(0, 180, 255, .18);
+  transform: translateY(-1px);
+}
+
+.bh-primary-nav .bh-tab.active::after {
+  background: #28d7ff;
+  box-shadow: 0 0 10px rgba(40, 215, 255, .95);
+}
+
+.bh-primary-nav .bh-tab-icon {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .16);
+  opacity: .95;
+}
+
+.bh-primary-nav .bh-tab-icon svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bh-primary-nav .bh-tab-icon-schedule { color: #1fd4ff; }
+.bh-primary-nav .bh-tab-icon-players { color: #39e7a2; }
+.bh-primary-nav .bh-tab-icon-rewards { color: #ffc62f; }
+.bh-primary-nav .bh-tab-icon-notices { color: #b884ff; }
+
+.bh-primary-nav .bh-tab.active .bh-tab-icon {
+  color: #ffffff;
+  background: rgba(0, 8, 17, .20);
+  box-shadow: 0 0 16px currentColor;
+}
+
+.bh-primary-nav .bh-tab-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+}
+
+.bh-primary-nav .bh-tab-copy strong {
+  display: block;
+  max-width: 100%;
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: .08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bh-primary-nav .bh-tab-copy small {
+  display: block;
+  color: rgba(183, 217, 232, .72);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.bh-primary-nav .bh-tab.active .bh-tab-copy small {
+  color: rgba(232, 251, 255, .82);
+}
+
+/* Keep the selected content visually attached to the navigator. */
+.bh-primary-nav + .bh-panel,
+.bh-primary-nav + .bh-admin-grid {
+  margin-top: 0;
+}
+
+/* The old navigation CSS targeted all .bh-tabs buttons. Keep the new
+   four-tab component deterministic regardless of older rules earlier in
+   this large stylesheet. */
+.bh-primary-nav > button { box-sizing: border-box; }
+.bh-primary-nav > button:first-child,
+.bh-primary-nav > button:last-child { border-radius: 8px; }
+
+@media (max-width: 1050px) {
+  .bh-primary-nav {
+    min-height: 78px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .bh-primary-nav .bh-tab {
+    min-height: 68px;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .bh-primary-nav .bh-tab-icon {
+    flex-basis: 34px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+  .bh-primary-nav .bh-tab-icon svg { width: 21px; height: 21px; }
+  .bh-primary-nav .bh-tab-copy strong { font-size: 10px; letter-spacing: .055em; }
+  .bh-primary-nav .bh-tab-copy small { font-size: 8px; }
+}
+
+@media (max-width: 720px) {
+  .bh-primary-nav {
+    position: sticky;
+    top: 4px;
+    min-height: 0;
+    margin: 12px 0 14px;
+    padding: 4px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    border-radius: 10px;
+  }
+  .bh-primary-nav .bh-tab {
+    min-height: 62px;
+    padding: 8px 9px;
+    justify-content: flex-start;
+  }
+  .bh-primary-nav .bh-tab-icon {
+    flex-basis: 31px;
+    width: 31px;
+    height: 31px;
+  }
+  .bh-primary-nav .bh-tab-icon svg { width: 19px; height: 19px; }
+  .bh-primary-nav .bh-tab-copy strong { font-size: 9px; }
+  .bh-primary-nav .bh-tab-copy small { font-size: 7px; }
 }
 
 @media (max-width: 430px) {
-    .bh-players-dashboard-v8 .bh-players-table-card-v8 {
-        width: calc(100% - 12px) !important;
-        max-width: calc(100% - 12px) !important;
-        margin-left: 6px !important;
-        margin-right: 6px !important;
-    }
+  .bh-primary-nav .bh-tab {
+    min-height: 58px;
+    padding: 7px;
+    gap: 7px;
+  }
+  .bh-primary-nav .bh-tab-icon {
+    flex-basis: 27px;
+    width: 27px;
+    height: 27px;
+    border-radius: 7px;
+  }
+  .bh-primary-nav .bh-tab-icon svg { width: 17px; height: 17px; }
+  .bh-primary-nav .bh-tab-copy strong {
+    font-size: 8px;
+    letter-spacing: .035em;
+  }
+  .bh-primary-nav .bh-tab-copy small { display: none; }
+}
 
-    .bh-players-dashboard-v8 .bh-players-table-v8 {
-        width: 1100px !important;
-        min-width: 1100px !important;
-    }
+@media (prefers-reduced-motion: reduce) {
+  .bh-primary-nav .bh-tab,
+  .bh-primary-nav .bh-tab::after { transition: none; }
 }
