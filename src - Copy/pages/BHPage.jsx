@@ -54,7 +54,6 @@ import brawlerIcon from "../icons/brawler.svg";
 ========================================================= */
 
 const PAGE_SIZE = 10;
-const PLAYER_PICKER_PAGE_SIZE = 5;
 const SONYA_REWARD_COST = 6.0;
 
 const DEFAULT_BOSS_LIST = BH_BOSSES?.length
@@ -1505,11 +1504,11 @@ function AttendancePlayerFilter({
     });
   }, [activePlayers, query, classFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PLAYER_PICKER_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const visiblePlayers = filteredPlayers.slice(
-    (safePage - 1) * PLAYER_PICKER_PAGE_SIZE,
-    safePage * PLAYER_PICKER_PAGE_SIZE
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
   );
 
   useEffect(() => setPage(1), [query, classFilter]);
@@ -1761,7 +1760,7 @@ function AttendancePlayerFilter({
           <div className="bh-picker-v6-table" role="table">
             <div className="bh-picker-v6-table-head"><span>#</span><span>IGN</span><span>CLASS</span><span>WEAPON</span></div>
             {visiblePlayers.length ? visiblePlayers.map((player, index) => {
-              const number = (safePage - 1) * PLAYER_PICKER_PAGE_SIZE + index + 1;
+              const number = (safePage - 1) * PAGE_SIZE + index + 1;
               const isSelected = String(player.id) === String(value);
               return (
                 <button type="button" key={String(player.id)} className={`bh-picker-v6-player-row ${isSelected ? "selected" : ""}`} onClick={() => choosePlayer(player)}>
@@ -1774,8 +1773,8 @@ function AttendancePlayerFilter({
             }) : <div className="bh-picker-v6-empty">NO PLAYERS FOUND</div>}
           </div>
           <div className="bh-picker-v6-footer">
-            <span>{filteredPlayers.length ? `${(safePage - 1) * PLAYER_PICKER_PAGE_SIZE + 1}–${Math.min(safePage * PLAYER_PICKER_PAGE_SIZE, filteredPlayers.length)} of ${filteredPlayers.length}` : "0 players"}</span>
-            {filteredPlayers.length > PLAYER_PICKER_PAGE_SIZE && (
+            <span>{filteredPlayers.length ? `${(safePage - 1) * PAGE_SIZE + 1}–${Math.min(safePage * PAGE_SIZE, filteredPlayers.length)} of ${filteredPlayers.length}` : "0 players"}</span>
+            {filteredPlayers.length > PAGE_SIZE && (
               <div className="bh-picker-v6-pagination">
                 <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>‹</button>
                 <b>{safePage}</b><span>/ {totalPages}</span>

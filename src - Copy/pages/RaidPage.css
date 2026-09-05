@@ -1,0 +1,404 @@
+.raid-page {
+    min-height: 100vh;
+    padding: 24px 28px 48px;
+    background: #07101a;
+    color: #e8f3ff;
+    box-sizing: border-box
+}
+
+.raid-page-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 28px;
+    align-items: flex-end;
+    padding: 12px 0 20px;
+    border-bottom: 1px solid #20384b
+}
+
+.raid-page-kicker,
+.raid-section-label,
+.raid-timezone-control label,
+.raid-detail span,
+.raid-type {
+    font-size: 10px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: #59bce8;
+    font-weight: 800
+}
+
+.raid-page h1 {
+    font-size: 36px;
+    margin: 8px 0 6px
+}
+
+.raid-page p {
+    color: #8fa8bb;
+    margin: 0
+}
+
+.raid-timezone-control {
+    min-width: 280px
+}
+
+.raid-timezone-control select,
+.raid-upcoming-section select,
+.raid-editor select,
+.raid-editor input,
+.raid-editor input[type=date],
+.raid-editor input[type=number] {
+    width: 100%;
+    box-sizing: border-box;
+    background: #07111b;
+    color: #edf6ff;
+    border: 1px solid #2b5872;
+    border-radius: 5px;
+    padding: 10px
+}
+
+.raid-next-section,
+.raid-upcoming-section {
+    margin-top: 22px
+}
+
+.raid-section-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: end;
+    margin-bottom: 12px
+}
+
+.raid-section-heading h2 {
+    margin: 5px 0 0;
+    font-size: 19px
+}
+
+.raid-current-time {
+    color: #7fa3bb;
+    font-size: 12px
+}
+
+.raid-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px
+}
+
+.raid-card {
+    background: #0d1b27;
+    border: 1px solid #29475b;
+    border-top: 2px solid #3d90b9;
+    border-radius: 7px;
+    overflow: hidden
+}
+
+.raid-card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    background: #152a3a
+}
+
+.raid-boss-icon {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #3b6780;
+    border-radius: 6px;
+    background: #102331;
+    color: #62d4ff
+}
+
+.raid-card-title {
+    flex: 1
+}
+
+.raid-card-title h3 {
+    margin: 3px 0 0;
+    font-size: 17px
+}
+
+.raid-status {
+    font-size: 9px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: #123b2b;
+    color: #61d99a;
+    border: 1px solid #246d4b
+}
+
+.raid-card-next {
+    padding: 16px 14px 5px
+}
+
+.raid-card-next span {
+    display: block;
+    font-size: 9px;
+    letter-spacing: .15em;
+    color: #5d8ca6
+}
+
+.raid-card-next strong {
+    display: block;
+    font-size: 22px;
+    margin-top: 5px
+}
+
+.raid-countdown {
+    padding: 0 14px 15px;
+    color: #ffbf42;
+    font-weight: 800
+}
+
+.raid-card-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-top: 1px solid #203b4e
+}
+
+.raid-detail {
+    padding: 12px;
+    border-right: 1px solid #203b4e;
+    border-bottom: 1px solid #203b4e
+}
+
+.raid-detail:nth-child(2n) {
+    border-right: 0
+}
+
+.raid-detail span {
+    font-size: 8px;
+    color: #58839b
+}
+
+.raid-detail strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px
+}
+
+.raid-card-description {
+    padding: 12px 14px;
+    color: #6f91a5;
+    font-size: 11px;
+    border-bottom: 1px solid #203b4e
+}
+
+.raid-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 14px;
+    color: #66889e;
+    font-size: 10px
+}
+
+.raid-card-footer button,
+.raid-editor-actions button,
+.raid-upcoming-section button {
+    border: 1px solid #2c6380;
+    background: #16435b;
+    color: #eaf8ff;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-weight: 800;
+    font-size: 9px;
+    letter-spacing: .08em
+}
+
+.raid-upcoming-section {
+    background: #0d1a25;
+    border: 1px solid #28475b;
+    border-radius: 7px;
+    padding: 18px
+}
+
+.raid-upcoming-section .raid-section-heading>div:last-child {
+    display: flex;
+    gap: 8px
+}
+
+.raid-upcoming-list {
+    border-top: 1px solid #203b4e
+}
+
+.raid-upcoming-row {
+    display: grid;
+    grid-template-columns: 1fr 220px 120px;
+    gap: 15px;
+    padding: 12px 4px;
+    border-bottom: 1px solid #1c3344;
+    align-items: center
+}
+
+.raid-upcoming-row div {
+    display: flex;
+    gap: 10px;
+    align-items: center
+}
+
+.raid-upcoming-row span {
+    color: #6e91a7;
+    font-size: 10px
+}
+
+.raid-upcoming-row time {
+    color: #eaf6ff
+}
+
+.raid-upcoming-row b {
+    color: #ffbf42
+}
+
+.raid-empty,
+.raid-loading {
+    padding: 25px;
+    color: #7592a5
+}
+
+.raid-editor {
+    display: grid;
+    gap: 14px
+}
+
+.raid-editor label,
+.raid-editor>div>span {
+    display: grid;
+    gap: 6px;
+    font-size: 9px;
+    letter-spacing: .12em;
+    color: #71a1ba;
+    font-weight: 800
+}
+
+.raid-editor>div>div {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap
+}
+
+.raid-editor>div>div button {
+    background: #0c1c28;
+    border: 1px solid #2b4f65;
+    color: #8ba8ba;
+    padding: 7px 9px
+}
+
+.raid-editor>div>div button.active {
+    background: #1d5f7d;
+    color: #fff
+}
+
+.raid-editor-check {
+    display: flex !important;
+    align-items: center;
+    grid-template-columns: auto 1fr !important
+}
+
+.raid-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 8px
+}
+
+.raid-editor-actions button:last-child {
+    background: #1b6384
+}
+
+.raid-accent-sonya {
+    border-top-color: #d7ad2e
+}
+
+.raid-accent-geomancer {
+    border-top-color: #42d19b
+}
+
+.raid-accent-reflector {
+    border-top-color: #9b7df0
+}
+
+.raid-accent-giant-hawk {
+    border-top-color: #ed854b
+}
+
+@media(max-width:900px) {
+    .raid-page-header {
+        flex-direction: column;
+        align-items: stretch
+    }
+
+    .raid-card-grid {
+        grid-template-columns: 1fr
+    }
+
+    .raid-upcoming-row {
+        grid-template-columns: 1fr
+    }
+
+    .raid-upcoming-section .raid-section-heading {
+        align-items: stretch;
+        flex-direction: column
+    }
+}
+/* =========================================================
+   GLOBAL RESPONSIVE FOUNDATION — RAID FINAL OVERRIDES
+   ========================================================= */
+.raid-page,
+.raid-page > *,
+.raid-page .raid-card,
+.raid-page .raid-panel,
+.raid-page .raid-section {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.raid-page .raid-card-grid,
+.raid-page [class*="grid"] {
+    min-width: 0;
+}
+
+.raid-page .raid-card,
+.raid-page .raid-editor,
+.raid-page .raid-editor-row,
+.raid-page .raid-page-header {
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .raid-page {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    .raid-page-header {
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+
+    .raid-timezone-control {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .raid-page {
+        padding: 12px !important;
+    }
+
+    .raid-page-header {
+        gap: 14px;
+    }
+
+    .raid-timezone-control {
+        width: 100%;
+    }
+
+    .raid-page .raid-card-grid {
+        grid-template-columns: 1fr !important;
+    }
+}

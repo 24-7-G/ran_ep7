@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Duck Race">
+  <circle cx="32" cy="32" r="30" fill="#0a2230" stroke="#16b8ed" stroke-width="2"/>
+  <path d="M17 39c0-8 7-14 16-14 7 0 13 3 15 9 1 3 0 7-3 9H25c-5 0-8-1-8-4Z" fill="#ffd33d"/>
+  <circle cx="39" cy="25" r="7" fill="#ffd33d"/>
+  <circle cx="41" cy="23" r="1.8" fill="#07131c"/>
+  <path d="M45 27l8 2-7 4z" fill="#ff8b28"/>
+  <path d="M22 39c-3 3-5 6-5 9M32 39c-2 3-3 6-3 9M43 39c-1 3-1 6 0 9" fill="none" stroke="#ff9f24" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M8 50c8-4 15 3 23 0s15 3 25 0" fill="none" stroke="#13b9e9" stroke-width="2" stroke-linecap="round"/>
+</svg>

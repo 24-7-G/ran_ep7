@@ -1029,6 +1029,29 @@
   color: #d8edf5
 }
 
+.cw-salary-class {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 150px
+}
+
+.cw-salary-class small {
+  color: #4e839c;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .12em
+}
+
+.cw-salary-class strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #dff4fb;
+  font-size: 10px
+}
+
 .cw-salary-grid label>div {
   display: flex;
   align-items: center;
@@ -4912,5 +4935,2493 @@
 
   .cw-treasury-filter-row .cw-btn {
     width: 100%;
+  }
+}
+
+/* CW ACTIVITY FILTER BAR — match BH Activity & Notifications */
+.cw-unified-notifications-panel .cw-unified-notice-toolbar {
+  grid-template-columns: minmax(260px, 1fr) 170px 170px 155px 150px 150px 150px 74px !important;
+  align-items: end !important;
+  gap: 8px !important;
+  padding: 10px 12px !important;
+  overflow-x: auto !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar>input,
+.cw-unified-notifications-panel .cw-unified-notice-toolbar>select {
+  box-sizing: border-box !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar .cw-notice-date-field {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar .cw-notice-date-field>span {
+  display: block !important;
+  min-height: 8px !important;
+  color: #6f8ea1 !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+  letter-spacing: .12em !important;
+  line-height: 1 !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar .notice-date {
+  width: 100% !important;
+  color-scheme: dark !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar .notice-clear {
+  align-self: end !important;
+  min-height: 34px !important;
+  white-space: nowrap !important;
+}
+
+.cw-unified-notifications-panel .cw-unified-notice-toolbar select option {
+  background: #071722 !important;
+  color: #e7f4fa !important;
+}
+
+@media (max-width: 1500px) {
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar {
+    grid-template-columns: minmax(230px, 1fr) 150px 150px 145px 140px 140px 140px 70px !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar {
+    grid-template-columns: minmax(220px, 1fr) 155px 155px 145px !important;
+  }
+
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar .cw-notice-date-field {
+    min-width: 140px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar {
+    grid-template-columns: 1fr 1fr !important;
+    overflow-x: visible !important;
+  }
+
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar .notice-search {
+    grid-column: 1 / -1 !important;
+  }
+
+  .cw-unified-notifications-panel .cw-unified-notice-toolbar .notice-clear {
+    width: 100% !important;
+  }
+}
+
+/* =========================================================
+   CW FINANCE + INVENTORY VAULT — LATEST FLOW
+   Preserve existing dashboard styling; only add the new
+   inventory/finance controls and stock presentation.
+   ========================================================= */
+.cw-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap
+}
+
+.cw-inventory-line-editor {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0
+}
+
+.cw-inventory-line {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 140px 130px auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(24, 111, 147, .55);
+  background: #06131d;
+  border-radius: 6px
+}
+
+.cw-inventory-line select,
+.cw-inventory-line input {
+  min-width: 0
+}
+
+.cw-inventory-line>strong {
+  text-align: right;
+  color: #f3c84b;
+  font-size: 13px
+}
+
+.cw-low {
+  color: #f3c84b !important
+}
+
+.cw-out {
+  color: #ff5d73 !important
+}
+
+.cw-in {
+  color: #21d6a0 !important
+}
+
+.cw-treasury-panel .cw-section-head .cw-header-actions {
+  justify-content: flex-end
+}
+
+.cw-treasury-panel .cw-section-head .cw-header-actions .cw-btn-primary {
+  background: linear-gradient(180deg, #087fae, #05618a);
+  border-color: #10a9dd
+}
+
+.cw-treasury-panel .cw-section-head .cw-header-actions .cw-btn:first-child {
+  border-color: #0b9ccc
+}
+
+.cw-treasury-table td small {
+  display: block;
+  margin-top: 3px;
+  opacity: .68
+}
+
+.cw-treasury-table .cw-ledger-type.is-low {
+  color: #f3c84b;
+  border-color: rgba(243, 200, 75, .6);
+  background: rgba(243, 200, 75, .08)
+}
+
+.cw-treasury-table .cw-ledger-type.is-out {
+  color: #ff5d73;
+  border-color: rgba(255, 93, 115, .6);
+  background: rgba(255, 93, 115, .08)
+}
+
+.cw-treasury-table .cw-ledger-type.is-in {
+  color: #21d6a0
+}
+
+.cw-modal .cw-inventory-line-editor+button {
+  margin-bottom: 8px
+}
+
+@media (max-width:900px) {
+  .cw-inventory-line {
+    grid-template-columns: 1fr 120px 100px
+  }
+
+  .cw-inventory-line .cw-btn {
+    grid-column: 1/-1;
+    justify-self: start
+  }
+}
+
+@media (max-width:620px) {
+  .cw-header-actions {
+    width: 100%
+  }
+
+  .cw-header-actions .cw-btn {
+    flex: 1 1 auto
+  }
+
+  .cw-inventory-line {
+    grid-template-columns: 1fr
+  }
+
+  .cw-inventory-line>strong {
+    text-align: left
+  }
+}
+
+/* =========================================================
+   CW FINANCE + INVENTORY ACTION HUB — CURRENT BASELINE
+   One consistent action design for Treasury + Inventory Vault.
+   ========================================================= */
+.cw-finance-action-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cw-finance-action-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(18, 91, 119, .72);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(7, 27, 40, .96), rgba(3, 17, 27, .96));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.cw-finance-action-group>span {
+  align-self: center;
+  padding: 0 5px;
+  color: #5fa9c4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+
+.cw-finance-action-group .cw-btn {
+  white-space: nowrap
+}
+
+.cw-finance-action-group-correction {
+  border-color: rgba(190, 145, 39, .55)
+}
+
+.cw-finance-action-group-correction>span {
+  color: #d5ad45
+}
+
+.cw-inventory-action-bar {
+  margin-left: auto
+}
+
+/* The Treasury page and Vault use the same compact action language. */
+.cw-treasury-panel .cw-section-head,
+.cw-panel:has(.cw-inventory-action-bar) .cw-section-head {
+  align-items: flex-start;
+}
+
+/* Immutable creation-time field. */
+.cw-field-help {
+  display: block;
+  margin-top: 5px;
+  color: #547e91;
+  font-size: 8px;
+  line-height: 1.35
+}
+
+.cw-form-grid input[readonly] {
+  cursor: default
+}
+
+/* Inventory line editor: keep stock/cost information visible in the same card. */
+.cw-inventory-line {
+  grid-template-columns: minmax(240px, 1.5fr) 120px 130px auto;
+}
+
+.cw-inventory-line select,
+.cw-inventory-line input {
+  background: #04131e;
+  color: #e7f7ff;
+  border-color: #14516a;
+}
+
+/* Stock shown wherever an item can be assigned. */
+.cw-stock-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: -2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(20, 89, 116, .7);
+  border-radius: 7px;
+  background: #061722;
+  color: #7199aa;
+  font-size: 9px;
+}
+
+.cw-stock-inline strong {
+  color: #e9f8ff;
+  font-size: 12px
+}
+
+.cw-stock-inline.is-low {
+  border-color: rgba(238, 181, 47, .55);
+  background: rgba(111, 75, 7, .12)
+}
+
+.cw-stock-inline.is-low strong {
+  color: #f1c94f
+}
+
+.cw-stock-inline.is-out {
+  border-color: rgba(255, 77, 101, .55);
+  background: rgba(104, 11, 26, .12)
+}
+
+.cw-stock-inline.is-out strong {
+  color: #ff5d6c
+}
+
+@media (max-width:1100px) {
+  .cw-finance-action-bar {
+    width: 100%;
+    justify-content: flex-start
+  }
+
+  .cw-finance-action-group {
+    flex: 1 1 auto
+  }
+}
+
+@media (max-width:760px) {
+  .cw-finance-action-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%
+  }
+
+  .cw-finance-action-group {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    align-items: stretch
+  }
+
+  .cw-finance-action-group>span {
+    align-self: center
+  }
+
+  .cw-finance-action-group .cw-btn {
+    min-width: 0
+  }
+
+  .cw-inventory-line {
+    grid-template-columns: 1fr
+  }
+
+  .cw-inventory-line>strong {
+    text-align: left
+  }
+}
+
+@media (max-width:480px) {
+  .cw-finance-action-group {
+    grid-template-columns: 1fr 1fr
+  }
+
+  .cw-finance-action-group>span {
+    grid-column: 1/-1;
+    padding: 2px 3px;
+    text-align: left
+  }
+}
+
+.cw-salary-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px dashed #1d536b;
+  background: #06141e;
+}
+
+.cw-salary-toolbar>div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cw-salary-toolbar strong {
+  color: #dff4fb;
+  font-size: 10px;
+}
+
+.cw-salary-grid-role {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cw-salary-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, .9fr) auto;
+  gap: 7px;
+  align-items: end;
+  border: 1px solid #173b50;
+  background: #06141e;
+  padding: 8px;
+  border-radius: 5px;
+}
+
+.cw-salary-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+}
+
+.cw-salary-row label>span {
+  color: #4e839c;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.cw-salary-row select {
+  width: 100%;
+  min-height: 31px;
+  border: 1px solid #19465d;
+  background: #071722;
+  color: #dff4fb;
+  border-radius: 4px;
+  padding: 0 8px;
+  font-weight: 800;
+  font-size: 9px;
+}
+
+.cw-salary-row .cw-salary-amount>div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cw-salary-row .cw-salary-amount input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cw-salary-delete {
+  min-height: 31px;
+  white-space: nowrap;
+}
+
+.cw-salary-empty {
+  border: 1px dashed #1d536b;
+  padding: 18px;
+  text-align: center;
+  color: #6e9aae;
+  font-size: 9px;
+}
+
+@media (max-width: 760px) {
+  .cw-salary-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cw-salary-row .cw-salary-amount {
+    grid-column: 1 / 2;
+  }
+
+  .cw-salary-delete {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 480px) {
+  .cw-salary-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cw-salary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cw-salary-row .cw-salary-amount,
+  .cw-salary-delete {
+    grid-column: auto;
+  }
+}
+
+/* =========================================================
+   V2 — FINANCE HUB VISUAL REPAIR
+   The JSX uses the cw-finance-hub / cw-hub-* classes. These
+   rules intentionally live at the end so they override any
+   older finance/header rules without changing the rest of CW.
+   ========================================================= */
+.cw-finance-hub {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 12px 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(22, 103, 134, .72);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(5, 23, 34, .98), rgba(3, 16, 25, .98));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025), 0 8px 24px rgba(0, 0, 0, .12);
+}
+
+.cw-finance-hub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.cw-finance-hub-row+.cw-finance-hub-row {
+  margin-top: 8px;
+}
+
+.cw-finance-hub-group {
+  min-width: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(20, 77, 101, .8);
+  border-radius: 6px;
+  background: rgba(4, 18, 28, .9);
+}
+
+.cw-finance-hub-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cw-finance-hub-label span {
+  color: #dff7ff;
+  font-size: 10px;
+  line-height: 1.1;
+  font-weight: 950;
+  letter-spacing: .025em;
+}
+
+.cw-finance-hub-label small {
+  color: #5f8fa4;
+  font-size: 7px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.cw-finance-hub .cw-btn {
+  min-height: 32px;
+  white-space: nowrap;
+  font-size: 8px;
+  letter-spacing: .04em;
+}
+
+/* V3 — RECEIVE RESOURCES is one connected two-action control. */
+.cw-receive-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-width: 0;
+  border: 1px solid rgba(20, 77, 101, .9);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(2, 13, 21, .9);
+}
+
+.cw-receive-segment .cw-btn {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0 !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+}
+
+.cw-receive-segment .cw-btn+.cw-btn {
+  border-left: 1px solid rgba(20, 77, 101, .9) !important;
+}
+
+.cw-hub-gold {
+  border-color: rgba(205, 165, 55, .7) !important;
+  color: #f3cf61 !important;
+  background: linear-gradient(180deg, rgba(82, 61, 17, .5), rgba(48, 36, 12, .5)) !important;
+}
+
+.cw-hub-stock {
+  border-color: rgba(34, 196, 158, .6) !important;
+  color: #57e0b9 !important;
+}
+
+.cw-hub-expense {
+  border-color: rgba(196, 76, 91, .58) !important;
+  color: #ff8997 !important;
+}
+
+.cw-hub-purchase {
+  border-color: rgba(49, 151, 190, .68) !important;
+  color: #6bd5fa !important;
+}
+
+.cw-hub-assign {
+  border-color: #12a9d9 !important;
+  color: #e7fbff !important;
+  background: linear-gradient(180deg, #087fae, #055f87) !important;
+  box-shadow: 0 0 12px rgba(0, 169, 220, .1);
+}
+
+.cw-hub-manage {
+  grid-template-columns: minmax(150px, 1fr) auto;
+}
+
+.cw-finance-hub .cw-hub-distribute {
+  border-color: rgba(13, 145, 188, .78);
+}
+
+.cw-finance-hub .cw-hub-manage {
+  border-color: rgba(190, 145, 39, .45);
+}
+
+/* The hub should never create horizontal overflow on the page. */
+.cw-treasury-panel,
+.cw-treasury-panel>*,
+.cw-vault-finance-hub {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.cw-finance-hub button {
+  max-width: 100%;
+}
+
+@media (max-width: 1050px) {
+  .cw-finance-hub-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .cw-finance-hub {
+    padding: 7px;
+  }
+
+  .cw-finance-hub-row {
+    gap: 7px;
+  }
+
+  .cw-finance-hub-group,
+  .cw-finance-hub .cw-hub-manage {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cw-finance-hub-label {
+    grid-column: 1 / -1;
+  }
+
+  .cw-finance-hub .cw-btn {
+    width: 100%;
+  }
+
+  .cw-receive-segment {
+    width: 100%;
+  }
+}
+
+
+@media (max-width: 430px) {
+
+  .cw-finance-hub-group,
+  .cw-finance-hub .cw-hub-manage {
+    grid-template-columns: 1fr;
+  }
+
+  .cw-finance-hub-label {
+    grid-column: auto;
+  }
+
+  .cw-receive-segment {
+    grid-template-columns: 1fr;
+  }
+
+  .cw-receive-segment .cw-btn+.cw-btn {
+    border-left: 0 !important;
+    border-top: 1px solid rgba(20, 77, 101, .9) !important;
+  }
+}
+
+
+/* =========================================================
+   V5 — CLAN WAR GOLD & REWARDS
+   ========================================================= */
+.cw-hub-rewards {
+  min-height: 42px;
+  padding: 10px 18px;
+  border: 1px solid #d29b18 !important;
+  background: linear-gradient(180deg, #2b2610, #161b12) !important;
+  color: #ffd34f !important;
+  box-shadow: 0 0 18px rgba(235, 176, 24, .10);
+  font-weight: 900;
+}
+
+.cw-hub-rewards:hover {
+  border-color: #f5c842 !important;
+  background: linear-gradient(180deg, #3a3011, #1a2014) !important;
+}
+
+.cw-icon-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #b88718 !important;
+  border-radius: 6px;
+  background: rgba(89, 61, 8, .28) !important;
+  color: #ffd34f !important;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.cw-icon-close:hover {
+  background: rgba(190, 142, 23, .18) !important;
+  color: #fff1a8 !important;
+}
+
+.cw-stat-gold {
+  border-color: rgba(216, 161, 29, .65) !important;
+}
+
+.cw-stat-gold>span {
+  color: #ffd34f !important;
+}
+
+.cw-stat-reward {
+  border-color: rgba(22, 182, 218, .55) !important;
+}
+
+.cw-stat-reward>span {
+  color: #28d8f2 !important;
+}
+
+.cw-cw-rewards-modal {
+  margin: -2px -2px -4px;
+}
+
+.cw-rewards-modal-subtitle {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px dashed #1b5b73;
+  background: rgba(5, 20, 31, .72);
+  color: #7faabd;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.cw-rewards-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, .8fr);
+  gap: 14px;
+}
+
+.cw-rewards-main {
+  display: grid;
+  gap: 12px;
+}
+
+.cw-reward-step,
+.cw-reward-preview,
+.cw-reward-impact,
+.cw-reward-important {
+  border: 1px solid #17445a;
+  background: linear-gradient(180deg, #071a27, #06141e);
+  border-radius: 7px;
+}
+
+.cw-reward-step {
+  padding: 15px;
+}
+
+.cw-reward-step-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 13px;
+}
+
+.cw-reward-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  border-radius: 9px;
+  border: 1px solid #17627d;
+  background: #071e2d;
+  color: #20cde9;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.cw-reward-gold-step .cw-reward-icon {
+  color: #ffd34f;
+  border-color: #7e6118;
+}
+
+.cw-reward-step-head b {
+  display: block;
+  color: #19c9ef;
+  font-size: 13px;
+  letter-spacing: .3px;
+}
+
+.cw-reward-step-head small {
+  display: block;
+  margin-top: 4px;
+  color: #789caf;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.cw-gold-entry-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(3, auto);
+  gap: 8px;
+}
+
+.cw-gold-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid #12a9d1;
+  background: #03111a;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.cw-gold-input-wrap span {
+  padding-left: 14px;
+  color: #ffd34f;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.cw-gold-input-wrap input {
+  width: 100%;
+  border: 0 !important;
+  background: transparent !important;
+  color: #fff !important;
+  font-size: 22px;
+  font-weight: 900;
+  padding: 11px 12px;
+  outline: 0;
+}
+
+.cw-reward-preset {
+  color: #18c6ee !important;
+  border-color: #17617b !important;
+  white-space: nowrap;
+}
+
+.cw-reward-item-editor {
+  display: grid;
+  gap: 7px;
+}
+
+.cw-reward-edit-line {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 110px auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.cw-reward-edit-line>span {
+  color: #7299ab;
+  text-align: center;
+  font-weight: 800;
+  padding-top: 11px;
+}
+
+.cw-reward-item-name-wrap {
+  min-width: 0;
+}
+
+.cw-reward-item-name-wrap input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cw-reward-item-name-wrap small {
+  display: block;
+  margin-top: 4px;
+  color: #607f90;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.cw-reward-edit-line select,
+.cw-reward-edit-line input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cw-reward-edit-line .cw-reward-qty {
+  min-height: 40px;
+}
+
+.cw-add-reward-item {
+  margin-top: 9px;
+}
+
+.cw-reward-step textarea {
+  width: 100%;
+  min-height: 95px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.cw-char-count {
+  text-align: right;
+  color: #5d7f91;
+  font-size: 9px;
+  margin-top: 4px;
+}
+
+.cw-rewards-side {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.cw-reward-preview {
+  overflow: hidden;
+}
+
+.cw-reward-side-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid #163d50;
+}
+
+.cw-reward-side-head>span {
+  font-size: 25px;
+  color: #18c9ef;
+}
+
+.cw-reward-side-head b {
+  display: block;
+  color: #18c9ef;
+  font-size: 13px;
+}
+
+.cw-reward-side-head small {
+  display: block;
+  margin-top: 3px;
+  color: #91aab7;
+  font-size: 9px;
+}
+
+.cw-reward-side-head em {
+  margin-left: auto;
+  padding: 5px 11px;
+  border: 1px solid #12b89d;
+  border-radius: 20px;
+  color: #20e1ba;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.cw-reward-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 15px;
+  gap: 15px;
+  border-bottom: 1px solid #163d50;
+}
+
+.cw-reward-totals div+div {
+  border-left: 1px solid #173c4d;
+  padding-left: 15px;
+}
+
+.cw-reward-totals small {
+  color: #7796a5;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.cw-reward-totals strong {
+  display: block;
+  margin-top: 5px;
+  color: #ffd34f;
+  font-size: 20px;
+}
+
+.cw-reward-totals div+div strong {
+  color: #20c9ef;
+}
+
+.cw-preview-items {
+  padding: 5px 14px 9px;
+}
+
+.cw-preview-items>div {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(24, 63, 80, .65);
+  color: #dcebf1;
+  font-size: 11px;
+}
+
+.cw-preview-items b {
+  color: #fff;
+}
+
+.cw-reward-impact,
+.cw-reward-important {
+  padding: 14px;
+}
+
+.cw-reward-impact h3,
+.cw-reward-important h3 {
+  margin: 0 0 5px;
+  color: #18c9ef;
+  font-size: 12px;
+}
+
+.cw-reward-impact p {
+  margin: 0 0 10px;
+  color: #7d9aaa;
+  font-size: 10px;
+}
+
+.cw-reward-impact div {
+  padding: 5px 0;
+  color: #9db8c5;
+  font-size: 10px;
+}
+
+.cw-reward-impact div::first-letter {
+  color: #22e0b5;
+}
+
+.cw-reward-important {
+  border-color: #0aaed6;
+  background: linear-gradient(180deg, rgba(6, 34, 48, .95), rgba(5, 21, 31, .95));
+}
+
+.cw-reward-important h3 {
+  color: #20cce9;
+}
+
+.cw-reward-important p {
+  margin: 6px 0 0;
+  color: #9bb7c4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.cw-rewards-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin-top: 14px;
+  padding: 15px 3px 0;
+  border-top: 1px solid #173d50;
+}
+
+.cw-rewards-footer>div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.cw-rewards-footer small {
+  width: 100%;
+  color: #18c9ef;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.cw-rewards-footer strong {
+  color: #ffd34f;
+  font-size: 15px;
+}
+
+.cw-rewards-footer span {
+  color: #75a1b4;
+  font-size: 11px;
+  font-weight: 800;
+  padding-left: 18px;
+  border-left: 1px solid #24495a;
+}
+
+.cw-rewards-save {
+  min-width: 180px;
+  background: linear-gradient(180deg, #f2bd35, #b87e0b) !important;
+  border-color: #f3c548 !important;
+  color: #08131a !important;
+  font-weight: 1000 !important;
+}
+
+@media (max-width: 800px) {
+  .cw-rewards-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cw-gold-entry-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cw-gold-input-wrap {
+    grid-column: 1 / -1;
+  }
+
+  .cw-reward-edit-line {
+    grid-template-columns: 24px minmax(0, 1fr) 90px auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .cw-reward-edit-line {
+    grid-template-columns: 1fr 90px auto;
+  }
+
+  .cw-reward-edit-line>span {
+    display: none;
+  }
+
+  .cw-rewards-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cw-rewards-footer .cw-modal-actions {
+    width: 100%;
+  }
+
+  .cw-rewards-footer .cw-modal-actions .cw-btn {
+    flex: 1;
+  }
+}
+
+.cw-reward-item-name-wrap input::placeholder {
+  color: #66818f;
+}
+
+@media (max-width: 760px) {
+  .cw-reward-edit-line {
+    grid-template-columns: 24px minmax(0, 1fr) 82px;
+  }
+
+  .cw-reward-edit-line .cw-btn-danger {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+}
+
+
+/* ============================================================
+   V7 — Clan War Rewards item-entry visual cleanup
+   Keep reward inputs inside the dark CW design system.
+   ============================================================ */
+.cw-cw-rewards-modal .cw-reward-item-editor {
+  width: 100%;
+  min-width: 0;
+}
+
+.cw-cw-rewards-modal .cw-reward-edit-line {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 112px auto;
+  gap: 9px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.cw-cw-rewards-modal .cw-reward-item-name-wrap {
+  min-width: 0;
+}
+
+.cw-cw-rewards-modal .cw-reward-item-name-wrap input,
+.cw-cw-rewards-modal .cw-reward-edit-line .cw-reward-qty {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 40px;
+  box-sizing: border-box;
+  border: 1px solid #18516a !important;
+  border-radius: 5px !important;
+  outline: none;
+  background: #03111a !important;
+  color: #eaf8ff !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+  font: 700 12px Inter, system-ui, sans-serif;
+  padding: 10px 11px;
+}
+
+.cw-cw-rewards-modal .cw-reward-item-name-wrap input:focus,
+.cw-cw-rewards-modal .cw-reward-edit-line .cw-reward-qty:focus {
+  border-color: #13bde9 !important;
+  box-shadow: 0 0 0 1px rgba(19, 189, 233, .18);
+}
+
+.cw-cw-rewards-modal .cw-reward-item-name-wrap input::placeholder,
+.cw-cw-rewards-modal .cw-reward-edit-line .cw-reward-qty::placeholder {
+  color: #6d8795 !important;
+  opacity: 1;
+}
+
+.cw-cw-rewards-modal .cw-reward-item-name-wrap small {
+  min-height: 24px;
+  margin-top: 4px;
+  color: #628293;
+  font-size: 8.5px;
+  line-height: 1.3;
+}
+
+.cw-cw-rewards-modal .cw-reward-edit-line>span {
+  padding-top: 12px;
+  color: #79a4b7;
+}
+
+.cw-cw-rewards-modal .cw-reward-edit-line .cw-reward-qty {
+  text-align: center;
+  font-weight: 900;
+}
+
+.cw-cw-rewards-modal .cw-reward-edit-line .cw-btn-danger {
+  min-width: 50px;
+  height: 40px;
+  padding: 0 9px;
+  align-self: start;
+}
+
+.cw-cw-rewards-modal .cw-add-reward-item {
+  margin-top: 4px;
+}
+
+@media (max-width: 800px) {
+  .cw-cw-rewards-modal .cw-reward-edit-line {
+    grid-template-columns: 24px minmax(0, 1fr) 92px auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .cw-cw-rewards-modal .cw-reward-edit-line {
+    grid-template-columns: 24px minmax(0, 1fr) 82px;
+  }
+
+  .cw-cw-rewards-modal .cw-reward-edit-line .cw-btn-danger {
+    grid-column: 2 / -1;
+    justify-self: start;
+    height: 32px;
+  }
+}
+
+@media (max-width: 460px) {
+  .cw-cw-rewards-modal .cw-reward-edit-line {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .cw-cw-rewards-modal .cw-reward-edit-line>span {
+    display: none;
+  }
+
+  .cw-cw-rewards-modal .cw-reward-item-name-wrap small {
+    min-height: 0;
+  }
+}
+
+
+/* =========================================================
+   V8 — CLAN WAR SPENDING & SUPPLIES
+   One action for paid CW expenses + stock intake.
+   ========================================================= */
+.cw-hub-spend {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  border-color: rgba(196, 76, 91, .52);
+}
+
+.cw-hub-spending {
+  min-width: 230px;
+  border-color: rgba(220, 75, 91, .72) !important;
+  color: #ff9aa6 !important;
+  background: linear-gradient(180deg, rgba(78, 28, 37, .62), rgba(48, 18, 25, .72)) !important;
+}
+
+.cw-hub-spending:hover {
+  border-color: rgba(242, 91, 108, .95) !important;
+  background: linear-gradient(180deg, rgba(104, 34, 46, .72), rgba(60, 20, 29, .82)) !important;
+}
+
+.cw-spending-layout .cw-reward-step {
+  border-color: rgba(28, 83, 105, .9);
+}
+
+.cw-spending-icon {
+  border-color: rgba(220, 75, 91, .7) !important;
+  color: #ff9aa6 !important;
+}
+
+.cw-spending-gold-input {
+  border-color: rgba(220, 75, 91, .72) !important;
+}
+
+.cw-spending-gold-input:focus-within {
+  border-color: #ff7182 !important;
+  box-shadow: 0 0 0 2px rgba(220, 75, 91, .12);
+}
+
+.cw-spending-preset {
+  min-width: 130px;
+  border-color: rgba(220, 75, 91, .6) !important;
+  color: #ff9aa6 !important;
+}
+
+.cw-spending-edit-line {
+  grid-template-columns: 22px minmax(0, 1fr) 105px 105px auto !important;
+}
+
+.cw-spending-edit-line .cw-reward-item-name-wrap select,
+.cw-spending-edit-line .cw-reward-qty {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: #03121c;
+  color: #d9f4ff;
+  border: 1px solid #15536b;
+  border-radius: 4px;
+  min-height: 38px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.cw-spending-edit-line .cw-reward-item-name-wrap select:focus,
+.cw-spending-edit-line .cw-reward-qty:focus {
+  outline: none;
+  border-color: #16bce9;
+  box-shadow: 0 0 0 2px rgba(22, 188, 233, .10);
+}
+
+.cw-spending-line-total {
+  color: #f3cf61;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.cw-spending-value {
+  color: #ff8997 !important;
+}
+
+.cw-spending-impact {
+  border-color: rgba(220, 75, 91, .62) !important;
+}
+
+.cw-spending-save {
+  background: linear-gradient(180deg, #8b2b3b, #681f2d) !important;
+  border-color: #c94c5d !important;
+  color: #fff4f5 !important;
+}
+
+.cw-spending-save:hover {
+  background: linear-gradient(180deg, #a13649, #772535) !important;
+}
+
+@media (max-width: 760px) {
+  .cw-hub-spend {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cw-hub-spending {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cw-spending-edit-line {
+    grid-template-columns: 22px minmax(0, 1fr) 90px !important;
+  }
+
+  .cw-spending-edit-line .cw-spending-line-total {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .cw-spending-edit-line .cw-btn-danger {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 430px) {
+  .cw-spending-edit-line {
+    grid-template-columns: 22px minmax(0, 1fr) !important;
+  }
+
+  .cw-spending-edit-line .cw-reward-qty,
+  .cw-spending-edit-line .cw-spending-line-total,
+  .cw-spending-edit-line .cw-btn-danger {
+    grid-column: 2;
+  }
+
+  .cw-spending-edit-line .cw-reward-qty {
+    width: 100%;
+  }
+}
+
+/* V9 — spending item picker + live guild inventory */
+.cw-spending-edit-line .cw-reward-item-name-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px
+}
+
+.cw-spending-edit-line .cw-reward-item-name-wrap input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: #03131d;
+  color: #e5f7ff;
+  border: 1px solid #16506a;
+  border-radius: 5px;
+  padding: 10px 12px;
+  font: inherit
+}
+
+.cw-spending-edit-line .cw-reward-item-name-wrap input:focus {
+  outline: none;
+  border-color: #12b9e8;
+  box-shadow: 0 0 0 2px rgba(18, 185, 232, .10)
+}
+
+.cw-spending-edit-line .cw-reward-item-name-wrap small {
+  color: #5e8ca0;
+  font-size: 8px;
+  line-height: 1.35
+}
+
+.cw-spending-new-cost {
+  max-width: 220px
+}
+
+.cw-guild-inventory-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid rgba(24, 115, 146, .72);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(5, 27, 40, .96), rgba(3, 17, 27, .98))
+}
+
+.cw-guild-inventory-copy h3 {
+  margin: 3px 0 5px;
+  color: #e5f8ff;
+  font-size: 16px
+}
+
+.cw-guild-inventory-copy p {
+  margin: 0;
+  color: #6f9eb1;
+  font-size: 9px;
+  line-height: 1.45
+}
+
+.cw-guild-inventory-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid rgba(22, 78, 99, .7);
+  border-radius: 6px;
+  overflow: hidden
+}
+
+.cw-guild-inventory-stats div {
+  padding: 9px 8px;
+  text-align: center;
+  background: rgba(2, 14, 22, .65)
+}
+
+.cw-guild-inventory-stats div+div {
+  border-left: 1px solid rgba(22, 78, 99, .7)
+}
+
+.cw-guild-inventory-stats strong {
+  display: block;
+  color: #e7fbff;
+  font-size: 16px
+}
+
+.cw-guild-inventory-stats span {
+  display: block;
+  margin-top: 3px;
+  color: #5d8da1;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .05em
+}
+
+.cw-guild-inventory-view {
+  white-space: nowrap
+}
+
+.cw-guild-inventory-table td small {
+  display: block;
+  color: #5d8da1;
+  margin-top: 3px
+}
+
+@media(max-width:900px) {
+  .cw-guild-inventory-card {
+    grid-template-columns: 1fr
+  }
+
+  .cw-guild-inventory-view {
+    width: 100%
+  }
+}
+
+@media(max-width:620px) {
+  .cw-guild-inventory-stats {
+    grid-template-columns: 1fr
+  }
+
+  .cw-guild-inventory-stats div+div {
+    border-left: 0;
+    border-top: 1px solid rgba(22, 78, 99, .7)
+  }
+
+  .cw-spending-new-cost {
+    max-width: none
+  }
+}
+
+/* V10 — spending modal quick guild inventory receipt */
+.cw-current-inventory {
+  border: 1px solid #174b61;
+  background: linear-gradient(180deg, #071b29, #06141e);
+  border-radius: 7px;
+  overflow: hidden
+}
+
+.cw-current-inventory-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #163d50
+}
+
+.cw-current-inventory-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0
+}
+
+.cw-inventory-receipt-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #126783;
+  border-radius: 6px;
+  color: #19c9ef;
+  background: #061d2b;
+  font-size: 17px;
+  font-weight: 900;
+  flex: 0 0 30px
+}
+
+.cw-current-inventory-title b {
+  display: block;
+  color: #18c9ef;
+  font-size: 12px;
+  letter-spacing: .3px
+}
+
+.cw-current-inventory-title small {
+  display: block;
+  margin-top: 3px;
+  color: #6f96a7;
+  font-size: 9px
+}
+
+.cw-inventory-quick-view {
+  margin-left: auto;
+  white-space: nowrap;
+  color: #ffd34f !important;
+  border-color: #725817 !important;
+  background: rgba(70, 50, 5, .16) !important
+}
+
+.cw-current-inventory-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 125px;
+  gap: 7px;
+  padding: 10px;
+  border-bottom: 1px solid #12384a;
+  background: rgba(2, 12, 19, .45)
+}
+
+.cw-current-inventory-tools input,
+.cw-current-inventory-tools select {
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid #18506a;
+  border-radius: 5px;
+  background: #03121c;
+  color: #dff8ff;
+  padding: 0 9px;
+  font-size: 10px;
+  outline: 0
+}
+
+.cw-current-inventory-tools input:focus,
+.cw-current-inventory-tools select:focus {
+  border-color: #12bfe8;
+  box-shadow: 0 0 0 1px rgba(18, 191, 232, .14)
+}
+
+.cw-current-inventory-receipt {
+  padding: 0 10px
+}
+
+.cw-receipt-columns,
+.cw-receipt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px 66px;
+  gap: 7px;
+  align-items: center
+}
+
+.cw-receipt-columns {
+  min-height: 27px;
+  color: #5e8b9d;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  border-bottom: 1px dashed #164356
+}
+
+.cw-receipt-columns span:nth-child(2),
+.cw-receipt-columns span:nth-child(3) {
+  text-align: right
+}
+
+.cw-receipt-row {
+  min-height: 47px;
+  border-bottom: 1px solid rgba(19, 61, 78, .72)
+}
+
+.cw-receipt-row:last-child {
+  border-bottom: 0
+}
+
+.cw-receipt-row>div {
+  min-width: 0
+}
+
+.cw-receipt-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e5f9ff;
+  font-size: 10px
+}
+
+.cw-receipt-row small {
+  display: block;
+  margin-top: 3px;
+  color: #62899a;
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.cw-receipt-row>b {
+  color: #f2fbff;
+  text-align: right;
+  font-size: 11px
+}
+
+.cw-receipt-status {
+  justify-self: end;
+  min-width: 54px;
+  box-sizing: border-box;
+  padding: 4px 5px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .03em
+}
+
+.cw-receipt-status.is-in {
+  color: #20e1ba;
+  border: 1px solid #167e6b;
+  background: rgba(15, 120, 95, .1)
+}
+
+.cw-receipt-status.is-low {
+  color: #ffd34f;
+  border: 1px solid #765b18;
+  background: rgba(118, 91, 24, .12)
+}
+
+.cw-receipt-status.is-out {
+  color: #ff7286;
+  border: 1px solid #7e2638;
+  background: rgba(126, 38, 56, .12)
+}
+
+.cw-receipt-empty {
+  padding: 25px 5px;
+  text-align: center;
+  color: #648a9a;
+  font-size: 9px
+}
+
+.cw-current-inventory-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid #163d50;
+  color: #638c9d;
+  font-size: 8px
+}
+
+.cw-current-inventory-footer>div {
+  display: flex;
+  align-items: center;
+  gap: 6px
+}
+
+.cw-current-inventory-footer>div b {
+  color: #b5d2dc;
+  font-size: 9px
+}
+
+.cw-current-inventory-footer .cw-btn {
+  min-width: 25px;
+  min-height: 25px;
+  padding: 3px 7px
+}
+
+@media(max-width:900px) {
+  .cw-current-inventory-tools {
+    grid-template-columns: 1fr
+  }
+}
+
+@media(max-width:620px) {
+  .cw-current-inventory-head {
+    align-items: flex-start;
+    flex-wrap: wrap
+  }
+
+  .cw-inventory-quick-view {
+    width: 100%;
+    margin-left: 0
+  }
+
+  .cw-receipt-columns,
+  .cw-receipt-row {
+    grid-template-columns: minmax(0, 1fr) 42px 58px
+  }
+
+  .cw-current-inventory-footer {
+    align-items: flex-start;
+    flex-direction: column
+  }
+}
+
+
+/* =========================================================
+   V11 — TREASURY ACTION HUB CLEANUP
+   Keep the finance actions aligned and remove the awkward
+   centered/inner-button treatment from the single receive action.
+   ========================================================= */
+.cw-finance-hub-row {
+  align-items: stretch;
+}
+
+.cw-finance-hub-group {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center;
+  min-height: 58px;
+}
+
+.cw-finance-hub-label {
+  min-width: 0;
+}
+
+.cw-finance-hub-label span {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.cw-finance-hub-label small {
+  max-width: 72ch;
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.cw-receive-segment {
+  display: contents;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.cw-receive-segment .cw-btn {
+  width: auto;
+  min-width: 205px;
+  border-radius: 5px !important;
+  border-width: 1px !important;
+  box-shadow: none !important;
+}
+
+.cw-hub-rewards {
+  justify-self: end;
+}
+
+.cw-hub-spending {
+  justify-self: end;
+  min-width: 230px;
+}
+
+.cw-hub-assign,
+.cw-hub-manage>.cw-btn {
+  justify-self: end;
+}
+
+@media (max-width: 760px) {
+
+  .cw-finance-hub-group,
+  .cw-finance-hub .cw-hub-manage {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+  }
+
+  .cw-finance-hub .cw-btn,
+  .cw-receive-segment .cw-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cw-hub-rewards,
+  .cw-hub-spending,
+  .cw-hub-assign,
+  .cw-hub-manage>.cw-btn {
+    justify-self: stretch;
+  }
+}
+
+
+/* =========================================================
+   V12 — TREASURY TOP AREA / FINANCE HUB FINAL LAYOUT
+   The old dashboard stat strip was removed. The finance hub is
+   now the primary action area and uses a clean 2 x 2 layout.
+   ========================================================= */
+.cw-finance-hub {
+  width: 100%;
+  margin: 14px 0 16px;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid rgba(19, 91, 119, .82);
+  border-radius: 7px;
+  background: rgba(3, 18, 29, .96);
+  overflow: hidden;
+}
+
+.cw-finance-hub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  align-items: stretch;
+}
+
+.cw-finance-hub-row+.cw-finance-hub-row {
+  margin-top: 8px;
+}
+
+.cw-finance-hub-group {
+  min-width: 0;
+  min-height: 62px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(22, 82, 106, .9);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(5, 25, 37, .98), rgba(3, 18, 28, .98));
+}
+
+.cw-finance-hub-group.cw-hub-receive {
+  border-color: rgba(205, 165, 55, .55);
+}
+
+.cw-finance-hub-group.cw-hub-spend {
+  border-color: rgba(196, 76, 91, .55);
+}
+
+.cw-finance-hub-group.cw-hub-distribute {
+  border-color: rgba(13, 145, 188, .62);
+}
+
+.cw-finance-hub-group.cw-hub-manage {
+  border-color: rgba(190, 145, 39, .45);
+}
+
+.cw-finance-hub-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.cw-finance-hub-label span {
+  display: block;
+  color: #dff7ff;
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 950;
+  letter-spacing: .025em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-finance-hub-label small {
+  display: block;
+  max-width: 58ch;
+  color: #6591a3;
+  font-size: 7px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.cw-finance-hub .cw-btn,
+.cw-finance-hub .cw-receive-segment .cw-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 205px;
+  min-height: 34px;
+  padding: 7px 12px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  border-radius: 5px !important;
+  font-size: 8px;
+  line-height: 1.1;
+  letter-spacing: .035em;
+}
+
+.cw-receive-segment {
+  display: contents;
+}
+
+.cw-hub-rewards {
+  justify-self: end;
+  border-color: rgba(205, 165, 55, .75) !important;
+  color: #f3cf61 !important;
+  background: linear-gradient(180deg, rgba(82, 61, 17, .58), rgba(48, 36, 12, .58)) !important;
+}
+
+.cw-hub-spending {
+  justify-self: end;
+  min-width: 225px !important;
+  border-color: rgba(196, 76, 91, .75) !important;
+  color: #ff8997 !important;
+  background: rgba(84, 22, 34, .28) !important;
+}
+
+.cw-hub-assign {
+  justify-self: end;
+  border-color: #12a9d9 !important;
+  color: #e7fbff !important;
+  background: linear-gradient(180deg, #087fae, #055f87) !important;
+}
+
+.cw-hub-manage>.cw-btn {
+  justify-self: end;
+}
+
+@media (max-width: 900px) {
+  .cw-finance-hub-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .cw-finance-hub {
+    padding: 8px;
+  }
+
+  .cw-finance-hub-group {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .cw-finance-hub-label span {
+    white-space: normal;
+  }
+
+  .cw-finance-hub .cw-btn,
+  .cw-finance-hub .cw-receive-segment .cw-btn {
+    width: 100%;
+    min-width: 0 !important;
+    justify-self: stretch;
+  }
+}
+
+/* =========================================================
+   V13 — TREASURY / INVENTORY CLEAN + RESPONSIVE PASS
+   Keep the V12 structure and behavior. This pass only tightens
+   hierarchy, spacing, card proportions and pagination.
+   ========================================================= */
+.cw-treasury-panel {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden
+}
+
+.cw-treasury-panel .cw-section-head {
+  margin-bottom: 10px
+}
+
+.cw-treasury-panel .cw-section-head p {
+  max-width: 1100px;
+  line-height: 1.45
+}
+
+/* Finance actions: equal cards, clear hierarchy, no stretched dead space. */
+.cw-treasury-panel .cw-finance-hub {
+  margin: 10px 0 12px;
+  padding: 8px
+}
+
+.cw-treasury-panel .cw-finance-hub-row {
+  gap: 7px
+}
+
+.cw-treasury-panel .cw-finance-hub-group {
+  min-height: 54px;
+  padding: 8px 10px;
+  gap: 10px
+}
+
+.cw-treasury-panel .cw-finance-hub-label span {
+  font-size: 9px
+}
+
+.cw-treasury-panel .cw-finance-hub-label small {
+  font-size: 7px;
+  line-height: 1.3
+}
+
+.cw-treasury-panel .cw-finance-hub .cw-btn {
+  min-width: 190px;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 7px
+}
+
+/* Ledger balance strip is a status bar, not another oversized card. */
+.cw-treasury-panel .cw-treasury-equation {
+  min-height: 38px;
+  margin: 8px 0;
+  padding: 7px 10px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #173f53;
+  border-radius: 5px;
+  background: #061720;
+  overflow: hidden
+}
+
+.cw-treasury-panel .cw-treasury-equation span {
+  font-size: 7px;
+  white-space: nowrap
+}
+
+.cw-treasury-panel .cw-treasury-equation b {
+  font-size: 10px;
+  white-space: nowrap
+}
+
+.cw-treasury-panel .cw-treasury-equation i {
+  font-size: 9px;
+  color: #5b8798;
+  font-style: normal
+}
+
+.cw-treasury-panel .cw-treasury-equation .cw-equation-note {
+  margin-left: auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 7px
+}
+
+/* Treasury summary cards: compact, equal, readable. */
+.cw-treasury-panel .cw-treasury-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin: 8px 0 10px
+}
+
+.cw-treasury-panel .cw-treasury-stats>div.cw-treasury-stat {
+  min-width: 0;
+  min-height: 78px;
+  padding: 10px 11px;
+  box-sizing: border-box;
+  border-radius: 5px
+}
+
+.cw-treasury-panel .cw-treasury-stat strong {
+  font-size: 18px !important;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.cw-treasury-panel .cw-treasury-stat small {
+  font-size: 7px;
+  letter-spacing: .08em
+}
+
+.cw-treasury-panel .cw-treasury-stat em {
+  font-size: 7px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+/* Inventory summary card: title left, stats middle, action right. */
+.cw-treasury-panel .cw-guild-inventory-card {
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, .9fr) auto;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px
+}
+
+.cw-treasury-panel .cw-guild-inventory-copy h3 {
+  font-size: 14px
+}
+
+.cw-treasury-panel .cw-guild-inventory-copy p {
+  font-size: 7px;
+  line-height: 1.35
+}
+
+.cw-treasury-panel .cw-guild-inventory-stats div {
+  padding: 8px 6px
+}
+
+.cw-treasury-panel .cw-guild-inventory-stats strong {
+  font-size: 14px
+}
+
+.cw-treasury-panel .cw-guild-inventory-stats span {
+  font-size: 6px
+}
+
+.cw-treasury-panel .cw-guild-inventory-view {
+  min-height: 31px;
+  padding: 6px 10px;
+  font-size: 7px
+}
+
+/* Filters stay on one clean row when there is room and wrap gracefully. */
+.cw-treasury-panel .cw-treasury-filter-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(125px, .8fr) repeat(3, minmax(125px, .75fr)) auto;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0
+}
+
+.cw-treasury-panel .cw-treasury-filter-row>* {
+  min-width: 0
+}
+
+.cw-treasury-panel .cw-treasury-filter-row .cw-btn {
+  min-width: 48px;
+  padding: 6px 9px;
+  font-size: 7px
+}
+
+.cw-treasury-panel .cw-unified-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 5px 2px 6px;
+  padding: 0 2px;
+  color: #648da0;
+  font-size: 7px
+}
+
+.cw-treasury-panel .cw-unified-results-head>div {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.cw-treasury-panel .cw-unified-results-head strong {
+  font-size: 9px
+}
+
+/* Table: exactly 10 rows per page, horizontally scrollable on small screens. */
+.cw-treasury-panel .cw-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #143b4f;
+  border-radius: 5px;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch
+}
+
+.cw-treasury-panel .cw-treasury-table {
+  width: 100%;
+  min-width: 920px;
+  table-layout: fixed;
+  border-collapse: collapse
+}
+
+.cw-treasury-panel .cw-treasury-table th,
+.cw-treasury-panel .cw-treasury-table td {
+  box-sizing: border-box;
+  padding: 7px 8px;
+  vertical-align: middle
+}
+
+.cw-treasury-panel .cw-treasury-table th {
+  font-size: 6px;
+  letter-spacing: .07em;
+  white-space: nowrap
+}
+
+.cw-treasury-panel .cw-treasury-table td {
+  font-size: 7px;
+  line-height: 1.3
+}
+
+.cw-treasury-panel .cw-treasury-table td strong {
+  font-size: 7px
+}
+
+.cw-treasury-panel .cw-treasury-table td small {
+  font-size: 6px;
+  line-height: 1.25
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(1),
+.cw-treasury-panel .cw-treasury-table td:nth-child(1) {
+  width: 12%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(2),
+.cw-treasury-panel .cw-treasury-table td:nth-child(2) {
+  width: 11%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(3),
+.cw-treasury-panel .cw-treasury-table td:nth-child(3) {
+  width: 24%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(4),
+.cw-treasury-panel .cw-treasury-table td:nth-child(4) {
+  width: 10%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(5),
+.cw-treasury-panel .cw-treasury-table td:nth-child(5) {
+  width: 10%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(6),
+.cw-treasury-panel .cw-treasury-table td:nth-child(6) {
+  width: 19%
+}
+
+.cw-treasury-panel .cw-treasury-table th:nth-child(7),
+.cw-treasury-panel .cw-treasury-table td:nth-child(7) {
+  width: 14%
+}
+
+.cw-treasury-panel .cw-treasury-table .cw-history-actions {
+  min-width: 0;
+  white-space: nowrap
+}
+
+.cw-treasury-panel .cw-treasury-table .cw-history-actions .cw-btn {
+  margin: 2px 3px 2px 0;
+  min-height: 24px;
+  padding: 4px 6px;
+  font-size: 6px
+}
+
+/* Pagination: arrows deliberately pinned to the far left/right. */
+.cw-treasury-panel .cw-treasury-pagination {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0 0;
+  padding: 0;
+  box-sizing: border-box
+}
+
+.cw-treasury-panel .cw-treasury-pagination button {
+  width: 36px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #17506a;
+  border-radius: 5px;
+  background: #061923;
+  color: #bfe6f2;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer
+}
+
+.cw-treasury-panel .cw-treasury-pagination button:first-child {
+  justify-self: start
+}
+
+.cw-treasury-panel .cw-treasury-pagination button:last-child {
+  justify-self: end
+}
+
+.cw-treasury-panel .cw-treasury-pagination button:hover:not(:disabled) {
+  border-color: #10bce9;
+  color: #10c8f2;
+  background: #082432
+}
+
+.cw-treasury-panel .cw-treasury-pagination button:disabled {
+  opacity: .35;
+  cursor: not-allowed
+}
+
+.cw-treasury-panel .cw-treasury-pagination span {
+  text-align: center;
+  color: #638da0;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .06em
+}
+
+@media (max-width:1100px) {
+  .cw-treasury-panel .cw-treasury-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr))
+  }
+
+  .cw-treasury-panel .cw-guild-inventory-card {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr) auto
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row {
+    grid-template-columns: minmax(0, 1.6fr) minmax(130px, .8fr) repeat(2, minmax(120px, .7fr));
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row input:nth-of-type(3) {
+    grid-column: 1
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row .cw-btn {
+    grid-column: auto
+  }
+}
+
+@media (max-width:900px) {
+  .cw-treasury-panel .cw-finance-hub-row {
+    grid-template-columns: 1fr
+  }
+
+  .cw-treasury-panel .cw-guild-inventory-card {
+    grid-template-columns: 1fr
+  }
+
+  .cw-treasury-panel .cw-guild-inventory-view {
+    width: 100%
+  }
+
+  .cw-treasury-panel .cw-treasury-equation {
+    flex-wrap: wrap
+  }
+
+  .cw-treasury-panel .cw-treasury-equation .cw-equation-note {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    white-space: normal
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row {
+    grid-template-columns: 1fr 1fr 1fr
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row input:first-child {
+    grid-column: 1 / -1
+  }
+}
+
+@media (max-width:620px) {
+  .cw-treasury-panel .cw-finance-hub-group {
+    grid-template-columns: 1fr;
+    gap: 7px
+  }
+
+  .cw-treasury-panel .cw-finance-hub .cw-btn {
+    width: 100%;
+    min-width: 0
+  }
+
+  .cw-treasury-panel .cw-treasury-stats {
+    grid-template-columns: 1fr
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row {
+    grid-template-columns: 1fr 1fr
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row input:first-child {
+    grid-column: 1 / -1
+  }
+
+  .cw-treasury-panel .cw-treasury-filter-row .cw-btn {
+    grid-column: 1 / -1
+  }
+
+  .cw-treasury-panel .cw-treasury-pagination {
+    grid-template-columns: 34px 1fr 34px
+  }
+
+  .cw-treasury-panel .cw-treasury-pagination button {
+    width: 34px;
+    height: 29px
+  }
+
+  .cw-treasury-panel .cw-treasury-pagination span {
+    font-size: 6px
   }
 }
