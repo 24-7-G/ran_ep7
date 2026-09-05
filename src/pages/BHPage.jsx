@@ -1118,7 +1118,19 @@ function isBossHuntNotice(notice) {
   // module rejection above. This prevents a wrongly tagged CW record from
   // leaking into the BH feed.
   if (scope) {
-    return ["boss-hunt", "boss_hunt", "bh", "bh-attendance", "bh-rewards", "bh-scoring", "bh-players", "bh-schedule"].includes(scope);
+    // Raid Schedule is the master source for BH spawns. Its schedule audit
+    // records belong on the BH unified Activity & Notifications board too.
+    return [
+      "boss-hunt",
+      "boss_hunt",
+      "bh",
+      "bh-attendance",
+      "bh-rewards",
+      "bh-scoring",
+      "bh-players",
+      "bh-schedule",
+      "raid-schedule"
+    ].includes(scope);
   }
 
   if (module) {
@@ -6621,80 +6633,7 @@ export default function BHPage() {
                 </section>
       )}
 
-      {/* ===================================================
-          SUMMARY CARDS
-      =================================================== */}
-
-      <div className="bh-summary-grid">
-        <div className="bh-summary-card">
-          <div className="bh-summary-label">
-            PLAYERS
-          </div>
-
-          <div className="bh-summary-value">
-            {totalPlayers}
-          </div>
-
-          <div className="bh-summary-sub">
-            Registered roster
-          </div>
-        </div>
-
-        <div className="bh-summary-card">
-          <div className="bh-summary-label">
-            THIS SPAWN
-          </div>
-
-          <div className="bh-summary-value">
-            {selectedScheduleSpawnCount}
-          </div>
-
-          <div className="bh-summary-sub">
-            {selectedScheduleDate
-              ? formatLongDate(
-                zonedLocalToDate(
-                  selectedScheduleDate,
-                  "12:00",
-                  effectiveTimezone
-                ),
-                effectiveTimezone
-              )
-              : "Today"}
-          </div>
-        </div>
-
-        <div className="bh-summary-card">
-          <div className="bh-summary-label">
-            REWARDS
-          </div>
-
-          <div className="bh-summary-value">
-            {totalAvailableRewardCount}
-          </div>
-
-          <div className="bh-summary-sub">
-            Available rewards
-          </div>
-        </div>
-
-        <div className="bh-summary-card">
-          <div className="bh-summary-label">
-            ELIGIBLE
-          </div>
-
-          <div className="bh-summary-value">
-            {eligiblePlayers.length}
-          </div>
-
-          <div className="bh-summary-sub">
-            At{" "}
-            {BH_CLAIM_THRESHOLD.toFixed(
-              1
-            )}
-            +
-          </div>
-        </div>
-      </div>
+      {/* Summary cards removed per dashboard cleanup request. */}
 
       {/* ===================================================
           TABS

@@ -1326,24 +1326,12 @@ export default function RaidPage({ user, isAdmin }) {
           : "NEW";
         const newTime = `${String(finalRaid.hour).padStart(2, "0")}:${String(finalRaid.minute).padStart(2, "0")}`;
 
-        const oldTimezone = previousRaid?.timezone || PRIMARY_TIMEZONE;
-      const newTimezone = finalRaid.timezone || PRIMARY_TIMEZONE;
-      const oldInterval = previousRaid?.intervalHours == null ? "" : String(previousRaid.intervalHours);
-      const newInterval = finalRaid.intervalHours == null ? "" : String(finalRaid.intervalHours);
-      const oldAnchor = previousRaid
-        ? `${previousRaid.anchorDate || ""} ${String(previousRaid.anchorHour ?? "").padStart(2, "0")}:${String(previousRaid.anchorMinute ?? "").padStart(2, "0")}`.trim()
-        : "";
-      const newAnchor = `${finalRaid.anchorDate || ""} ${String(finalRaid.anchorHour ?? "").padStart(2, "0")}:${String(finalRaid.anchorMinute ?? "").padStart(2, "0")}`.trim();
-
-      const changed =
-        !previousRaid ||
-        oldDayNames !== newDayNames ||
-        oldTime !== newTime ||
-        oldTimezone !== newTimezone ||
-        oldInterval !== newInterval ||
-        oldAnchor !== newAnchor ||
-        (previousRaid.scheduleType || "") !== finalRaid.scheduleType ||
-        (previousRaid.active !== false) !== finalRaid.active;
+        const changed =
+          !previousRaid ||
+          oldDayNames !== newDayNames ||
+          oldTime !== newTime ||
+          (previousRaid.scheduleType || "") !== finalRaid.scheduleType ||
+          (previousRaid.active !== false) !== finalRaid.active;
 
         if (changed) {
           await addDoc(collection(db, "guildNotices"), {

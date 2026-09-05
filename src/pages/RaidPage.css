@@ -402,3 +402,8 @@
         grid-template-columns: 1fr !important;
     }
 }
+
+
+/* V2: read-only schedule state */
+.raid-view-only-badge{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 14px;border:1px solid rgba(126,177,199,.28);border-radius:10px;color:#8fa9b7;background:rgba(255,255,255,.035);font-size:11px;font-weight:800;letter-spacing:.08em}
+@media (max-width:640px){.raid-card-footer{flex-wrap:wrap;gap:10px}.raid-view-only-badge,.raid-edit-button{width:100%}}

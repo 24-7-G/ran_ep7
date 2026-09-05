@@ -205,7 +205,8 @@ export default function CWPage({ user, isAdmin }) {
   const [spendingInventorySearch, setSpendingInventorySearch] = useState(""), [spendingInventoryCategory, setSpendingInventoryCategory] = useState("ALL"), [spendingInventoryPage, setSpendingInventoryPage] = useState(1);
   const [cwRewardsModal, setCwRewardsModal] = useState(false), [cwRewardsGold, setCwRewardsGold] = useState(""), [cwRewardsLines, setCwRewardsLines] = useState([{ itemId: "", itemName: "", quantity: "1" }]), [cwRewardsNote, setCwRewardsNote] = useState("");
   const [itemModal, setItemModal] = useState(null), [itemForm, setItemForm] = useState({ name: "", unitCost: "", description: "", active: true });
-  const [itemAssignmentModal, setItemAssignmentModal] = useState(null), [itemAssignmentForm, setItemAssignmentForm] = useState({ playerId: "", itemId: "", quantity: "1", occurrenceKey: "", notes: "", adminComment: "" });
+  const [itemAssignmentModal, setItemAssignmentModal] = useState(null), [itemAssignmentForm, setItemAssignmentForm] = useState({ playerId: "", itemId: "", quantity: "1", occurrenceKey: "", assignmentDateTime: "", notes: "", adminComment: "" });
+  const [assignmentInventorySearch, setAssignmentInventorySearch] = useState(""), [assignmentInventoryCategory, setAssignmentInventoryCategory] = useState("ALL"), [assignmentInventoryPage, setAssignmentInventoryPage] = useState(1);
   const [adminConfirm, setAdminConfirm] = useState(null);
   const [treasuryModal, setTreasuryModal] = useState(null), [treasuryForm, setTreasuryForm] = useState({ type: "cw-war-income", amount: "", description: "", item: "", transactionAt: "", adminComment: "" });
   const [treasuryEditOriginal, setTreasuryEditOriginal] = useState(null);
@@ -595,7 +596,18 @@ export default function CWPage({ user, isAdmin }) {
     if (!isAdmin) return;
     const defaultOcc = occurrences.find(o => o.key === todayKey) || selectedOccurrence || nextOccurrence || occurrences[0];
     const firstStockItem = item || cwItems.find(i => i.active !== false && stockForItem(i.id).available > 0) || null;
-    setItemAssignmentForm({ playerId: "", itemId: firstStockItem ? String(firstStockItem.id) : "", quantity: "1", occurrenceKey: defaultOcc?.key || "", notes: "", adminComment: "" });
+    setItemAssignmentForm({
+      playerId: "",
+      itemId: firstStockItem ? String(firstStockItem.id) : "",
+      quantity: "1",
+      occurrenceKey: defaultOcc?.key || "",
+      assignmentDateTime: dateTimeInputValue(new Date(), resolvedTimezone),
+      notes: "",
+      adminComment: ""
+    });
+    setAssignmentInventorySearch("");
+    setAssignmentInventoryCategory("ALL");
+    setAssignmentInventoryPage(1);
     setItemAssignmentModal({ player: null, assignment: null, treasuryEntry: null, inventoryItem: firstStockItem });
   }
 
@@ -611,14 +623,20 @@ export default function CWPage({ user, isAdmin }) {
     if (!isAdmin) return;
     const defaultOcc = occurrences.find(o => o.key === todayKey) || selectedOccurrence || nextOccurrence || occurrences[0];
     const treasuryItemMatch = treasuryEntry ? cwItems.find(i => clean(i.name).toLowerCase() === clean(treasuryEntry.item).toLowerCase() && i.active !== false) : null;
+    const preservedAt = assignment?.scheduledAt || treasuryEntry?.transactionAt || treasuryEntry?.createdAt;
+    const initialAt = safeDate(preservedAt) || new Date();
     setItemAssignmentForm({
       playerId: assignment?.playerId || p?.id || treasuryEntry?.playerId || "",
       itemId: assignment?.itemId || treasuryItemMatch?.id || cwItems.find(i => i.active !== false)?.id || "",
       quantity: assignment ? String(num(assignment.quantity, 1)) : (treasuryEntry && treasuryItemMatch && num(treasuryItemMatch.unitCost) > 0 ? String(Math.max(1, Math.round(Math.abs(num(treasuryEntry.amount)) / num(treasuryItemMatch.unitCost)))) : "1"),
       occurrenceKey: assignment?.dateKey || (treasuryEntry ? dateKey(treasuryEntry.transactionAt || treasuryEntry.createdAt, baseTz) : "") || defaultOcc?.key || "",
+      assignmentDateTime: dateTimeInputValue(initialAt, resolvedTimezone),
       notes: assignment?.notes || "",
       adminComment: ""
     });
+    setAssignmentInventorySearch("");
+    setAssignmentInventoryCategory("ALL");
+    setAssignmentInventoryPage(1);
     setItemAssignmentModal({ player: p, assignment, treasuryEntry });
   }
 
@@ -864,15 +882,51 @@ export default function CWPage({ user, isAdmin }) {
     } catch (e) { setMessage(e?.message || "Unable to receive free stock."); } finally { setSaving(false); }
   }
 
+  const assignmentInventoryCategories = useMemo(() => {
+    const values = cwItems
+      .filter(i => i.active !== false || String(i.id) === String(itemAssignmentForm.itemId))
+      .map(i => clean(i.category || "Clan War"))
+      .filter(Boolean);
+    return ["ALL", ...Array.from(new Set(values)).sort((a, b) => a.localeCompare(b))];
+  }, [cwItems, itemAssignmentForm.itemId]);
+
+  const assignmentInventoryRows = useMemo(() => {
+    const q = clean(assignmentInventorySearch).toLowerCase();
+    return cwItems
+      .filter(i => i.active !== false || String(i.id) === String(itemAssignmentForm.itemId))
+      .map(item => {
+        const st = stockForItem(item.id);
+        const category = clean(item.category || "Clan War");
+        const status = st.available <= 0 ? "OUT" : st.available <= st.threshold ? "LOW" : "IN STOCK";
+        return { item, st, category, status };
+      })
+      .filter(row => assignmentInventoryCategory === "ALL" || row.category === assignmentInventoryCategory)
+      .filter(row => !q || clean(row.item.name).toLowerCase().includes(q) || row.category.toLowerCase().includes(q))
+      .filter(row => row.st.available > 0 || String(row.item.id) === String(itemAssignmentForm.itemId))
+      .sort((a, b) => a.item.name.localeCompare(b.item.name));
+  }, [cwItems, inventoryTransactions, assignmentInventorySearch, assignmentInventoryCategory, itemAssignmentForm.itemId]);
+
+  const assignmentInventoryPageCount = Math.max(1, Math.ceil(assignmentInventoryRows.length / 5));
+  const assignmentInventoryPageSafe = Math.min(assignmentInventoryPage, assignmentInventoryPageCount);
+  const assignmentInventoryPageRows = assignmentInventoryRows.slice((assignmentInventoryPageSafe - 1) * 5, assignmentInventoryPageSafe * 5);
+
+  useEffect(() => {
+    if (assignmentInventoryPage > assignmentInventoryPageCount) setAssignmentInventoryPage(assignmentInventoryPageCount);
+  }, [assignmentInventoryPage, assignmentInventoryPageCount]);
+
   async function saveItemAssignment() {
     if (!isAdmin || !itemAssignmentModal) return;
     const { assignment, treasuryEntry } = itemAssignmentModal;
     const player = players.find(p => String(p.id) === String(itemAssignmentForm.playerId)) || itemAssignmentModal.player;
     const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId));
     const quantity = Math.floor(num(itemAssignmentForm.quantity, 0));
-    const matchedOccurrence = occurrences.find(o => o.key === itemAssignmentForm.occurrenceKey);
-    const fallbackDate = itemAssignmentForm.occurrenceKey ? buildOccurrence(itemAssignmentForm.occurrenceKey, schedule.time, baseTz) : null;
-    const occ = matchedOccurrence || (fallbackDate ? { key: itemAssignmentForm.occurrenceKey, time: schedule.time, timezone: baseTz, at: fallbackDate } : null) || occurrences.find(o => o.key === todayKey) || selectedOccurrence || nextOccurrence;
+    const chosenAt = zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone);
+    const chosenParts = chosenAt ? partsInZone(chosenAt, baseTz) : null;
+    const chosenKey = chosenParts ? `${chosenParts.year}-${chosenParts.month}-${chosenParts.day}` : itemAssignmentForm.occurrenceKey;
+    const chosenTime = chosenParts ? `${chosenParts.hour}:${chosenParts.minute}` : schedule.time;
+    const matchedOccurrence = occurrences.find(o => o.key === chosenKey && o.time === schedule.time);
+    const fallbackDate = chosenAt || (chosenKey ? buildOccurrence(chosenKey, schedule.time, baseTz) : null);
+    const occ = { key: chosenKey, time: chosenTime, timezone: baseTz, at: fallbackDate };
     if (!player) { setMessage("Select a player."); return; }
     if (!item) { setMessage("Select an item from the CW Item Catalog."); return; }
     if (item.active === false && !assignment) { setMessage("That item is disabled. Enable it before assigning it."); return; }
@@ -1680,19 +1734,30 @@ export default function CWPage({ user, isAdmin }) {
 
     {inventoryPurchaseModal && <Modal title={inventoryPurchaseModal === "free" ? "RECEIVE FREE CW STOCK" : "PURCHASE INVENTORY STOCK"} wide onClose={() => setInventoryPurchaseModal(false)}><div className="cw-form-grid"><label>TYPE<input value={inventoryPurchaseModal === "free" ? "CLAN WAR REWARD — ₲0" : "INVENTORY PURCHASE — GUILD EXPENSE"} readOnly /></label><label>DATE & TIME ADDED<input value={formatDateTime(now, resolvedTimezone)} readOnly /><small className="cw-field-help">Recorded automatically when this stock receipt is saved. Display follows the global timezone.</small></label><label className="cw-span-2">NOTE<textarea value={inventoryPurchaseNote} onChange={e => setInventoryPurchaseNote(e.target.value)} placeholder="Example: Guild Leader expense / Clan War reward" /></label></div><div className="cw-inventory-line-editor">{inventoryPurchaseLines.map((line, index) => { const item = cwItems.find(i => String(i.id) === String(line.itemId)); const total = item ? num(item.unitCost) * Math.floor(num(line.quantity, 0)) : 0; return <div className="cw-inventory-line" key={index}><select value={line.itemId} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, itemId: e.target.value } : r))}><option value="">SELECT ITEM...</option>{cwItems.filter(i => i.active !== false).map(i => <option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)} each</option>)}</select><input inputMode="numeric" value={line.quantity} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: e.target.value.replace(/[^0-9]/g, "") } : r))} placeholder="Quantity" /><strong>{inventoryPurchaseModal === "free" ? "₲ 0" : `₲ ${money(total)}`}</strong>{inventoryPurchaseLines.length > 1 && <button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setInventoryPurchaseLines(rows => rows.filter((_, i) => i !== index))}>REMOVE</button>}</div> })}</div><button className="cw-btn" onClick={() => setInventoryPurchaseLines(rows => [...rows, { itemId: "", quantity: "1" }])}>＋ ADD ITEM LINE</button><div className="cw-helper"><b>{inventoryPurchaseModal === "free" ? "TREASURY IMPACT: ₲0" : `TREASURY IMPACT: -₲ ${money(inventoryPurchaseLines.reduce((sum, l) => { const i = cwItems.find(x => String(x.id) === String(l.itemId)); return sum + (i ? num(i.unitCost) * Math.floor(num(l.quantity, 0)) : 0) }, 0))}`}</b><br />Received quantities are added to the Inventory Vault and can later be distributed without another Treasury charge.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setInventoryPurchaseModal(false)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={inventoryPurchaseModal === "free" ? saveFreeInventory : saveInventoryPurchase}>{saving ? "SAVING..." : inventoryPurchaseModal === "free" ? "RECEIVE STOCK — ₲0" : "PURCHASE & ADD TO VAULT"}</button></div></Modal>}
 
-    {itemAssignmentModal && <Modal title={`${itemAssignmentModal.assignment ? "EDIT ITEM ASSIGNMENT" : "ASSIGN ITEM TO PLAYER"} • ${itemAssignmentModal.player?.ign || itemAssignmentModal.inventoryItem?.name || "INVENTORY ITEM"}`} wide onClose={() => setItemAssignmentModal(null)}>
-      <div className="cw-attendance-summary"><strong>{itemAssignmentModal.player?.ign || "Inventory Stock Distribution"}</strong><span>{itemAssignmentModal.player ? `${itemAssignmentModal.player.className || itemAssignmentModal.player.class} • ${itemAssignmentModal.player.role || "Role not set"}` : "Select a player and an item from the available Inventory Vault stock."}</span></div>
-      <div className="cw-form-grid">
-        {!itemAssignmentModal.player && <label>PLAYER<select value={itemAssignmentForm.playerId} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, playerId: e.target.value })}><option value="">SELECT PLAYER...</option>{activePlayers.map(p => <option key={p.id} value={p.id}>{p.ign} • {p.className || p.class}</option>)}</select></label>}
-        <label>ITEM FROM AVAILABLE STOCK<select value={itemAssignmentForm.itemId} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, itemId: e.target.value })}><option value="">SELECT STOCK ITEM...</option>{cwItems.filter(i => (i.active !== false && stockForItem(i.id).available > 0) || i.id === itemAssignmentForm.itemId).map(item => <option key={item.id} value={item.id}>{item.name} • {stockForItem(item.id).available} AVAILABLE • ₲ {money(item.unitCost)} each</option>)}</select></label>
+    {itemAssignmentModal && <Modal title={`${itemAssignmentModal.assignment ? "EDIT ITEM ASSIGNMENT" : "ASSIGN ITEM TO PLAYER"} • ${itemAssignmentModal.player?.ign || "INVENTORY"}`} wide onClose={() => setItemAssignmentModal(null)}>
+      <div className="cw-assignment-hero">
+        <div><span className="cw-kicker">CLAN WAR INVENTORY</span><h3>{itemAssignmentModal.assignment ? "Edit Item Distribution" : "Assign Item to Player"}</h3><p>Choose a player, select live Vault stock, set the quantity, and record the exact Clan War date & time.</p></div>
+        <div className="cw-assignment-live"><small>RECORDED TIME</small><strong>{formatDateTime(zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone) || now, resolvedTimezone)}</strong><span>{resolvedTimezone}</span></div>
+      </div>
+      <div className="cw-form-grid cw-assignment-top-grid">
+        {!itemAssignmentModal.player && <label>PLAYER<select value={itemAssignmentForm.playerId} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, playerId: e.target.value })}><option value="">SELECT PLAYER...</option>{activePlayers.map(p => <option key={p.id} value={p.id}>{p.ign} • {p.className || p.class} • {p.role || "No role"}</option>)}</select></label>}
+        <label>CLAN WAR DATE & TIME<input type="datetime-local" value={itemAssignmentForm.assignmentDateTime || dateTimeInputValue(now, resolvedTimezone)} onChange={e => { const value = e.target.value; const utc = zonedDateTimeInputToUtc(value, resolvedTimezone); const parts = utc ? partsInZone(utc, baseTz) : null; setItemAssignmentForm({ ...itemAssignmentForm, assignmentDateTime: value, occurrenceKey: parts ? `${parts.year}-${parts.month}-${parts.day}` : itemAssignmentForm.occurrenceKey }); }} /><small className="cw-field-help">Defaults to the current time. Change it to the exact Clan War date/time you are recording. Display follows {resolvedTimezone}.</small></label>
+      </div>
+      <section className="cw-assignment-stock-panel">
+        <div className="cw-assignment-stock-head"><div><span className="cw-kicker">INVENTORY VAULT</span><h3>Select item from available stock</h3><p>Only stock with available units can be assigned.</p></div><div className="cw-assignment-stock-count"><strong>{assignmentInventoryRows.length}</strong><span>available item types</span></div></div>
+        <div className="cw-assignment-stock-tools"><label className="cw-assignment-search"><span>SEARCH STOCK</span><input value={assignmentInventorySearch} onChange={e => { setAssignmentInventorySearch(e.target.value); setAssignmentInventoryPage(1); }} placeholder="Search item name or category..." /></label><label><span>TYPE</span><select value={assignmentInventoryCategory} onChange={e => { setAssignmentInventoryCategory(e.target.value); setAssignmentInventoryPage(1); }}>{assignmentInventoryCategories.map(c => <option key={c} value={c}>{c === "ALL" ? "ALL TYPES" : c}</option>)}</select></label></div>
+        <div className="cw-assignment-stock-table-wrap"><table className="cw-assignment-stock-table"><thead><tr><th>SELECT</th><th>ITEM</th><th>TYPE</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>UNIT COST</th><th>STATUS</th></tr></thead><tbody>{assignmentInventoryPageRows.map(({ item, st, category, status }) => { const selected = String(item.id) === String(itemAssignmentForm.itemId); return <tr key={item.id} className={selected ? "selected" : ""} onClick={() => setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) })}><td><button type="button" className={`cw-stock-select ${selected ? "selected" : ""}`} onClick={e => { e.stopPropagation(); setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) }); }}>{selected ? "✓" : "SELECT"}</button></td><td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td><td>{category}</td><td>{money(st.received)}</td><td>{money(st.distributed)}</td><td><strong>{money(st.available)}</strong></td><td>₲ {money(item.unitCost)}</td><td><span className={`cw-stock-status ${status === "OUT" ? "out" : status === "LOW" ? "low" : "in"}`}>{status}</span></td></tr>})}{!assignmentInventoryPageRows.length && <tr><td colSpan="8" className="cw-assignment-empty">No available stock matches your search/type.</td></tr>}</tbody></table></div>
+        <div className="cw-assignment-stock-pagination"><span>Showing {assignmentInventoryRows.length ? ((assignmentInventoryPageSafe - 1) * 5 + 1) : 0}–{Math.min(assignmentInventoryPageSafe * 5, assignmentInventoryRows.length)} of {assignmentInventoryRows.length}</span><div><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe <= 1} onClick={() => setAssignmentInventoryPage(p => Math.max(1, p - 1))}>‹</button><strong>{assignmentInventoryPageSafe} / {assignmentInventoryPageCount}</strong><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe >= assignmentInventoryPageCount} onClick={() => setAssignmentInventoryPage(p => Math.min(assignmentInventoryPageCount, p + 1))}>›</button></div></div>
+      </section>
+      <div className="cw-form-grid cw-assignment-bottom-grid">
+        {!itemAssignmentModal.player && <label>PLAYER<input value={players.find(p => String(p.id) === String(itemAssignmentForm.playerId))?.ign || "Select a player above"} readOnly /></label>}
         <label>QUANTITY<input inputMode="numeric" value={itemAssignmentForm.quantity} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, quantity: e.target.value.replace(/[^0-9]/g, "") })} min="1" /></label>
-        <label className="cw-span-2">CLAN WAR DATE<select value={itemAssignmentForm.occurrenceKey} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, occurrenceKey: e.target.value })}>{itemAssignmentModal.treasuryEntry && !windowOccurrences.some(o => o.key === itemAssignmentForm.occurrenceKey) && itemAssignmentForm.occurrenceKey && <option value={itemAssignmentForm.occurrenceKey}>{itemAssignmentForm.occurrenceKey} • TREASURY DATE</option>}{windowOccurrences.map(o => <option key={o.key} value={o.key}>{formatDateTime(o.at, resolvedTimezone)}{o.key === todayKey ? " • TODAY" : ""}</option>)}</select></label>
         <label className="cw-span-2">NOTES<textarea value={itemAssignmentForm.notes} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, notes: e.target.value })} placeholder="Optional note about the item distribution" /></label>
         {itemAssignmentModal.assignment && <label className="cw-span-2">ADMIN COMMENT *<textarea value={itemAssignmentForm.adminComment} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, adminComment: e.target.value })} placeholder="Required when editing this item assignment." /></label>}
       </div>
-      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const stock = item ? stockForItem(item.id) : null; const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const remaining = stock ? stock.available - qty : 0; const status = !stock || stock.available <= 0 ? "is-out" : stock.available <= stock.threshold ? "is-low" : ""; return item ? <div className={`cw-stock-inline ${status}`}><span><strong>{money(stock.available)}</strong> available</span><span>{money(stock.received)} received</span><span>{money(stock.distributed)} distributed</span><span>{qty > 0 ? `${money(Math.max(0, remaining))} after` : "Select quantity"}</span></div> : null; })()}
-      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const total = item ? num(item.unitCost) * qty : 0; return <div className="cw-helper"><b>TREASURY:</b> {item ? `${qty} × ₲ ${money(item.unitCost)} = -₲ ${money(total)}` : "Select an item."}. {itemAssignmentModal.treasuryEntry ? "This will link the existing Treasury expense to the player and CW item history without creating a duplicate expense." : "Distribution uses existing inventory stock only. Treasury impact: ₲0. Player History and Inventory are recorded."}</div> })()}
-      <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setItemAssignmentModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving || !itemAssignmentForm.playerId || !itemAssignmentForm.itemId} onClick={saveItemAssignment}>{saving ? "SAVING..." : itemAssignmentModal.assignment ? "SAVE ITEM ASSIGNMENT" : itemAssignmentModal.treasuryEntry ? "LINK ITEM TO PLAYER" : "ASSIGN FROM INVENTORY"}</button></div>
+      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const stock = item ? stockForItem(item.id) : null; const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const remaining = stock ? stock.available - qty : 0; const status = !stock || stock.available <= 0 ? "is-out" : stock.available <= stock.threshold ? "is-low" : ""; return item ? <div className={`cw-stock-inline ${status}`}><span><strong>{money(stock.available)}</strong> available</span><span>{money(stock.received)} received</span><span>{money(stock.distributed)} distributed</span><span>{qty > 0 ? `${money(Math.max(0, remaining))} after` : "Enter quantity"}</span><span>₲ {money(num(item.unitCost) * qty)} value</span></div> : <div className="cw-assignment-no-selection">Select an item above to see live stock.</div>; })()}
+      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const total = item ? num(item.unitCost) * qty : 0; const chosen = zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone) || now; return <div className="cw-assignment-summary"><div><small>DATE / TIME</small><strong>{formatDateTime(chosen, resolvedTimezone)}</strong></div><div><small>ITEM VALUE</small><strong>{item ? `₲ ${money(total)}` : "—"}</strong></div><div><small>TREASURY</small><strong>₲ 0</strong><span>Inventory distribution only</span></div><div><small>STOCK AFTER</small><strong>{item ? money(Math.max(0, stockForItem(item.id).available - qty)) : "—"}</strong></div></div>; })()}
+      <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setItemAssignmentModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving || !itemAssignmentForm.playerId || !itemAssignmentForm.itemId || !itemAssignmentForm.assignmentDateTime} onClick={saveItemAssignment}>{saving ? "SAVING..." : itemAssignmentModal.assignment ? "SAVE ITEM ASSIGNMENT" : itemAssignmentModal.treasuryEntry ? "LINK ITEM TO PLAYER" : "ASSIGN FROM INVENTORY"}</button></div>
     </Modal>}
 
     {scheduleModal && <Modal title="EDIT CLAN WAR OCCURRENCE" onClose={() => setScheduleModal(false)}><div className="cw-label">CW DAYS</div><div className="cw-day-picks">{CW_DAYS.map(d => <button key={d.key} className={scheduleForm.days.includes(d.key) ? "selected" : ""} onClick={() => toggleDay(d.key)}>{d.label}</button>)}</div><div className="cw-form-grid"><label>BASE TIME<input type="time" value={scheduleForm.time} onChange={e => setScheduleForm({ ...scheduleForm, time: e.target.value })} /></label><label>BASE TIMEZONE<input value="Philippines — Manila (Asia/Manila)" readOnly /></label></div><div className="cw-helper">Clan War is stored in Manila time. The global DISPLAY TIMEZONE selector only changes how the schedule is displayed to each viewer. Example: 9:00 PM Manila automatically converts to the viewer's browser/custom timezone.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setScheduleModal(false)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={saveSchedule}>SAVE OCCURRENCE</button></div></Modal>}
