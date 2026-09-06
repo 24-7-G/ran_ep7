@@ -1,0 +1,197 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && (request.auth.uid == "oKGRQDdmiXUFuyRPDw5QsPBmsAD2"
+          || (exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
+            && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true));
+    }
+
+
+    // ADMINISTRATOR DIRECTORY
+    // A new Firebase Auth identity may create ONLY its own adminUsers record,
+    // and ONLY when it can prove that it owns a PIN-verified registration request.
+    match /adminUsers/{id} {
+      allow read: if signedIn() && (request.auth.uid == id || isAdmin());
+
+      allow create: if isAdmin()
+        || (signedIn()
+          && request.auth.uid == id
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.active == true
+          && request.resource.data.registrationRequestId is string
+          && exists(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId))
+          && get(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId)).data.status == "verified_pending_auth"
+          && get(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId)).data.email == request.auth.token.email
+          && (
+            (exists(/databases/$(database)/documents/adminSettings/security)
+              && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash is string
+              && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash != ""
+              && get(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId)).data.pinHash == get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash)
+            || ((!exists(/databases/$(database)/documents/adminSettings/security)
+              || (get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash is string
+                  && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash == ""))
+              && get(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId)).data.pinHash == "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92")
+          ));
+
+      allow update, delete: if isAdmin();
+    }
+
+    // NEW ADMIN REGISTRATION
+    // The browser submits only a SHA-256 proof of the 6-digit PIN. The actual
+    // PIN stays inside the authenticated administrator's protected security
+    // document. Firestore compares the submitted hash server-side BEFORE the
+    // Firebase Authentication account is created.
+    function validAdminRegistrationPin() {
+      return (
+        (exists(/databases/$(database)/documents/adminSettings/security)
+          && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash is string
+          && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash != ""
+          && request.resource.data.pinHash == get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash)
+        ||
+        ((!exists(/databases/$(database)/documents/adminSettings/security)
+          || (get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash is string
+              && get(/databases/$(database)/documents/adminSettings/security).data.registrationPinHash == ""))
+          && request.resource.data.pinHash == "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92")
+      );
+    }
+
+    match /adminRequests/{id} {
+      // Signed-out visitors may create a request ONLY when the submitted PIN
+      // hash matches the current protected registration PIN.
+      allow create: if !signedIn()
+        && !exists(/databases/$(database)/documents/adminRequests/$(id))
+        && validAdminRegistrationPin()
+        && request.resource.data.status == "verified_pending_auth"
+        && request.resource.data.requestedByUid == ""
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.pinHash is string;
+
+      allow read: if isAdmin();
+
+      // A signed-out client may retry the same request only with the same email,
+      // display name, and currently-valid PIN proof. An authenticated new admin
+      // may attach its UID and mark the request verified after claiming adminUsers.
+      allow update: if isAdmin()
+        || (!signedIn()
+          && resource.data.status == "verified_pending_auth"
+          && validAdminRegistrationPin()
+          && request.resource.data.status == "verified_pending_auth"
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.displayName is string
+          && request.resource.data.requestedByUid == "")
+        || (signedIn()
+          && resource.data.status == "verified_pending_auth"
+          && request.resource.data.status == "verified"
+          && request.resource.data.pinHash == resource.data.pinHash
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.displayName == resource.data.displayName
+          && request.resource.data.requestedByUid == request.auth.uid);
+
+      allow delete: if isAdmin();
+    }
+
+    match /adminSettings/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /guildNoticeArchives/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Protected 90-day recovery archives. Only active administrators can
+    // create, inspect, restore, or purge archived application data.
+    match /adminArchives/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /adminArchiveChunks/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // RAID SCHEDULES
+    match /raidSchedules/{id} {
+      allow read, write: if true;
+    }
+
+    // GUILD QUESTIONS
+    // PIN ownership is verified by TicketPage.jsx before a player edit/delete.
+    // Admin can edit/delete any ticket.
+    // This collection intentionally permits client writes so PIN-based players
+    // can edit/delete tickets even when they are not Firebase-authenticated.
+    match /guildTickets/{ticketId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Existing app collections: public read, admin write.
+    match /players/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhAttendance/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhBalances/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /bhRewards/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwPlayers/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwAttendance/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /cwSchedules/{id} {
+      allow read: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    match /cwSettings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /guildNotices/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /treasuryEntries/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /treasuryConfig/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

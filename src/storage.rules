@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && (request.auth.uid == "oKGRQDdmiXUFuyRPDw5QsPBmsAD2"
+          || (firestore.exists(/databases/(default)/documents/adminUsers/$(request.auth.uid))
+            && firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.active == true));
+    }
+
+    // Complete JSON/XLSX backups are administrator-only.
+    match /backups/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

@@ -1,10 +1,12 @@
+/* Clan War page — 3-tab navigation + slide-down Activity & Notifications drawer. */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "../lib/firebase";
 import { PRIMARY_TIMEZONE, GUILD_CLASSES } from "../lib/constants";
 import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
+import { buildAuditPayload } from "../lib/guildAudit";
 import { zonedDateToUtc } from "../lib/time";
 import swordmanIcon from "../icons/swordman.svg";
 import archerIcon from "../icons/archer.svg";
@@ -14,6 +16,7 @@ import extremeIcon from "../icons/extreme.svg";
 import brawlerIcon from "../icons/brawler.svg";
 import cwWarIcon from "../icons/cw-war.svg";
 import guildWarArtwork from "../bosses/guild-war.png";
+import ranVIcon from "../assets/ran-v-icon.png";
 import "./CWPage.css";
 
 const CW_DAYS = [
@@ -49,6 +52,11 @@ function formatMoneyInput(v) {
   const wholeFormatted = whole ? Number(whole).toLocaleString("en-US") : "0";
   return dot === -1 ? wholeFormatted : `${wholeFormatted}.${decimal ?? ""}`;
 }
+function sanitizeQuantityInput(v) {
+  // Quantity fields are integer counts, not money fields. Keep the raw digits
+  // so values such as 1, 2, 3, 10, 25, etc. can always be typed normally.
+  return String(v ?? "").replace(/[^0-9]/g, "").slice(0, 9);
+}
 function safeDate(v) {
   if (!v) return null;
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
@@ -73,6 +81,7 @@ function countdownLabel(at, now) { const ms = (safeDate(at)?.getTime() || 0) - n
 function money(v) { return num(v).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
 function count(v) { return num(v).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
 function actor(user) { return clean(user?.email) || clean(user?.displayName) || "System"; }
+function updatedTimeMs(row, ...fallbacks) { const values = [row?.updatedAt, ...fallbacks.map((key) => row?.[key])]; for (const value of values) { const t = safeDate(value)?.getTime(); if (Number.isFinite(t)) return t; } return 0; }
 function diffText(ms) {
   const sec = Math.max(0, Math.floor(ms / 1000)); const d = Math.floor(sec / 86400); const h = Math.floor(sec % 86400 / 3600); const m = Math.floor(sec % 3600 / 60); const s = sec % 60;
   if (d) return `${d}d ${h}h ${m}m`;
@@ -171,13 +180,22 @@ function noticeIcon(category) {
   }
 }
 
+function displayAuditText(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/\s*\((?:[A-Za-z0-9_-]{15,})\)/g, "")
+    .replace(/\b(?:UID|User ID|Player ID|Reward ID|Claim ID|Schedule ID|Item ID|Treasury ID)\s*[:#-]?\s*[A-Za-z0-9_-]{8,}/gi, "")
+    .replace(/\s*\/\s*[A-Za-z0-9_-]{15,}\b/g, "")
+    .trim();
+}
+
 function NoticeItem({ item, timezone, onClick }) {
   const category = inferNoticeCategory(item);
   return <button className={`cw-notice-item cw-notice-category-${category.toLowerCase()}`} onClick={() => onClick(item)}>
     <span className="cw-notice-icon">{noticeIcon(category)}</span>
     <span className="cw-notice-category">{category}</span>
     <span className="cw-notice-copy"><strong>{clean(item.title) || "Activity"}</strong><span>{clean(item.message) || "Record changed."}</span></span>
-    <span className="cw-notice-meta"><b>{formatDateTime(item.createdAt || item.timestamp, timezone)}</b><em>{clean(item.createdBy) || "System"}</em></span><b className="cw-chevron">›</b>
+    <span className="cw-notice-meta"><b>{formatDateTime(item.updatedAt || item.createdAt || item.timestamp, timezone)}</b><em>{clean(item.createdBy) || "System"}</em></span><b className="cw-chevron">›</b>
   </button>;
 }
 
@@ -188,14 +206,17 @@ export default function CWPage({ user, isAdmin }) {
   const [roleSettings, setRoleSettings] = useState({ roles: DEFAULT_ROLES });
   const [salarySettings, setSalarySettings] = useState({ byClass: {}, byClassRole: [] });
   const [loading, setLoading] = useState(true), [message, setMessage] = useState("");
-  const [backDays, setBackDays] = useState(0), [forwardDays, setForwardDays] = useState(0);
+  const [backDays, setBackDays] = useState(0), [forwardDays, setForwardDays] = useState(7);
   const [activePanel, setActivePanel] = useState("attendance"), [selectedOccurrence, setSelectedOccurrence] = useState(null);
-  const [selectedPlayer, setSelectedPlayer] = useState(null), [selectedAttendance, setSelectedAttendance] = useState(null), [auditDetail, setAuditDetail] = useState(null);
+  // Activity & Notifications is page-local. It always starts closed when
+  // entering Clan War so a previous Boss Hunt/CW drawer cannot carry over.
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null), [selectedAttendance, setSelectedAttendance] = useState(null), [auditDetail, setAuditDetail] = useState(null), [treasuryDetail, setTreasuryDetail] = useState(null);
   const [playerHistoryTab, setPlayerHistoryTab] = useState("all"), [playerHistorySearch, setPlayerHistorySearch] = useState(""), [playerHistoryPage, setPlayerHistoryPage] = useState(1);
   const [noticeMode, setNoticeMode] = useState("new"), [noticePage, setNoticePage] = useState(1), [noticeNewPage, setNoticeNewPage] = useState(1), [noticeOldPage, setNoticeOldPage] = useState(1), [allNoticePage, setAllNoticePage] = useState(1), [noticeSearch, setNoticeSearch] = useState(""), [noticeCategoryFilter, setNoticeCategoryFilter] = useState("all"), [noticeAdminFilter, setNoticeAdminFilter] = useState("all"), [noticeTimeFilter, setNoticeTimeFilter] = useState("all"), [noticeDateFilter, setNoticeDateFilter] = useState(""), [noticeFrom, setNoticeFrom] = useState(""), [noticeTo, setNoticeTo] = useState("");
   const [playerSearch, setPlayerSearch] = useState(""), [roleFilter, setRoleFilter] = useState("all"), [classFilter, setClassFilter] = useState("all"), [playerPage, setPlayerPage] = useState(1);
   const [historySearch, setHistorySearch] = useState(""), [historyPage, setHistoryPage] = useState(1);
-  const [treasurySearch, setTreasurySearch] = useState(""), [treasuryCategoryFilter, setTreasuryCategoryFilter] = useState("all"), [treasuryDateFilter, setTreasuryDateFilter] = useState(""), [treasuryFrom, setTreasuryFrom] = useState(""), [treasuryTo, setTreasuryTo] = useState("");
+  const [treasurySearch, setTreasurySearch] = useState(""), [treasuryCategoryFilter, setTreasuryCategoryFilter] = useState("all"), [treasuryDateFilter, setTreasuryDateFilter] = useState(""), [treasuryFrom, setTreasuryFrom] = useState(""), [treasuryTo, setTreasuryTo] = useState(""), [treasuryPage, setTreasuryPage] = useState(1);
   const [playerModal, setPlayerModal] = useState(null), [playerForm, setPlayerForm] = useState({ ign: "", className: GUILD_CLASSES?.[0] || "Swordman", role: DEFAULT_ROLES[0] });
   const [attendanceModal, setAttendanceModal] = useState(null), [attendanceForm, setAttendanceForm] = useState({ salaryGold: "", itemCostGold: "", receivedItem: "", notes: "", adminComment: "" });
   const [cwItems, setCwItems] = useState([]), [itemAssignments, setItemAssignments] = useState([]), [inventoryTransactions, setInventoryTransactions] = useState([]);
@@ -205,7 +226,9 @@ export default function CWPage({ user, isAdmin }) {
   const [spendingInventorySearch, setSpendingInventorySearch] = useState(""), [spendingInventoryCategory, setSpendingInventoryCategory] = useState("ALL"), [spendingInventoryPage, setSpendingInventoryPage] = useState(1);
   const [cwRewardsModal, setCwRewardsModal] = useState(false), [cwRewardsGold, setCwRewardsGold] = useState(""), [cwRewardsLines, setCwRewardsLines] = useState([{ itemId: "", itemName: "", quantity: "1" }]), [cwRewardsNote, setCwRewardsNote] = useState("");
   const [itemModal, setItemModal] = useState(null), [itemForm, setItemForm] = useState({ name: "", unitCost: "", description: "", active: true });
+  const [inventoryPage, setInventoryPage] = useState(1), [catalogPage, setCatalogPage] = useState(1);
   const [itemAssignmentModal, setItemAssignmentModal] = useState(null), [itemAssignmentForm, setItemAssignmentForm] = useState({ playerId: "", itemId: "", quantity: "1", occurrenceKey: "", assignmentDateTime: "", notes: "", adminComment: "" });
+  const [assignmentSelections, setAssignmentSelections] = useState([]);
   const [assignmentInventorySearch, setAssignmentInventorySearch] = useState(""), [assignmentInventoryCategory, setAssignmentInventoryCategory] = useState("ALL"), [assignmentInventoryPage, setAssignmentInventoryPage] = useState(1);
   const [adminConfirm, setAdminConfirm] = useState(null);
   const [treasuryModal, setTreasuryModal] = useState(null), [treasuryForm, setTreasuryForm] = useState({ type: "cw-war-income", amount: "", description: "", item: "", transactionAt: "", adminComment: "" });
@@ -320,15 +343,7 @@ export default function CWPage({ user, isAdmin }) {
 
             return /^cw\b|\bclan war\b|cw-attendance|cw-player|cw-schedule|cw-salary|cw-role|cw-item|cw-treasury/.test(text);
           })
-          .sort(
-            (a, b) =>
-              (safeDate(
-                b.createdAt || b.timestamp
-              )?.getTime() || 0) -
-              (safeDate(
-                a.createdAt || a.timestamp
-              )?.getTime() || 0)
-          );
+          .sort((a, b) => updatedTimeMs(b, "updatedAt", "timestamp", "createdAt") - updatedTimeMs(a, "updatedAt", "timestamp", "createdAt"));
 
         setNotices(noticeRows);
       }
@@ -341,7 +356,7 @@ export default function CWPage({ user, isAdmin }) {
           snapshot.docs.map((entryDoc) => ({
             id: entryDoc.id,
             ...entryDoc.data(),
-          }))
+          })).sort((a, b) => updatedTimeMs(b, "updatedAt", "transactionAt", "createdAt") - updatedTimeMs(a, "updatedAt", "transactionAt", "createdAt"))
         );
       }
     );
@@ -431,14 +446,19 @@ export default function CWPage({ user, isAdmin }) {
     });
     previousInventoryStatus.current = next;
   }, [inventoryStock, cwItems, inventoryTransactionsLoaded]);
-  const activePlayers = useMemo(() => players.filter(p => p.active !== false).sort((a, b) => clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" })), [players]);
-  const rosterPlayers = useMemo(() => players.slice().sort((a, b) => { const activeDiff = (a.active === false ? 1 : 0) - (b.active === false ? 1 : 0); return activeDiff || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" }); }), [players]);
+  const playerLatestUpdateMs = (p) => Math.max(
+    updatedTimeMs(p, "createdAt"),
+    ...attendance.filter(r => String(r.playerId) === String(p.id)).map(r => updatedTimeMs(r, "scheduledAt", "createdAt")),
+    ...itemAssignments.filter(r => String(r.playerId) === String(p.id)).map(r => updatedTimeMs(r, "scheduledAt", "createdAt"))
+  );
+  const activePlayers = useMemo(() => players.filter(p => p.active !== false).sort((a, b) => playerLatestUpdateMs(b) - playerLatestUpdateMs(a) || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" })), [players, attendance, itemAssignments]);
+  const rosterPlayers = useMemo(() => players.slice().sort((a, b) => playerLatestUpdateMs(b) - playerLatestUpdateMs(a) || ((a.active === false ? 1 : 0) - (b.active === false ? 1 : 0)) || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" })), [players, attendance, itemAssignments]);
   const classes = useMemo(() => Array.from(new Set([...(GUILD_CLASSES || []), ...players.map(p => clean(p.className || p.class)).filter(Boolean)])), [players]);
   const roles = useMemo(() => Array.from(new Set([...(roleSettings.roles || DEFAULT_ROLES), ...players.map(p => clean(p.role)).filter(Boolean)])), [roleSettings, players]);
   const filteredPlayers = useMemo(() => { const q = playerSearch.toLowerCase().trim(); return rosterPlayers.filter(p => (!q || [p.ign, p.className || p.class, p.role].some(v => clean(v).toLowerCase().includes(q))) && (classFilter === "all" || clean(p.className || p.class) === classFilter) && (roleFilter === "all" || clean(p.role) === roleFilter)) }, [rosterPlayers, playerSearch, classFilter, roleFilter]);
   const playerPageCount = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
   const visiblePlayers = filteredPlayers.slice((playerPage - 1) * PAGE_SIZE, playerPage * PAGE_SIZE);
-  const historyRows = useMemo(() => attendance.filter(r => !historySearch.trim() || [r.ign, r.className, r.role, r.receivedItem, r.notes].some(v => clean(v).toLowerCase().includes(historySearch.toLowerCase().trim()))).sort((a, b) => String(b.dateKey).localeCompare(String(a.dateKey))), [attendance, historySearch]);
+  const historyRows = useMemo(() => attendance.filter(r => !historySearch.trim() || [r.ign, r.className, r.role, r.receivedItem, r.notes].some(v => clean(v).toLowerCase().includes(historySearch.toLowerCase().trim()))).sort((a, b) => updatedTimeMs(b, "updatedAt", "createdAt") - updatedTimeMs(a, "updatedAt", "createdAt")), [attendance, historySearch]);
   const historyPageCount = Math.max(1, Math.ceil(historyRows.length / PAGE_SIZE));
   const visibleHistory = historyRows.slice((historyPage - 1) * PAGE_SIZE, historyPage * PAGE_SIZE);
   const totalSalary = attendance.reduce((s, r) => s + num(r.salaryGold), 0);
@@ -453,7 +473,7 @@ export default function CWPage({ user, isAdmin }) {
   const noticeSearchLower = noticeSearch.toLowerCase().trim();
   const noticeAdmins = useMemo(() => Array.from(new Set(notices.map(n => clean(n.createdBy)).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [notices]);
   const matchingNotices = useMemo(() => notices.filter(n => {
-    const created = safeDate(n.createdAt || n.timestamp);
+    const created = safeDate(n.updatedAt || n.createdAt || n.timestamp);
     const createdDateKey = dateKey(created, resolvedTimezone);
     if (noticeCategoryFilter !== "all" && inferNoticeCategory(n) !== noticeCategoryFilter) return false;
     if (noticeAdminFilter !== "all" && clean(n.createdBy) !== noticeAdminFilter) return false;
@@ -468,8 +488,8 @@ export default function CWPage({ user, isAdmin }) {
     return !noticeSearchLower || [n.title, n.message, n.createdBy, n.playerName, n.rewardName, n.bossName, n.item, n.description]
       .some(v => clean(v).toLowerCase().includes(noticeSearchLower));
   }), [notices, noticeSearchLower, noticeCategoryFilter, noticeAdminFilter, noticeTimeFilter, noticeDateFilter, noticeFrom, noticeTo, resolvedTimezone, now]);
-  const newNotices = useMemo(() => matchingNotices.filter(n => dateKey(n.createdAt || n.timestamp, resolvedTimezone) === noticeDateKey), [matchingNotices, resolvedTimezone, noticeDateKey]);
-  const oldNotices = useMemo(() => matchingNotices.filter(n => dateKey(n.createdAt || n.timestamp, resolvedTimezone) !== noticeDateKey), [matchingNotices, resolvedTimezone, noticeDateKey]);
+  const newNotices = useMemo(() => matchingNotices.filter(n => dateKey(n.updatedAt || n.createdAt || n.timestamp, resolvedTimezone) === noticeDateKey), [matchingNotices, resolvedTimezone, noticeDateKey]);
+  const oldNotices = useMemo(() => matchingNotices.filter(n => dateKey(n.updatedAt || n.createdAt || n.timestamp, resolvedTimezone) !== noticeDateKey), [matchingNotices, resolvedTimezone, noticeDateKey]);
   const newPageCount = Math.max(1, Math.ceil(newNotices.length / PAGE_SIZE));
   const oldPageCount = Math.max(1, Math.ceil(oldNotices.length / PAGE_SIZE));
   const visibleNewNotices = newNotices.slice((noticeNewPage - 1) * PAGE_SIZE, noticeNewPage * PAGE_SIZE);
@@ -499,28 +519,17 @@ export default function CWPage({ user, isAdmin }) {
     try {
       const moduleName = payload.module || "cw-attendance";
       const category = payload.category || inferNoticeCategory(payload);
-      await addDoc(collection(db, "guildNotices"), {
+      await addDoc(collection(db, "guildNotices"), buildAuditPayload({
+        ...payload,
         module: moduleName,
         category,
-        title: payload.title || "CW activity",
-        message: payload.message || "",
-        type: "info",
-        active: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        timestamp: serverTimestamp(),
+        type: payload.type || "info",
+        scope: payload.scope || "clan-war",
         createdBy: actor(user),
         createdByUid: user?.uid || null,
-        entityType: payload.entityType || "",
-        entityId: payload.entityId || "",
-        playerId: payload.playerId || null,
-        playerName: payload.playerName || "",
-        bossName: payload.bossName || "",
-        item: payload.item || "",
-        description: payload.description || "",
-        details: Array.isArray(payload.details) ? payload.details : [],
-        changes: Array.isArray(payload.changes) ? payload.changes : []
-      });
+        updatedBy: actor(user),
+        updatedByUid: user?.uid || null,
+      }, { actor: actor(user), uid: user?.uid, scope: "clan-war" }));
     } catch (e) { console.error(e) }
   }
 
@@ -608,6 +617,7 @@ export default function CWPage({ user, isAdmin }) {
     setAssignmentInventorySearch("");
     setAssignmentInventoryCategory("ALL");
     setAssignmentInventoryPage(1);
+    setAssignmentSelections(firstStockItem ? [{ itemId: String(firstStockItem.id), quantity: "1" }] : []);
     setItemAssignmentModal({ player: null, assignment: null, treasuryEntry: null, inventoryItem: firstStockItem });
   }
 
@@ -617,7 +627,7 @@ export default function CWPage({ user, isAdmin }) {
     openInventoryAssignment();
   }
 
-  function openGuildInventory() { setItemModal({ mode: "inventory" }); }
+  function openGuildInventory() { setInventoryPage(1); setItemModal({ mode: "inventory" }); }
 
   function openItemAssignment(p, assignment = null, treasuryEntry = null) {
     if (!isAdmin) return;
@@ -637,6 +647,7 @@ export default function CWPage({ user, isAdmin }) {
     setAssignmentInventorySearch("");
     setAssignmentInventoryCategory("ALL");
     setAssignmentInventoryPage(1);
+    setAssignmentSelections(assignment || treasuryEntry ? [{ itemId: String(assignment?.itemId || treasuryItemMatch?.id || ""), quantity: assignment ? String(num(assignment.quantity, 1)) : "1" }] : []);
     setItemAssignmentModal({ player: p, assignment, treasuryEntry });
   }
 
@@ -660,9 +671,9 @@ export default function CWPage({ user, isAdmin }) {
       .sort((a, b) => a.item.name.localeCompare(b.item.name));
   }, [cwItems, inventoryTransactions, spendingInventorySearch, spendingInventoryCategory]);
 
-  const spendingInventoryPageCount = Math.max(1, Math.ceil(spendingInventoryRows.length / 5));
+  const spendingInventoryPageCount = Math.max(1, Math.ceil(spendingInventoryRows.length / PAGE_SIZE));
   const spendingInventoryPageSafe = Math.min(spendingInventoryPage, spendingInventoryPageCount);
-  const spendingInventoryPageRows = spendingInventoryRows.slice((spendingInventoryPageSafe - 1) * 5, spendingInventoryPageSafe * 5);
+  const spendingInventoryPageRows = spendingInventoryRows.slice((spendingInventoryPageSafe - 1) * PAGE_SIZE, spendingInventoryPageSafe * PAGE_SIZE);
 
   function openCwSpending() {
     if (!isAdmin) return;
@@ -740,8 +751,7 @@ export default function CWPage({ user, isAdmin }) {
   function openClanWarRewards() {
     if (!isAdmin) return;
     setCwRewardsGold("");
-    const first = cwItems.find(i => i.active !== false);
-    setCwRewardsLines([{ itemId: first?.id || "", itemName: first?.name || "", quantity: "1" }]);
+    setCwRewardsLines([{ itemId: "", itemName: "", quantity: "1" }]);
     setCwRewardsNote("");
     setCwRewardsModal(true);
   }
@@ -906,36 +916,108 @@ export default function CWPage({ user, isAdmin }) {
       .sort((a, b) => a.item.name.localeCompare(b.item.name));
   }, [cwItems, inventoryTransactions, assignmentInventorySearch, assignmentInventoryCategory, itemAssignmentForm.itemId]);
 
-  const assignmentInventoryPageCount = Math.max(1, Math.ceil(assignmentInventoryRows.length / 5));
+  const assignmentInventoryPageCount = Math.max(1, Math.ceil(assignmentInventoryRows.length / PAGE_SIZE));
   const assignmentInventoryPageSafe = Math.min(assignmentInventoryPage, assignmentInventoryPageCount);
-  const assignmentInventoryPageRows = assignmentInventoryRows.slice((assignmentInventoryPageSafe - 1) * 5, assignmentInventoryPageSafe * 5);
+  const assignmentInventoryPageRows = assignmentInventoryRows.slice((assignmentInventoryPageSafe - 1) * PAGE_SIZE, assignmentInventoryPageSafe * PAGE_SIZE);
 
   useEffect(() => {
     if (assignmentInventoryPage > assignmentInventoryPageCount) setAssignmentInventoryPage(assignmentInventoryPageCount);
   }, [assignmentInventoryPage, assignmentInventoryPageCount]);
 
+  function toggleAssignmentItem(itemId) {
+    const id = String(itemId);
+    setAssignmentSelections(rows => {
+      const exists = rows.some(r => String(r.itemId) === id);
+      const next = exists ? rows.filter(r => String(r.itemId) !== id) : [...rows, { itemId: id, quantity: "1" }];
+      setItemAssignmentForm(form => ({ ...form, itemId: next[0]?.itemId || "" }));
+      return next;
+    });
+  }
+
+  function setAssignmentItemQuantity(itemId, value) {
+    const id = String(itemId);
+    const quantity = sanitizeQuantityInput(value);
+    setAssignmentSelections(rows => rows.map(r => String(r.itemId) === id ? { ...r, quantity } : r));
+    setItemAssignmentForm(form => ({ ...form, itemId: id, quantity }));
+  }
+
   async function saveItemAssignment() {
     if (!isAdmin || !itemAssignmentModal) return;
     const { assignment, treasuryEntry } = itemAssignmentModal;
     const player = players.find(p => String(p.id) === String(itemAssignmentForm.playerId)) || itemAssignmentModal.player;
-    const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId));
-    const quantity = Math.floor(num(itemAssignmentForm.quantity, 0));
     const chosenAt = zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone);
     const chosenParts = chosenAt ? partsInZone(chosenAt, baseTz) : null;
     const chosenKey = chosenParts ? `${chosenParts.year}-${chosenParts.month}-${chosenParts.day}` : itemAssignmentForm.occurrenceKey;
     const chosenTime = chosenParts ? `${chosenParts.hour}:${chosenParts.minute}` : schedule.time;
-    const matchedOccurrence = occurrences.find(o => o.key === chosenKey && o.time === schedule.time);
     const fallbackDate = chosenAt || (chosenKey ? buildOccurrence(chosenKey, schedule.time, baseTz) : null);
     const occ = { key: chosenKey, time: chosenTime, timezone: baseTz, at: fallbackDate };
     if (!player) { setMessage("Select a player."); return; }
+    if (!occ) { setMessage("Select a Clan War occurrence."); return; }
+
+    // New assignments can distribute multiple inventory item types in one save.
+    // Editing/linking remains single-record so existing history behavior is preserved.
+    if (!assignment && !treasuryEntry) {
+      const lines = assignmentSelections
+        .map(row => {
+          const item = cwItems.find(i => String(i.id) === String(row.itemId));
+          const quantity = Math.floor(num(row.quantity, 0));
+          return item && quantity > 0 ? { item, quantity } : null;
+        })
+        .filter(Boolean);
+      if (!lines.length) { setMessage("Select at least one inventory item and enter a quantity."); return; }
+      for (const line of lines) {
+        if (line.item.active === false) { setMessage(`${line.item.name} is disabled. Enable it before assigning it.`); return; }
+        const stock = stockForItem(line.item.id);
+        if (stock.available < line.quantity) { setMessage(`${line.item.name}: only ${stock.available} in stock.`); return; }
+      }
+      setSaving(true);
+      try {
+        await updateDoc(doc(db, "cwPlayers", player.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        for (const line of lines) {
+          const { item, quantity } = line;
+          const totalCost = num(item.unitCost) * quantity;
+          const assignmentRef = await addDoc(collection(db, "cwItemAssignments"), {
+            playerId: String(player.id), playerName: clean(player.ign), className: clean(player.className || player.class), role: clean(player.role),
+            itemId: String(item.id), itemName: clean(item.name), unitCost: num(item.unitCost), quantity, totalCost,
+            dateKey: occ.key, scheduledAt: occ.at, scheduledTime: occ.time, scheduledTimezone: baseTz,
+            notes: clean(itemAssignmentForm.notes), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null,
+            updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null
+          });
+          const invRef = await addDoc(collection(db, "cwInventoryTransactions"), {
+            type: "assignment", direction: "out", itemId: String(item.id), itemName: clean(item.name), quantity, unitCost: num(item.unitCost), totalCost,
+            playerId: String(player.id), playerName: clean(player.ign), sourceAssignmentId: String(assignmentRef.id), source: "player-distribution",
+            dateKey: occ.key, scheduledAt: occ.at, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null
+          });
+          await updateDoc(doc(db, "cwItemAssignments", assignmentRef.id), { inventoryTransactionId: invRef.id });
+          await audit({
+            category: "ITEM", module: "cw-item", title: "CW ITEM HANDED OUT",
+            message: `${quantity} ${quantity === 1 ? "pc" : "pcs"} ${item.name} were handed to ${player.ign} during Clan War.`,
+            entityType: "cw-item-assignment", entityId: assignmentRef.id, playerId: player.id, playerName: player.ign,
+            recipientPlayerId: player.id, recipientPlayerName: player.ign, itemId: item.id, itemName: item.name,
+            relatedModules: ["cw-item", "cw-treasury", "cw-attendance"],
+            details: [
+              `Assignment record: ${assignmentRef.id}`, `Recipient / player: ${player.ign}`,
+              `Item: ${item.name}`, `Quantity: ${quantity}`, `Unit cost: ₲ ${money(item.unitCost)}`,
+              `Total item value: ₲ ${money(totalCost)}`, `CW date: ${formatDate(occ.at, resolvedTimezone)}`,
+              "Treasury connection: Inventory distribution only — no duplicate Treasury expense created.", `Recorded by: ${actor(user)}`
+            ],
+            changes: [{ field: "Assignment", from: "Unassigned", to: `${item.name} × ${quantity}` }, { field: "Recipient", from: "Unassigned", to: player.ign }]
+          });
+        }
+        setItemAssignmentModal(null);
+        setAssignmentSelections([]);
+        setMessage(`${lines.length} item type${lines.length === 1 ? "" : "s"} assigned from inventory to ${player.ign}.`);
+      } catch (e) { console.error(e); setMessage(e?.message || "Unable to assign items from inventory."); } finally { setSaving(false); }
+      return;
+    }
+
+    // Existing single-record edit/link flow.
+    const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId));
+    const quantity = Math.floor(num(itemAssignmentForm.quantity, 0));
     if (!item) { setMessage("Select an item from the CW Item Catalog."); return; }
     if (item.active === false && !assignment) { setMessage("That item is disabled. Enable it before assigning it."); return; }
     if (quantity < 1) { setMessage("Quantity must be at least 1."); return; }
-    if (!occ) { setMessage("Select a Clan War occurrence."); return; }
-    if (!assignment) {
-      const stock = stockForItem(item.id);
-      if (stock.available < quantity) { setMessage(`${item.name}: only ${stock.available} in stock.`); return; }
-    } else if (!treasuryEntry && assignment.inventoryTransactionId) {
+    if (assignment && !treasuryEntry && assignment.inventoryTransactionId) {
       const stock = stockForItem(item.id);
       const previousQty = Math.floor(num(assignment.quantity, 0));
       const usable = stock.available + previousQty;
@@ -963,10 +1045,9 @@ export default function CWPage({ user, isAdmin }) {
         inventoryTransactionId = invRef.id;
       }
       await updateDoc(doc(db, "cwItemAssignments", id), { inventoryTransactionId: inventoryTransactionId || null });
-
       await updateDoc(doc(db, "cwPlayers", player.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
-      await audit({ category: "ITEM", module: "cw-item", title: assignment ? "CW ITEM ASSIGNMENT UPDATED" : "CW ITEM HANDED OUT", message: assignment ? `${quantity} ${quantity === 1 ? "pc" : "pcs"} ${item.name} assignment was updated for ${player.ign} during Clan War.` : `${quantity} ${quantity === 1 ? "pc" : "pcs"} ${item.name} were handed to ${player.ign} during Clan War.`, entityType: "cw-item-assignment", entityId: id, playerId: player.id, playerName: player.ign, item: item.name, details: [`Player: ${player.ign}`, `Item: ${item.name}`, `Quantity: ${quantity}`, `Unit cost: ₲ ${money(item.unitCost)}`, `Total item cost: ₲ ${money(totalCost)}`, `CW date: ${formatDate(occ.at, resolvedTimezone)}`, `Treasury expense: ${priorTreasury ? `-₲ ${money(totalCost)}` : "₲ 0 — inventory distribution only"}`, assignment ? `Admin comment: ${clean(itemAssignmentForm.adminComment)}` : `Recorded by: ${actor(user)}`] });
-      setItemAssignmentModal(null); setMessage(assignment ? (priorTreasury ? "Item assignment updated and Treasury synchronized." : "Item assignment updated and inventory synchronized.") : (priorTreasury ? "Item assigned and linked to the existing Treasury expense." : "Item assigned from inventory; no duplicate Treasury expense created."));
+      await audit({ category: "ITEM", module: "cw-item", title: assignment ? "CW ITEM ASSIGNMENT UPDATED" : "CW ITEM HANDED OUT", message: assignment ? `${quantity} ${quantity === 1 ? "pc" : "pcs"} ${item.name} assignment was updated for ${player.ign} during Clan War.` : `${quantity} ${quantity === 1 ? "pc" : "pcs"} ${item.name} were handed to ${player.ign} during Clan War.`, entityType: "cw-item-assignment", entityId: id, playerId: player.id, playerName: player.ign, recipientPlayerId: player.id, recipientPlayerName: player.ign, itemId: item.id, itemName: item.name, treasuryId: priorTreasury?.id || "", relatedModules: ["cw-item", "cw-treasury", "cw-attendance"], details: [`Assignment record: ${id}`, `Recipient / player: ${player.ign}`, `Item: ${item.name}`, `Quantity: ${quantity}`, `Unit cost: ₲ ${money(item.unitCost)}`, `Total item cost: ₲ ${money(totalCost)}`, `CW date: ${formatDate(occ.at, resolvedTimezone)}`, `Treasury connection: ${priorTreasury ? "Linked Treasury entry" : "No Treasury expense — inventory distribution only"}`, assignment ? `Admin comment: ${clean(itemAssignmentForm.adminComment)}` : `Recorded by: ${actor(user)}`], changes: assignment ? [{ field: "Quantity", from: String(assignment.quantity || 0), to: String(quantity) }, { field: "Item", from: assignment.itemName || "—", to: item.name }, { field: "Recipient", from: assignment.playerName || "—", to: player.ign }] : [{ field: "Assignment", from: "None", to: `${item.name} × ${quantity}` }, { field: "Recipient", from: "Unassigned", to: player.ign }] });
+      setItemAssignmentModal(null); setAssignmentSelections([]); setMessage(assignment ? (priorTreasury ? "Item assignment updated and Treasury synchronized." : "Item assignment updated and inventory synchronized.") : "Item assigned and inventory synchronized.");
     } catch (e) { console.error(e); setMessage(e?.message || "Unable to save item assignment."); } finally { setSaving(false); }
   }
 
@@ -980,7 +1061,7 @@ export default function CWPage({ user, isAdmin }) {
         if (amount) await addDoc(collection(db, "treasuryEntries"), { type: "item-purchase-reversal", ledgerType: "item", direction: "in", amount, playerId: assignment.playerId, playerName: assignment.playerName, dateKey: assignment.dateKey, item: assignment.itemName, quantity: assignment.quantity, sourceItemAssignmentId: String(assignment.id), sourceModule: "cw-item", transactionAt: safeDate(assignment.scheduledAt) || new Date(), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null, description: `Reversal — CW item handed out — ${assignment.playerName}` });
       }
       await deleteDoc(doc(db, "cwItemAssignments", assignment.id));
-      await audit({ category: "ITEM", module: "cw-item", title: "CW ITEM ASSIGNMENT DELETED", message: `${assignment.quantity} ${assignment.quantity === 1 ? "pc" : "pcs"} ${assignment.itemName} assigned to ${assignment.playerName} was removed.`, entityType: "cw-item-assignment", entityId: assignment.id, playerId: assignment.playerId, playerName: assignment.playerName, details: [`Item: ${assignment.itemName}`, `Quantity: ${assignment.quantity}`, `Treasury reversal: +₲ ${money(Math.abs(num(linked?.amount)))}`, `Reason: ${comment}`, `Deleted by: ${actor(user)}`] });
+      await audit({ category: "ITEM", module: "cw-item", title: "CW ITEM ASSIGNMENT DELETED", message: `${assignment.quantity} ${assignment.quantity === 1 ? "pc" : "pcs"} ${assignment.itemName} assigned to ${assignment.playerName} was removed.`, entityType: "cw-item-assignment", entityId: assignment.id, playerId: assignment.playerId, playerName: assignment.playerName, recipientPlayerId: assignment.playerId, recipientPlayerName: assignment.playerName, itemId: assignment.itemId, itemName: assignment.itemName, treasuryId: linked?.id || "", relatedModules: ["cw-item", "cw-treasury"], details: [`Assignment record: ${assignment.id}`, `Recipient / former owner: ${assignment.playerName} (${assignment.playerId})`, `Item: ${assignment.itemName}`, `Quantity: ${assignment.quantity}`, `Treasury reversal: +₲ ${money(Math.abs(num(linked?.amount)))}`, `Reason: ${comment}`, `Deleted by: ${actor(user)}`], changes: [{ field: "Assignment", from: `${assignment.itemName} × ${assignment.quantity} → ${assignment.playerName}`, to: "DELETED / REVERSED" }] });
       setMessage(linked ? "Item assignment deleted and the linked Treasury expense was reversed." : "Item assignment deleted and inventory stock was restored.");
     });
   }
@@ -1029,7 +1110,7 @@ export default function CWPage({ user, isAdmin }) {
       async function upsert(type, amount, description, item) { const old = prior.find(e => e.ledgerType === type); if (!amount) { if (old) await deleteDoc(doc(db, "treasuryEntries", old.id)); return; } const data = { type: type === "salary" ? "cw-salary" : "item-purchase", ledgerType: type, direction: "out", amount: -Math.abs(amount), playerId: String(player.id), playerName: clean(player.ign), dateKey: occurrence.key, description, item: clean(item), sourceAttendanceId: String(id), sourceModule: "cw-attendance", transactionAt: occurrence.at, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }; if (old) await updateDoc(doc(db, "treasuryEntries", old.id), data); else await addDoc(collection(db, "treasuryEntries"), { ...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null }); }
       await upsert("salary", salary, `CW salary — ${player.ign}`, "");
       await upsert("item", itemCost, `CW item handed out — ${player.ign}`, attendanceForm.receivedItem);
-      await audit({ category: "ATTENDANCE", title: mode === "override" ? "CW ATTENDANCE OVERRIDDEN" : existing ? "CW ATTENDANCE UPDATED" : "CW ATTENDANCE RECORDED", message: `${player.ign} Clan War attendance for ${occurrence.key} was ${mode === "override" ? "overridden" : "saved"}.`, entityType: "cw-attendance", entityId: id, playerId: player.id, playerName: player.ign, details: [`CW date: ${formatDate(occurrence.at, resolvedTimezone)}`, `Class: ${player.className || player.class}`, `Role: ${player.role}`, `Salary: ₲ ${money(salary)}`, `Item cost: ₲ ${money(itemCost)}`, `Received: ${clean(attendanceForm.receivedItem) || "Nothing recorded"}`, `Action: ${mode === "override" ? "OVERRIDE" : existing ? "EDIT" : "ADD"}`, `Admin comment: ${clean(attendanceForm.adminComment) || "None"}`, `Changed by: ${actor(user)}`] });
+      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: mode === "override" ? "CW ATTENDANCE OVERRIDDEN" : existing ? "CW ATTENDANCE UPDATED" : "CW ATTENDANCE RECORDED", message: `${player.ign} Clan War attendance for ${occurrence.key} was ${mode === "override" ? "overridden" : existing ? "updated" : "recorded"}. Salary recipient: ${player.ign}.`, entityType: "cw-attendance", entityId: id, playerId: player.id, playerName: player.ign, recipientPlayerId: player.id, recipientPlayerName: player.ign, relatedModules: ["cw-attendance", "cw-treasury", "cw-item"], details: [`Attendance record: ${id}`, `Recipient / player: ${player.ign} (${player.id})`, `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`, `Class: ${player.className || player.class}`, `Role: ${player.role}`, `Salary paid to player: ₲ ${money(salary)}`, `Item cost: ₲ ${money(itemCost)}`, `Item received by player: ${clean(attendanceForm.receivedItem) || "Nothing recorded"}`, `Action: ${mode === "override" ? "OVERRIDE" : existing ? "EDIT" : "ADD"}`, `Treasury salary connection: ${id} → treasuryEntries.sourceAttendanceId`, `Admin comment: ${clean(attendanceForm.adminComment) || "None"}`, `Changed by: ${actor(user)}`], changes: existing ? [{ field: "Salary", from: `₲ ${money(existing.salaryGold)}`, to: `₲ ${money(salary)}` }, { field: "Item received", from: clean(existing.receivedItem) || "—", to: clean(attendanceForm.receivedItem) || "—" }, { field: "Item cost", from: `₲ ${money(existing.itemCostGold)}`, to: `₲ ${money(itemCost)}` }, { field: "Role", from: clean(existing.role) || "—", to: clean(player.role) || "—" }] : [{ field: "Salary", from: "₲ 0", to: `₲ ${money(salary)}` }, { field: "Item received", from: "—", to: clean(attendanceForm.receivedItem) || "—" }] });
       if (clean(attendanceForm.receivedItem)) await audit({ category: "ITEM", module: "cw-attendance", title: "CW ITEM HANDED OUT", message: `${attendanceForm.receivedItem} was handed to ${player.ign} during Clan War.`, entityType: "treasury-item", entityId: id, playerId: player.id, playerName: player.ign, details: [`Item: ${attendanceForm.receivedItem}`, `Item cost: ₲ ${money(itemCost)}`, `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`] });
       setAttendanceModal(null); setMessage(mode === "override" ? "CW attendance overridden and logged." : existing ? "CW attendance updated and logged." : "CW attendance saved.");
     } catch (e) { console.error(e); setMessage(e?.message || "Unable to save attendance.") } finally { setSaving(false) }
@@ -1069,8 +1150,37 @@ export default function CWPage({ user, isAdmin }) {
       if (treasuryTo && dk && dk > treasuryTo) return false;
       if (!q) return true;
       return [e.description, e.item, e.playerName, e.createdBy, e.updatedBy, treasuryTypeLabel(e), treasuryCategory(e)].some(v => clean(v).toLowerCase().includes(q));
-    }).sort((a, b) => (safeDate(b.createdAt || b.updatedAt || b.transactionAt)?.getTime() || 0) - (safeDate(a.createdAt || a.updatedAt || a.transactionAt)?.getTime() || 0));
+    }).sort((a, b) => updatedTimeMs(b, "updatedAt", "transactionAt", "createdAt") - updatedTimeMs(a, "updatedAt", "transactionAt", "createdAt"));
   }, [treasuryEntries, treasurySearch, treasuryCategoryFilter, treasuryDateFilter, treasuryFrom, treasuryTo, resolvedTimezone]);
+
+  const treasuryPageCount = Math.max(1, Math.ceil(filteredTreasuryEntries.length / PAGE_SIZE));
+  const treasuryPageSafe = Math.min(treasuryPage, treasuryPageCount);
+  const visibleTreasuryEntries = filteredTreasuryEntries.slice((treasuryPageSafe - 1) * PAGE_SIZE, treasuryPageSafe * PAGE_SIZE);
+
+  const sortedCwItems = useMemo(() => cwItems.slice().sort((a, b) => {
+    const updatedDiff = updatedTimeMs(b, "updatedAt", "createdAt") - updatedTimeMs(a, "updatedAt", "createdAt");
+    if (updatedDiff !== 0) return updatedDiff;
+    return clean(a.name).localeCompare(clean(b.name));
+  }), [cwItems]);
+  const inventoryPageCount = Math.max(1, Math.ceil(sortedCwItems.length / PAGE_SIZE));
+  const inventoryPageSafe = Math.min(inventoryPage, inventoryPageCount);
+  const visibleInventoryItems = sortedCwItems.slice((inventoryPageSafe - 1) * PAGE_SIZE, inventoryPageSafe * PAGE_SIZE);
+  const catalogPageCount = Math.max(1, Math.ceil(sortedCwItems.length / PAGE_SIZE));
+  const catalogPageSafe = Math.min(catalogPage, catalogPageCount);
+  const visibleCatalogItems = sortedCwItems.slice((catalogPageSafe - 1) * PAGE_SIZE, catalogPageSafe * PAGE_SIZE);
+
+  useEffect(() => {
+    setTreasuryPage(1);
+  }, [treasurySearch, treasuryCategoryFilter, treasuryDateFilter, treasuryFrom, treasuryTo]);
+  useEffect(() => {
+    if (treasuryPage > treasuryPageCount) setTreasuryPage(treasuryPageCount);
+  }, [treasuryPage, treasuryPageCount]);
+  useEffect(() => {
+    if (inventoryPage > inventoryPageCount) setInventoryPage(inventoryPageCount);
+  }, [inventoryPage, inventoryPageCount]);
+  useEffect(() => {
+    if (catalogPage > catalogPageCount) setCatalogPage(catalogPageCount);
+  }, [catalogPage, catalogPageCount]);
 
   async function saveTreasuryEntry() {
     if (!isAdmin) return;
@@ -1295,7 +1405,29 @@ export default function CWPage({ user, isAdmin }) {
   }
 
   function openScheduleEditor() { setScheduleForm({ days: Array.isArray(schedule.days) && schedule.days.length ? schedule.days : DEFAULT_CW_DAYS, time: schedule.time || "21:00", timezone: PRIMARY_TIMEZONE }); setScheduleModal(true) }
-  async function saveSchedule() { if (!user) { setMessage("Sign in to change the Clan War occurrence."); return } if (!scheduleForm.days.length) { setMessage("Select at least one day."); return } setSaving(true); try { const id = schedule.id !== "default" ? schedule.id : "current"; await setDoc(doc(db, "cwSchedules", id), { days: scheduleForm.days.slice().sort((a, b) => a - b), time: scheduleForm.time, timezone: PRIMARY_TIMEZONE, active: true, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }, { merge: true }); await audit({ category: "SCHEDULE", title: "CW SCHEDULE UPDATED", message: `Clan War occurrence changed to ${scheduleForm.days.map(d => CW_DAYS.find(x => x.key === d)?.label).join(", ")} at ${scheduleForm.time} Manila.`, entityType: "cw-schedule", entityId: id, details: [`Days: ${scheduleForm.days.map(d => CW_DAYS.find(x => x.key === d)?.label).join(", ")}`, `Base time: ${scheduleForm.time} ${PRIMARY_TIMEZONE}`, `Changed by: ${actor(user)}`] }); setScheduleModal(false); setMessage("Clan War occurrence updated.") } catch (e) { setMessage(e?.message || "Unable to update schedule.") } finally { setSaving(false) } }
+  async function saveSchedule() {
+    if (!user) { setMessage("Sign in to change the Clan War occurrence."); return; }
+    if (!scheduleForm.days.length) { setMessage("Select at least one day."); return; }
+    setSaving(true);
+    try {
+      const id = schedule.id !== "default" ? schedule.id : "current";
+      const oldDays = (Array.isArray(schedule.days) ? schedule.days : DEFAULT_CW_DAYS).slice().sort((a, b) => a - b);
+      const newDays = scheduleForm.days.slice().sort((a, b) => a - b);
+      const oldDayNames = oldDays.map(d => CW_DAYS.find(x => x.key === d)?.label || d).join(", ") || "None";
+      const newDayNames = newDays.map(d => CW_DAYS.find(x => x.key === d)?.label || d).join(", ") || "None";
+      const oldTime = schedule.time || "—";
+      const newTime = scheduleForm.time || "—";
+      await setDoc(doc(db, "cwSchedules", id), { days: newDays, time: newTime, timezone: PRIMARY_TIMEZONE, active: true, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }, { merge: true });
+      await audit({
+        category: "SCHEDULE", module: "cw-schedule", title: "CW SCHEDULE UPDATED",
+        message: `Clan War schedule changed from ${oldTime} to ${newTime} by ${actor(user)}.`,
+        entityType: "cw-schedule", entityId: id, scheduleId: id, relatedModules: ["cw-schedule", "cw-attendance", "cw-treasury"],
+        details: [`Schedule record: ${id}`, `Days: ${oldDayNames} → ${newDayNames}`, `Time: ${oldTime} → ${newTime}`, `Timezone: ${PRIMARY_TIMEZONE}`, `Future CW attendance uses the updated schedule.`, `Treasury-linked CW records remain mapped to the same attendance records.`, `Changed by: ${actor(user)}`],
+        changes: [{ field: "Days", from: oldDayNames, to: newDayNames }, { field: "Time", from: oldTime, to: newTime }],
+      });
+      setScheduleModal(false); setMessage("Clan War occurrence updated.");
+    } catch (e) { setMessage(e?.message || "Unable to update schedule."); } finally { setSaving(false); }
+  }
   function toggleDay(day) { setScheduleForm(f => ({ ...f, days: f.days.includes(day) ? f.days.filter(x => x !== day) : [...f.days, day] })) }
 
   function openSalaryEditor() {
@@ -1350,7 +1482,7 @@ export default function CWPage({ user, isAdmin }) {
   }
 
   function openAllNotifications() {
-    setActivePanel("notices");
+    setNotificationsOpen(true);
     setNoticeMode("all");
     setAllNoticePage(1);
     setTimeout(() => document.getElementById("cw-notification-board")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -1360,27 +1492,52 @@ export default function CWPage({ user, isAdmin }) {
   function statsFor(p) {
     const rows = attendance.filter(r => String(r.playerId) === String(p.id));
     const assigned = itemAssignments.filter(r => String(r.playerId) === String(p.id));
-    const sorted = rows.slice().sort((a, b) => (safeDate(b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.updatedAt || a.createdAt)?.getTime() || 0));
-    const itemRows = assigned.slice().sort((a, b) => (safeDate(b.updatedAt || b.createdAt || b.transactionAt)?.getTime() || 0) - (safeDate(a.updatedAt || a.createdAt || a.transactionAt)?.getTime() || 0));
-    const legacyCount = rows.reduce((sum, r) => sum + (clean(r.receivedItem) ? Math.max(1, num(r.itemQuantity, 1)) : 0), 0);
+    const uniqueDayKeys = new Set();
+    rows.forEach(r => {
+      const d = safeDate(r.scheduledAt || r.dateKey || r.updatedAt || r.createdAt);
+      if (d) {
+        uniqueDayKeys.add(new Intl.DateTimeFormat("en-CA", {
+          timeZone: resolvedTimezone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(d));
+      } else if (clean(r.dateKey)) {
+        uniqueDayKeys.add(clean(r.dateKey));
+      }
+    });
     const assignedCount = assigned.reduce((sum, r) => sum + Math.max(0, Math.floor(num(r.quantity, 0))), 0);
-    const lastAssigned = itemRows[0];
-    const lastLegacy = sorted.find(r => clean(r.receivedItem));
-    const lastItem = lastAssigned ? `${lastAssigned.itemName || lastAssigned.item || "Item"}${num(lastAssigned.quantity, 1) > 1 ? ` × ${num(lastAssigned.quantity, 1)}` : ""}` : lastLegacy?.receivedItem || "—";
-    const latestActivity = [sorted[0]?.updatedAt || sorted[0]?.createdAt, lastAssigned?.updatedAt || lastAssigned?.createdAt || lastAssigned?.transactionAt, p.updatedAt || p.createdAt].map(safeDate).filter(Boolean).sort((a, b) => b.getTime() - a.getTime())[0];
-    return { days: rows.length, salary: rows.reduce((sum, r) => sum + num(r.salaryGold), 0), latestSalary: sorted[0]?.salaryGold || 0, items: legacyCount + assignedCount, lastItem, lastUpdated: latestActivity || p.updatedAt || p.createdAt, lastBy: lastAssigned?.updatedBy || lastAssigned?.createdBy || p.updatedBy || sorted[0]?.updatedBy || sorted[0]?.createdBy || p.createdBy || "System" };
+    const legacyCount = rows.reduce((sum, r) => sum + (clean(r.receivedItem) ? Math.max(1, num(r.itemQuantity, 1)) : 0), 0);
+    const updateEvents = [
+      { at: safeDate(p.updatedAt) || safeDate(p.createdAt), by: p.updatedBy || p.createdBy },
+      ...rows.map(r => ({ at: safeDate(r.updatedAt) || safeDate(r.createdAt), by: r.updatedBy || r.createdBy })),
+      ...assigned.map(r => ({ at: safeDate(r.updatedAt) || safeDate(r.createdAt), by: r.updatedBy || r.createdBy })),
+    ].filter(e => e.at);
+    updateEvents.sort((a, b) => b.at.getTime() - a.at.getTime());
+    return {
+      days: uniqueDayKeys.size,
+      salary: rows.reduce((sum, r) => sum + num(r.salaryGold), 0),
+      items: legacyCount + assignedCount,
+      lastUpdated: updateEvents[0]?.at || null,
+      lastBy: updateEvents[0]?.by || "System",
+    };
   }
 
   return <div className="cw-page">
+    <section className="cw-page-banner" aria-label="Clan War banner">
+      <img src={guildWarArtwork} alt="RAN Online EP7 Classic — Phoenix and Mystical Peaks Clan War" />
+      <div className="cw-page-banner-overlay" aria-hidden="true" />
+      <div className="cw-page-banner-badge">CLAN WAR</div>
+    </section>
     <section className="cw-hero">
       <div>
         <div className="cw-kicker">RAN ONLINE EP7 CLASSIC • CLAN WAR</div>
-        <h1>CW Attendance</h1>
+        <h1>Clan War Attendance</h1>
         <p>Track Clan War participation, class salaries, items handed out and the connected audit trail that feeds Guild Treasury.</p>
       </div>
       <div className="cw-hero-side">
         <span className="cw-live-dot">● LIVE</span>
-        <div className="cw-updated">{loading ? "SYNCING..." : "REALTIME FIREBASE"}</div>
+        <div className="cw-updated">REALTIME FIREBASE</div>
         <div className="cw-timezone-label">DISPLAYING IN {resolvedTimezone}</div>
       </div>
     </section>
@@ -1388,31 +1545,117 @@ export default function CWPage({ user, isAdmin }) {
     {message && <div className="cw-message">{message}<button onClick={() => setMessage("")}>×</button></div>}
 
     <nav className="cw-tabs cw-primary-nav" aria-label="Clan War sections">
-      <button type="button" className={`cw-tab ${activePanel === "attendance" ? "active" : ""}`} onClick={() => { setActivePanel("attendance") }} aria-selected={activePanel === "attendance"}>
+      <button type="button" className={`cw-tab ${activePanel === "attendance" ? "active" : ""}`} onClick={() => setActivePanel("attendance")} aria-selected={activePanel === "attendance"}>
         <span className="cw-tab-icon cw-tab-icon-schedule" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 9h17M7 13h3M14 13h3M7 16.5h3" /></svg></span>
-        <span className="cw-tab-copy"><strong>CW ATTENDANCE</strong><small>View CW occurrences</small></span>
+        <span className="cw-tab-copy"><strong>CLAN WAR ATTENDANCE</strong><small>View CW occurrences</small></span>
       </button>
-      <button type="button" className={`cw-tab ${activePanel === "players" ? "active" : ""}`} onClick={() => { setActivePanel("players") }} aria-selected={activePanel === "players"}>
+      <button type="button" className={`cw-tab ${activePanel === "players" ? "active" : ""}`} onClick={() => setActivePanel("players")} aria-selected={activePanel === "players"}>
         <span className="cw-tab-icon cw-tab-icon-players" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6" /><path d="M15 6.5a3 3 0 0 1 0 5.8M16 14c2.6.3 4.1 2.1 4.5 5.5" /></svg></span>
         <span className="cw-tab-copy"><strong>PLAYERS &amp; HISTORY</strong><small>Roster &amp; attendance</small></span>
       </button>
-      <button type="button" className={`cw-tab ${activePanel === "treasury" ? "active" : ""}`} onClick={() => { setActivePanel("treasury") }} aria-selected={activePanel === "treasury"}>
+      <button type="button" className={`cw-tab ${activePanel === "treasury" ? "active" : ""}`} onClick={() => setActivePanel("treasury")} aria-selected={activePanel === "treasury"}>
         <span className="cw-tab-icon cw-tab-icon-treasury" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h16v11H4z" /><path d="M3 8h18M6 5h12l2 3H4zM12 8v11" /></svg></span>
         <span className="cw-tab-copy"><strong>TREASURY</strong><small>Claims &amp; ledger</small></span>
       </button>
-      <button type="button" className={`cw-tab ${activePanel === "notices" ? "active" : ""}`} onClick={() => { setActivePanel("notices") }} aria-selected={activePanel === "notices"}>
+      <button type="button" className={`cw-notification-toggle ${notificationsOpen ? "is-on" : ""}`} onClick={() => setNotificationsOpen(v => !v)} aria-pressed={notificationsOpen} aria-label={`${notificationsOpen ? "Hide" : "Show"} Activity & Notifications`}>
         <span className="cw-tab-icon cw-tab-icon-notices" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8.5h18C21 16 18 16 18 9Z" /><path d="M10 21h4" /></svg></span>
         <span className="cw-tab-copy"><strong>ACTIVITY &amp; NOTIFICATIONS</strong><small>CW audit feed</small></span>
+        <span className="cw-toggle-track" aria-hidden="true"><span className="cw-toggle-knob" /></span>
       </button>
     </nav>
+
+    <section className={`cw-panel cw-unified-notifications-panel cw-activity-drawer ${notificationsOpen ? "is-open" : "is-closed"}`} id="cw-notification-board" aria-hidden={!notificationsOpen}>
+      <div className="cw-notification-board-head">
+        <div className="cw-unified-notice-title-wrap">
+          <div className="cw-unified-notice-emblem"><span>♟</span></div>
+          <div>
+            <div className="cw-kicker">GUILD CLAN WAR NOTIFICATIONS</div>
+            <h2>Activity &amp; Notifications</h2>
+            <p>Track every Clan War activity in one unified audit feed. NEW is based on the current local calendar day.</p>
+          </div>
+        </div>
+        <div className="cw-notification-counts"><div><strong>{newCount}</strong><span>NEW TODAY</span></div><div><strong>{oldCount}</strong><span>OLD</span></div><button className="cw-btn" type="button" onClick={() => { setNoticeSearch(""); setNoticeCategoryFilter("all"); setNoticeAdminFilter("all"); setNoticeTimeFilter("all"); setNoticeDateFilter(""); setNoticeFrom(""); setNoticeTo(""); setAllNoticePage(1) }}>↻ REFRESH</button></div>
+      </div>
+
+      <div className="cw-unified-notice-toolbar">
+        <input className="notice-search" value={noticeSearch} onChange={e => { setNoticeSearch(e.target.value); setAllNoticePage(1) }} placeholder="Search player, action, salary, item..." />
+        <select value={noticeCategoryFilter} onChange={e => { setNoticeCategoryFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by type">
+          <option value="all">ALL TYPES</option>
+          <option value="ATTENDANCE">ATTENDANCE</option>
+          <option value="SALARY">SALARY</option>
+          <option value="ITEM">ITEM</option>
+          <option value="PLAYER">PLAYER</option>
+          <option value="SCHEDULE">SCHEDULE</option>
+          <option value="ADMIN">ADMIN</option>
+          <option value="TREASURY">TREASURY</option>
+          <option value="SYSTEM">SYSTEM</option>
+        </select>
+        <select value={noticeAdminFilter} onChange={e => { setNoticeAdminFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by admin">
+          <option value="all">ALL ADMINS</option>
+          {noticeAdmins.map(admin => <option key={admin} value={admin}>{admin}</option>)}
+        </select>
+        <select value={noticeTimeFilter} onChange={e => { setNoticeTimeFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by time">
+          <option value="all">ALL TIME</option>
+          <option value="24h">LAST 24 HOURS</option>
+          <option value="7d">LAST 7 DAYS</option>
+          <option value="30d">LAST 30 DAYS</option>
+        </select>
+        <label className="cw-notice-date-field"><span>DATE</span><input className="notice-date" type="date" value={noticeDateFilter} onChange={e => { setNoticeDateFilter(e.target.value); setAllNoticePage(1) }} title="Filter exact local date" aria-label="Filter exact date" /></label>
+        <label className="cw-notice-date-field"><span>FROM</span><input className="notice-date" type="date" value={noticeFrom} onChange={e => { setNoticeFrom(e.target.value); setAllNoticePage(1) }} title="Filter from local date" aria-label="Filter from date" /></label>
+        <label className="cw-notice-date-field"><span>TO</span><input className="notice-date" type="date" value={noticeTo} onChange={e => { setNoticeTo(e.target.value); setAllNoticePage(1) }} title="Filter to local date" aria-label="Filter to date" /></label>
+        <button className="cw-btn cw-btn-small notice-clear" type="button" onClick={() => { setNoticeSearch(""); setNoticeCategoryFilter("all"); setNoticeAdminFilter("all"); setNoticeTimeFilter("all"); setNoticeDateFilter(""); setNoticeFrom(""); setNoticeTo(""); setAllNoticePage(1); }}>CLEAR</button>
+      </div>
+
+      <div className="cw-unified-results-head"><div><strong>{matchingNotices.length}</strong> notifications found <span>•</span> <b>{newCount}</b> new today</div><div>Showing {matchingNotices.length ? `${(safeAllNoticePage - 1) * PAGE_SIZE + 1}-${Math.min(safeAllNoticePage * PAGE_SIZE, matchingNotices.length)}` : "0"} of {matchingNotices.length}</div></div>
+
+      <div className="cw-unified-notice-table-wrap">
+        <table className="cw-unified-notice-table">
+          <colgroup><col className="c-num" /><col className="c-status" /><col className="c-icon" /><col className="c-category" /><col className="c-message" /><col className="c-time" /><col className="c-by" /><col className="c-open" /></colgroup>
+          <thead><tr><th>#</th><th>STATUS</th><th>ICON</th><th>CATEGORY</th><th>MESSAGE</th><th>TIME</th><th>BY</th><th aria-label="Open"></th></tr></thead>
+          <tbody>
+            {visibleAllNotices.map((notice, index) => {
+              const category = inferNoticeCategory(notice); const isNew = dateKey(notice.updatedAt || notice.createdAt || notice.timestamp, resolvedTimezone) === noticeDateKey; return <tr key={notice.id} className={`cw-unified-notice-row category-${category.toLowerCase()}`} onClick={() => setAuditDetail(notice)} title="Click to view full notification details">
+                <td className="notice-number">{(safeAllNoticePage - 1) * PAGE_SIZE + index + 1}</td>
+                <td><span className={`cw-notice-status ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
+                <td><span className={`cw-unified-icon category-${category.toLowerCase()}`}>{noticeIcon(category)}</span></td>
+                <td><span className={`cw-notice-category-badge cw-notice-category-${category.toLowerCase()}`}>{category}</span></td>
+                <td><div className="cw-unified-message"><strong>{clean(notice.title) || "CW Activity"}</strong><span>{clean(notice.message) || "Record changed."}</span></div></td>
+                <td className="notice-time">{formatDateTime(notice.updatedAt || notice.createdAt || notice.timestamp, resolvedTimezone)}</td>
+                <td className="notice-by">{clean(notice.createdBy) || "System"}</td>
+                <td className="notice-open">›</td>
+              </tr>
+            })}
+            {!visibleAllNotices.length && <tr><td colSpan="8" className="cw-unified-empty">No CW notifications match your filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="cw-unified-pagination">
+        <button disabled={safeAllNoticePage <= 1} onClick={() => setAllNoticePage(1)}>«</button>
+        <button disabled={safeAllNoticePage <= 1} onClick={() => setAllNoticePage(p => Math.max(1, p - 1))}>‹</button>
+        {Array.from({ length: Math.min(5, allNoticePageCount) }, (_, i) => { const page = allNoticePageCount <= 5 ? i + 1 : Math.max(1, Math.min(allNoticePageCount - 4, safeAllNoticePage - 2)) + i; return <button key={page} className={safeAllNoticePage === page ? "active" : ""} onClick={() => setAllNoticePage(page)}>{page}</button> })}
+        <button disabled={safeAllNoticePage >= allNoticePageCount} onClick={() => setAllNoticePage(p => Math.min(allNoticePageCount, p + 1))}>›</button>
+        <button disabled={safeAllNoticePage >= allNoticePageCount} onClick={() => setAllNoticePage(allNoticePageCount)}>»</button>
+      </div>
+    </section>
 
     {activePanel === "attendance" && <>
       <section className="cw-date-window">
         <div className="cw-date-window-copy"><div className="cw-kicker">LOCAL CALENDAR WINDOW</div><h2>Browse Clan War Occurrences</h2><p>Today is always pinned first. Choose how far back and forward you want to browse.</p></div>
         <div className="cw-date-window-controls">
-          <label><span>BACK</span><select value={backDays} onChange={e => { setBackDays(num(e.target.value)); setSelectedOccurrence(null) }}>{Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{i} {i === 1 ? "DAY" : "DAYS"} BACK</option>)}</select></label>
-          <button className={backDays === 0 ? "active" : ""} onClick={() => { setBackDays(0); setSelectedOccurrence(null) }}>CURRENT / TODAY</button>
-          <label><span>FORWARD</span><select value={forwardDays} onChange={e => { setForwardDays(num(e.target.value)); setSelectedOccurrence(null) }}>{Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{i} {i === 1 ? "DAY" : "DAYS"} FORWARD</option>)}</select></label>
+          <div className="cw-window-group">
+            <span className="cw-window-group-label">BACK</span>
+            <div className="cw-window-options" role="group" aria-label="Days back">
+              {Array.from({ length: 8 }, (_, i) => <button type="button" key={i} className={backDays === i ? "active" : ""} onClick={() => { setBackDays(i); setSelectedOccurrence(null) }} title={`Browse ${i} ${i === 1 ? "day" : "days"} back`}>{i}<small>{i === 1 ? " DAY" : " DAYS"}</small></button>)}
+            </div>
+          </div>
+          <button type="button" className={`cw-window-today ${backDays === 0 ? "active" : ""}`} onClick={() => { setBackDays(0); setSelectedOccurrence(null) }}><b>CURRENT</b><span>TODAY</span></button>
+          <div className="cw-window-group">
+            <span className="cw-window-group-label">FORWARD</span>
+            <div className="cw-window-options" role="group" aria-label="Days forward">
+              {Array.from({ length: 8 }, (_, i) => <button type="button" key={i} className={forwardDays === i ? "active" : ""} onClick={() => { setForwardDays(i); setSelectedOccurrence(null) }} title={`Browse ${i} ${i === 1 ? "day" : "days"} forward`}>{i}<small>{i === 1 ? " DAY" : " DAYS"}</small></button>)}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1423,7 +1666,7 @@ export default function CWPage({ user, isAdmin }) {
         </div>
         <div className="cw-occurrence-grid">{windowOccurrences.map(occ => {
           const attended = attendance.filter(r => clean(r.dateKey) === occ.key).length; return <button key={`${occ.key}-${occ.time}`} className={`cw-occurrence-card ${occ.key === todayKey ? "today" : ""}`} onClick={() => selectOccurrence(occ)}>
-            <div className="cw-war-art"><img className="cw-war-artwork" src={guildWarArtwork} alt="Guild War — Sacred Gate, Phoenix, Mystical Peaks" /><span className="cw-war-logo"><img src={cwWarIcon} alt="Clan War" /></span><span className="cw-war-badge">CLAN WAR</span><div className="cw-war-lines" /></div>
+            <div className="cw-war-art"><img className="cw-war-artwork" src={guildWarArtwork} alt="Guild War — Sacred Gate, Phoenix, Mystical Peaks" /><span className="cw-war-logo"><img src={ranVIcon} alt="RAN V" /></span><span className="cw-war-badge">CLAN WAR</span><div className="cw-war-lines" /></div>
             <div className="cw-occ-body"><div className="cw-occ-date">{formatDate(occ.at, resolvedTimezone)}</div><strong>{formatTime(occ.at, resolvedTimezone)}</strong><span>{occ.key === todayKey ? "TODAY" : new Intl.DateTimeFormat("en-US", { timeZone: resolvedTimezone, weekday: "long" }).format(occ.at)}</span><div className="cw-occ-foot"><b>{attended} ATTENDED</b><em>{countdownLabel(occ.at, now)}</em></div></div>
           </button>
         })}</div>
@@ -1518,91 +1761,39 @@ export default function CWPage({ user, isAdmin }) {
         <input type="date" value={treasuryTo} onChange={e => setTreasuryTo(e.target.value)} title="Filter to date" />
         <button className="cw-btn cw-btn-small" onClick={() => { setTreasurySearch(""); setTreasuryCategoryFilter("all"); setTreasuryDateFilter(""); setTreasuryFrom(""); setTreasuryTo(""); }}>CLEAR</button>
       </div>
-      <div className="cw-unified-results-head"><div><strong>{filteredTreasuryEntries.length}</strong> ledger entries found</div><div>Showing {filteredTreasuryEntries.length} of {treasuryEntries.length}</div></div>
-      <div className="cw-table-scroll"><table className="cw-table cw-treasury-table"><thead><tr><th>DATE & TIME</th><th>CATEGORY / TYPE</th><th>DESCRIPTION</th><th>ITEM</th><th>AMOUNT</th><th>RECORDED / UPDATED BY</th><th>ACTIONS</th></tr></thead><tbody>{filteredTreasuryEntries.map(e => {
+      <div className="cw-unified-results-head"><div><strong>{filteredTreasuryEntries.length}</strong> ledger entries found</div><div>Showing {filteredTreasuryEntries.length ? `${(treasuryPageSafe - 1) * PAGE_SIZE + 1}-${Math.min(treasuryPageSafe * PAGE_SIZE, filteredTreasuryEntries.length)}` : "0"} of {filteredTreasuryEntries.length}</div></div>
+      <div className="cw-table-scroll"><table className="cw-table cw-treasury-table"><thead><tr><th>UPDATED AT</th><th>CATEGORY / TYPE</th><th>DESCRIPTION</th><th>ITEM</th><th>AMOUNT</th><th>UPDATED BY</th><th>ACTIONS</th></tr></thead><tbody>{visibleTreasuryEntries.map(e => {
         const linked = Boolean(e.sourceAttendanceId || e.sourceItemAssignmentId);
         const typeLabel = treasuryTypeLabel(e);
-        return <tr key={e.id}>
-          <td><strong>{formatDateTime(e.createdAt || e.transactionAt || e.updatedAt, resolvedTimezone)}</strong><small>Added</small></td>
+        return <tr
+          key={e.id}
+          className="cw-treasury-ledger-row"
+          tabIndex={0}
+          role="button"
+          aria-label={`View Treasury details for ${e.description || treasuryTypeLabel(e)}`}
+          onClick={() => setTreasuryDetail(e)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setTreasuryDetail(e);
+            }
+          }}
+        >
+          <td><strong>{formatDateTime(e.updatedAt || e.transactionAt || e.createdAt, resolvedTimezone)}</strong><small>{e.updatedAt ? "Updated" : "Added"}</small></td>
           <td><span className={`cw-ledger-type ${num(e.amount) >= 0 ? "is-in" : "is-out"}`}>{typeLabel}</span></td>
           <td><strong>{e.description || "—"}</strong>{e.playerName && <small>Player: {e.playerName}</small>}{e.adminComment && <small>Reason: {e.adminComment}</small>}{e.balanceBefore !== undefined && <small>₲ {money(e.balanceBefore)} → ₲ {money(e.balanceAfter)}</small>}</td>
           <td>{e.item || "—"}</td>
           <td className={num(e.amount) >= 0 ? "cw-in" : "cw-out"}>{num(e.amount) >= 0 ? "+" : "-"}₲ {money(Math.abs(num(e.amount)))}</td>
           <td><strong>{e.updatedBy || e.createdBy || "System"}</strong><small>{e.updatedAt ? `Updated • ${formatDateTime(e.updatedAt, resolvedTimezone)}` : (e.createdAt ? `Added • ${formatDateTime(e.createdAt, resolvedTimezone)}` : "")}</small></td>
-          <td className="cw-history-actions">{isAdmin && <><button className="cw-btn cw-btn-small" onClick={() => openTreasuryEdit(e)}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteTreasuryEntry(e)}>DELETE</button></>}</td>
+          <td className="cw-history-actions" onClick={(event) => event.stopPropagation()}>{isAdmin && <><button className="cw-btn cw-btn-small" onClick={() => openTreasuryEdit(e)}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteTreasuryEntry(e)}>DELETE</button></>}</td>
         </tr>;
-      })}{!treasuryEntries.length && <tr><td colSpan="7" className="cw-empty">No treasury ledger entries yet.</td></tr>}</tbody></table></div>
+      })}{!visibleTreasuryEntries.length && <tr><td colSpan="7" className="cw-empty">No treasury ledger entries match the current filters.</td></tr>}</tbody></table></div>
+      <div className="cw-pagination"><button disabled={treasuryPageSafe <= 1} onClick={() => setTreasuryPage(p => Math.max(1, p - 1))}>‹</button><span>PAGE {treasuryPageSafe} OF {treasuryPageCount} • 10 ENTRIES PER PAGE</span><button disabled={treasuryPageSafe >= treasuryPageCount} onClick={() => setTreasuryPage(p => Math.min(treasuryPageCount, p + 1))}>›</button></div>
     </section>}
 
 
 
-    {activePanel === "notices" && <section className="cw-panel cw-unified-notifications-panel" id="cw-notification-board">
-      <div className="cw-notification-board-head">
-        <div><div className="cw-kicker">GUILD CLAN WAR NOTIFICATIONS</div><h2>CW Activity &amp; Notifications</h2><p>Track every Clan War activity in one unified audit feed. NEW is based on the current local calendar day.</p></div>
-        <div className="cw-notification-counts"><div><strong>{newCount}</strong><span>NEW TODAY</span></div><div><strong>{oldCount}</strong><span>OLD</span></div><button className="cw-btn" type="button" onClick={() => { setNoticeSearch(""); setNoticeCategoryFilter("all"); setNoticeAdminFilter("all"); setNoticeTimeFilter("all"); setNoticeDateFilter(""); setNoticeFrom(""); setNoticeTo(""); setAllNoticePage(1) }}>↻ REFRESH</button></div>
-      </div>
 
-      <div className="cw-unified-notice-toolbar">
-        <input className="notice-search" value={noticeSearch} onChange={e => { setNoticeSearch(e.target.value); setAllNoticePage(1) }} placeholder="Search player, action, salary, item..." />
-        <select value={noticeCategoryFilter} onChange={e => { setNoticeCategoryFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by type">
-          <option value="all">ALL TYPES</option>
-          <option value="ATTENDANCE">ATTENDANCE</option>
-          <option value="SALARY">SALARY</option>
-          <option value="ITEM">ITEM</option>
-          <option value="PLAYER">PLAYER</option>
-          <option value="SCHEDULE">SCHEDULE</option>
-          <option value="ADMIN">ADMIN</option>
-          <option value="TREASURY">TREASURY</option>
-          <option value="SYSTEM">SYSTEM</option>
-        </select>
-        <select value={noticeAdminFilter} onChange={e => { setNoticeAdminFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by admin">
-          <option value="all">ALL ADMINS</option>
-          {noticeAdmins.map(admin => <option key={admin} value={admin}>{admin}</option>)}
-        </select>
-        <select value={noticeTimeFilter} onChange={e => { setNoticeTimeFilter(e.target.value); setAllNoticePage(1) }} aria-label="Filter CW notifications by time">
-          <option value="all">ALL TIME</option>
-          <option value="24h">LAST 24 HOURS</option>
-          <option value="7d">LAST 7 DAYS</option>
-          <option value="30d">LAST 30 DAYS</option>
-        </select>
-        <label className="cw-notice-date-field"><span>DATE</span><input className="notice-date" type="date" value={noticeDateFilter} onChange={e => { setNoticeDateFilter(e.target.value); setAllNoticePage(1) }} title="Filter exact local date" aria-label="Filter exact date" /></label>
-        <label className="cw-notice-date-field"><span>FROM</span><input className="notice-date" type="date" value={noticeFrom} onChange={e => { setNoticeFrom(e.target.value); setAllNoticePage(1) }} title="Filter from local date" aria-label="Filter from date" /></label>
-        <label className="cw-notice-date-field"><span>TO</span><input className="notice-date" type="date" value={noticeTo} onChange={e => { setNoticeTo(e.target.value); setAllNoticePage(1) }} title="Filter to local date" aria-label="Filter to date" /></label>
-        <button className="cw-btn cw-btn-small notice-clear" type="button" onClick={() => { setNoticeSearch(""); setNoticeCategoryFilter("all"); setNoticeAdminFilter("all"); setNoticeTimeFilter("all"); setNoticeDateFilter(""); setNoticeFrom(""); setNoticeTo(""); setAllNoticePage(1); }}>CLEAR</button>
-      </div>
-
-      <div className="cw-unified-results-head"><div><strong>{matchingNotices.length}</strong> notifications found <span>•</span> <b>{newCount}</b> new today</div><div>Showing {matchingNotices.length ? `${(safeAllNoticePage - 1) * PAGE_SIZE + 1}-${Math.min(safeAllNoticePage * PAGE_SIZE, matchingNotices.length)}` : "0"} of {matchingNotices.length}</div></div>
-
-      <div className="cw-unified-notice-table-wrap">
-        <table className="cw-unified-notice-table">
-          <colgroup><col className="c-num" /><col className="c-status" /><col className="c-icon" /><col className="c-category" /><col className="c-message" /><col className="c-time" /><col className="c-by" /><col className="c-open" /></colgroup>
-          <thead><tr><th>#</th><th>STATUS</th><th>ICON</th><th>CATEGORY</th><th>MESSAGE</th><th>TIME</th><th>BY</th><th aria-label="Open"></th></tr></thead>
-          <tbody>
-            {visibleAllNotices.map((notice, index) => {
-              const category = inferNoticeCategory(notice); const isNew = dateKey(notice.createdAt || notice.timestamp, resolvedTimezone) === noticeDateKey; return <tr key={notice.id} className={`cw-unified-notice-row category-${category.toLowerCase()}`} onClick={() => setAuditDetail(notice)} title="Click to view full notification details">
-                <td className="notice-number">{(safeAllNoticePage - 1) * PAGE_SIZE + index + 1}</td>
-                <td><span className={`cw-notice-status ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
-                <td><span className={`cw-unified-icon category-${category.toLowerCase()}`}>{noticeIcon(category)}</span></td>
-                <td><span className={`cw-notice-category-badge cw-notice-category-${category.toLowerCase()}`}>{category}</span></td>
-                <td><div className="cw-unified-message"><strong>{clean(notice.title) || "CW Activity"}</strong><span>{clean(notice.message) || "Record changed."}</span></div></td>
-                <td className="notice-time">{formatDateTime(notice.createdAt || notice.timestamp, resolvedTimezone)}</td>
-                <td className="notice-by">{clean(notice.createdBy) || "System"}</td>
-                <td className="notice-open">›</td>
-              </tr>
-            })}
-            {!visibleAllNotices.length && <tr><td colSpan="8" className="cw-unified-empty">No CW notifications match your filters.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="cw-unified-pagination">
-        <button disabled={safeAllNoticePage <= 1} onClick={() => setAllNoticePage(1)}>«</button>
-        <button disabled={safeAllNoticePage <= 1} onClick={() => setAllNoticePage(p => Math.max(1, p - 1))}>‹</button>
-        {Array.from({ length: Math.min(5, allNoticePageCount) }, (_, i) => { const page = allNoticePageCount <= 5 ? i + 1 : Math.max(1, Math.min(allNoticePageCount - 4, safeAllNoticePage - 2)) + i; return <button key={page} className={safeAllNoticePage === page ? "active" : ""} onClick={() => setAllNoticePage(page)}>{page}</button> })}
-        <button disabled={safeAllNoticePage >= allNoticePageCount} onClick={() => setAllNoticePage(p => Math.min(allNoticePageCount, p + 1))}>›</button>
-        <button disabled={safeAllNoticePage >= allNoticePageCount} onClick={() => setAllNoticePage(allNoticePageCount)}>»</button>
-      </div>
-    </section>}
     {playerModal && <Modal title={playerModal.mode === "edit" ? `EDIT PLAYER • ${playerModal.player?.ign || ""}` : "ADD NEW PLAYER"} onClose={() => setPlayerModal(null)}>
       <div className="cw-player-form-head">
         <div className="cw-kicker">CW ROSTER PROFILE</div>
@@ -1623,8 +1814,9 @@ export default function CWPage({ user, isAdmin }) {
     {attendanceModal && <Modal title={`${attendanceModal.mode === "override" ? "OVERRIDE" : "EDIT CW ATTENDANCE"} • ${attendanceModal.player.ign}`} wide onClose={() => setAttendanceModal(null)}><div className="cw-attendance-summary"><strong>{formatDateTime(attendanceModal.occurrence.at, resolvedTimezone)}</strong><span>{attendanceModal.player.className || attendanceModal.player.class} • {attendanceModal.player.role} • Base: {attendanceModal.occurrence.time} {baseTz}</span></div><div className="cw-form-grid"><label>CW CLASS SALARY<input inputMode="decimal" value={attendanceForm.salaryGold} onChange={e => setAttendanceForm({ ...attendanceForm, salaryGold: formatMoneyInput(e.target.value) })} placeholder="0" /><small className="cw-field-help">Default comes from {attendanceModal.player.className || attendanceModal.player.class} salary. Admin can adjust this record.</small></label><label>ITEM COST / GOLD HANDED OUT<input inputMode="decimal" value={attendanceForm.itemCostGold} onChange={e => setAttendanceForm({ ...attendanceForm, itemCostGold: formatMoneyInput(e.target.value) })} placeholder="0" /></label><label className="cw-span-2">WHAT DID THEY RECEIVE?<textarea value={attendanceForm.receivedItem} onChange={e => setAttendanceForm({ ...attendanceForm, receivedItem: e.target.value })} placeholder="Example: PUM BOX • Crazytime Box • Guild consumables" /></label><label className="cw-span-2">NOTES<textarea value={attendanceForm.notes} onChange={e => setAttendanceForm({ ...attendanceForm, notes: e.target.value })} placeholder="Example: Weekly Clan War salary and item distribution." /></label>{attendanceModal.existing && <label className="cw-span-2">ADMIN COMMENT *<textarea value={attendanceForm.adminComment} onChange={e => setAttendanceForm({ ...attendanceForm, adminComment: e.target.value })} placeholder={attendanceModal.mode === "override" ? "Required. Explain what is being overridden and why..." : "Required. Explain why this attendance record is being edited..."} /></label>}</div><div className="cw-helper"><b>How to record:</b> put the salary paid for this CW in the salary field. If an item was handed out, enter its name and its gold cost. Treasury automatically receives the matching minus entries so the Guild Gold Vault stays connected.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAttendanceModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={saveAttendance}>{saving ? "SAVING..." : attendanceModal.mode === "override" ? "SAVE OVERRIDE" : attendanceModal.existing ? "SAVE EDIT" : "SAVE CW ATTENDANCE"}</button></div></Modal>}
 
     {itemModal?.mode === "inventory" && <Modal title="GUILD INVENTORY" wide onClose={() => setItemModal(null)}>
-      <div className="cw-section-head"><div><div className="cw-kicker">LIVE GUILD STOCK</div><h2>Guild Inventory</h2><p>Current stock by category, item, cost and quantity. This view updates from the live inventory ledger.</p></div><button className="cw-btn" onClick={() => setItemModal({ mode: "catalog" })}>MANAGE ITEMS</button></div>
-      <div className="cw-table-scroll"><table className="cw-table cw-guild-inventory-table"><thead><tr><th>CATEGORY</th><th>ITEM</th><th>UNIT COST</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>STATUS</th></tr></thead><tbody>{cwItems.slice().sort((a, b) => clean(a.name).localeCompare(clean(b.name))).map(item => { const st = stockForItem(item.id); const status = st.received <= 0 || st.available <= 0 ? "OUT" : st.available <= st.threshold ? "LOW" : "IN STOCK"; return <tr key={item.id}><td>{item.category || "Clan War"}</td><td><strong>{item.name}</strong><small>{item.description || "—"}</small></td><td className="cw-gold">₲ {money(item.unitCost)}</td><td>{st.received}</td><td>{st.distributed}</td><td><strong className={status === "OUT" ? "cw-out" : status === "LOW" ? "cw-low" : "cw-in"}>{st.available}</strong></td><td><span className={`cw-ledger-type ${status === "OUT" ? "is-out" : status === "LOW" ? "is-low" : "is-in"}`}>{status}</span></td></tr> })}{!cwItems.length && <tr><td colSpan="7" className="cw-empty">No guild inventory items yet.</td></tr>}</tbody></table></div>
+      <div className="cw-section-head"><div><div className="cw-kicker">LIVE GUILD STOCK</div><h2>Guild Inventory</h2><p>Current stock by category, item, cost and quantity. This view updates from the live inventory ledger.</p></div><button className="cw-btn" onClick={() => { setCatalogPage(1); setItemModal({ mode: "catalog" }); }}>MANAGE ITEMS</button></div>
+      <div className="cw-table-scroll"><table className="cw-table cw-guild-inventory-table"><thead><tr><th>CATEGORY</th><th>ITEM</th><th>UNIT COST</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>STATUS</th></tr></thead><tbody>{visibleInventoryItems.map(item => { const st = stockForItem(item.id); const status = st.received <= 0 || st.available <= 0 ? "OUT" : st.available <= st.threshold ? "LOW" : "IN STOCK"; return <tr key={item.id}><td>{item.category || "Clan War"}</td><td><strong>{item.name}</strong><small>{item.description || "—"}</small></td><td className="cw-gold">₲ {money(item.unitCost)}</td><td>{st.received}</td><td>{st.distributed}</td><td><strong className={status === "OUT" ? "cw-out" : status === "LOW" ? "cw-low" : "cw-in"}>{st.available}</strong></td><td><span className={`cw-ledger-type ${status === "OUT" ? "is-out" : status === "LOW" ? "is-low" : "is-in"}`}>{status}</span></td></tr> })}{!cwItems.length && <tr><td colSpan="7" className="cw-empty">No guild inventory items yet.</td></tr>}</tbody></table></div>
+      <div className="cw-pagination"><button disabled={inventoryPageSafe <= 1} onClick={() => setInventoryPage(p => Math.max(1, p - 1))}>‹</button><span>PAGE {inventoryPageSafe} OF {inventoryPageCount} • 10 ITEMS PER PAGE</span><button disabled={inventoryPageSafe >= inventoryPageCount} onClick={() => setInventoryPage(p => Math.min(inventoryPageCount, p + 1))}>›</button></div>
       <div className="cw-helper"><b>LIVE STOCK:</b> Every receive, purchase, edit, delete and player assignment is reflected here through the inventory transactions.</div>
     </Modal>}
 
@@ -1640,10 +1832,17 @@ export default function CWPage({ user, isAdmin }) {
           <div className="cw-finance-hub-group cw-hub-manage"><div className="cw-finance-hub-label"><span>ITEM MANAGEMENT</span><small>Create or maintain the stock catalog</small></div><button className="cw-btn" onClick={() => openItemCatalog("add")}>＋ ADD ITEM</button></div>
         </div>
       </div>}
-      <div className="cw-table-scroll"><table className="cw-table"><thead><tr><th>ITEM</th><th>UNIT COST</th><th>IN STOCK</th><th>STATUS</th><th>DESCRIPTION</th><th>ACTIONS</th></tr></thead><tbody>
-        {cwItems.slice().sort((a, b) => clean(a.name).localeCompare(clean(b.name))).map(item => { const st = stockForItem(item.id); const status = st.received <= 0 || st.available <= 0 ? "OUT" : st.available <= st.threshold ? "LOW" : "IN STOCK"; return <tr key={item.id}><td><strong>{item.name}</strong></td><td className="cw-gold">₲ {money(item.unitCost)}</td><td><strong className={status === "OUT" ? "cw-out" : status === "LOW" ? "cw-low" : "cw-in"}>{st.available}</strong><small>{st.received} received • {st.distributed} distributed</small></td><td><span className={`cw-ledger-type ${status === "OUT" ? "is-out" : status === "LOW" ? "is-low" : "is-in"}`}>{status}</span></td><td>{item.description || "—"}</td><td className="cw-history-actions"><button className="cw-btn cw-btn-item cw-btn-small" onClick={() => openInventoryAssignment(item)}>ASSIGN</button><button className="cw-btn cw-btn-small" onClick={() => openItemCatalog("edit", item)}>EDIT</button><button className={`cw-btn cw-btn-small ${item.active === false ? "cw-btn-primary" : "cw-btn-danger"}`} onClick={() => requestToggleItem(item)}>{item.active === false ? "ENABLE" : "DISABLE"}</button></td></tr>; })}
-        {!cwItems.length && <tr><td colSpan="6" className="cw-empty">No CW items have been created yet.</td></tr>}
+      <div className="cw-catalog-action-guide">
+        <div><b>ACTIONS</b><span>Use these controls to manage the catalog without changing historical player assignments.</span></div>
+        <div><strong>ASSIGN</strong><span>Distribute available stock to one or more players.</span></div>
+        <div><strong>EDIT</strong><span>Change the current item definition only.</span></div>
+        <div><strong>DISABLE</strong><span>Stop future assignments while preserving history.</span></div>
+      </div>
+      <div className="cw-table-scroll cw-catalog-table-scroll"><table className="cw-table cw-catalog-table"><thead><tr><th>ITEM</th><th>UNIT COST</th><th>IN STOCK</th><th>STATUS</th><th>DESCRIPTION</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
+        {visibleCatalogItems.map(item => { const st = stockForItem(item.id); const status = st.received <= 0 || st.available <= 0 ? "OUT" : st.available <= st.threshold ? "LOW" : "IN STOCK"; return <tr key={item.id}><td><strong>{item.name}</strong><small>{item.category || "Clan War"}</small></td><td className="cw-gold">₲ {money(item.unitCost)}</td><td><strong className={status === "OUT" ? "cw-out" : status === "LOW" ? "cw-low" : "cw-in"}>{st.available}</strong><small>{st.received} received • {st.distributed} distributed</small></td><td><span className={`cw-ledger-type ${status === "OUT" ? "is-out" : status === "LOW" ? "is-low" : "is-in"}`}>{status}</span></td><td>{item.description || "—"}</td><td><span className="cw-catalog-updated">{formatDateTime(item.updatedAt || item.createdAt, resolvedTimezone)}</span><small>{item.updatedBy || item.createdBy || "System"}</small></td><td className="cw-catalog-actions"><button type="button" className="cw-btn cw-btn-small cw-action-assign" disabled={item.active === false || st.available <= 0} onClick={() => openInventoryAssignment(item)}>{item.active === false ? "DISABLED" : st.available <= 0 ? "OUT OF STOCK" : "ASSIGN"}</button><button type="button" className="cw-btn cw-btn-small cw-action-edit" onClick={() => openItemCatalog("edit", item)}>EDIT</button><button type="button" className={`cw-btn cw-btn-small ${item.active === false ? "cw-btn-primary cw-action-enable" : "cw-btn-danger cw-action-disable"}`} onClick={() => requestToggleItem(item)}>{item.active === false ? "ENABLE" : "DISABLE"}</button></td></tr>; })}
+        {!cwItems.length && <tr><td colSpan="7" className="cw-empty">No CW items have been created yet.</td></tr>}
       </tbody></table></div>
+      <div className="cw-pagination"><button type="button" disabled={catalogPageSafe <= 1} onClick={() => setCatalogPage(p => Math.max(1, p - 1))}>‹</button><span>PAGE {catalogPageSafe} OF {catalogPageCount} • 10 ITEMS PER PAGE • UPDATED AT DESC</span><button type="button" disabled={catalogPageSafe >= catalogPageCount} onClick={() => setCatalogPage(p => Math.min(catalogPageCount, p + 1))}>›</button></div>
       <div className="cw-helper">Item definitions are separate from item assignments. Editing an item definition does not rewrite previous player history; past assignments retain their recorded item name, quantity and unit cost.</div>
     </Modal>}
 
@@ -1657,11 +1856,11 @@ export default function CWPage({ user, isAdmin }) {
       <div className="cw-rewards-modal-subtitle">Record today's Clan War winnings. Gold enters Guild Treasury and every item goes directly into Inventory Vault stock for future player assignments.</div>
       <div className="cw-rewards-layout">
         <div className="cw-rewards-main">
-          <section className="cw-reward-step cw-reward-gold-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">₲</span><div><b>1. GOLD EARNED</b><small>Enter the gold amount earned from today's Clan War.</small></div></div><div className="cw-gold-entry-row"><div className="cw-gold-input-wrap"><span>₲</span><input inputMode="decimal" value={cwRewardsGold} onChange={e => setCwRewardsGold(formatMoneyInput(e.target.value))} placeholder="0" /></div><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("10000")}>+ 10,000</button><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("50000")}>+ 50,000</button><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("100000")}>+ 100,000</button></div></section>
-          <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">◇</span><div><b>2. ITEMS EARNED</b><small>Add the items won from today's Clan War. These are added to inventory stock automatically.</small></div></div><div className="cw-reward-item-editor">{cwRewardsLines.map((line, index) => <div className="cw-reward-edit-line" key={index}><span>{index + 1}</span><div className="cw-reward-item-name-wrap"><input list="cw-reward-item-options" value={line.itemName || ""} onChange={e => { const value = e.target.value; const match = cwItems.find(i => clean(i.name).toLowerCase() === clean(value).toLowerCase()); setCwRewardsLines(rows => rows.map((r, i) => i === index ? { ...r, itemName: value, itemId: match?.id || "" } : r)); }} placeholder="Select existing item or type a new item..." /><small>Existing catalog items are suggested. New names become inventory items automatically.</small></div><input className="cw-reward-qty" inputMode="numeric" value={line.quantity} onChange={e => setCwRewardsLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: e.target.value.replace(/[^0-9]/g, "") } : r))} placeholder="Qty" />{cwRewardsLines.length > 1 && <button type="button" className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setCwRewardsLines(rows => rows.filter((_, i) => i !== index))}>DELETE</button>}</div>)}<datalist id="cw-reward-item-options">{cwItems.filter(i => i.active !== false).map(i => <option key={i.id} value={i.name}>{`₲ ${money(i.unitCost)} each`}</option>)}</datalist></div><button type="button" className="cw-btn cw-add-reward-item" onClick={() => setCwRewardsLines(rows => [...rows, { itemId: "", itemName: "", quantity: "1" }])}>＋ ADD ITEM</button></section>
+          <section className="cw-reward-step cw-reward-gold-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">₲</span><div><b>1. GOLD EARNED</b><small>Enter the gold amount earned from today's Clan War.</small></div></div><div className="cw-gold-entry-row"><div className="cw-gold-input-wrap"><span>₲</span><input inputMode="decimal" value={cwRewardsGold} onChange={e => setCwRewardsGold(formatMoneyInput(e.target.value))} placeholder="0" /></div><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("10,000")}>+ 10,000</button><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("50,000")}>+ 50,000</button><button type="button" className="cw-btn cw-reward-preset" onClick={() => setCwRewardsGold("100,000")}>+ 100,000</button></div></section>
+          <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">◇</span><div><b>2. ITEMS EARNED</b><small>Add the items won from today's Clan War. These are added to inventory stock automatically.</small></div></div><div className="cw-reward-item-editor">{cwRewardsLines.map((line, index) => <div className="cw-reward-edit-line" key={index}><span>{index + 1}</span><div className="cw-reward-item-name-wrap"><input list="cw-reward-item-options" value={line.itemName || ""} onChange={e => { const value = e.target.value; const match = cwItems.find(i => clean(i.name).toLowerCase() === clean(value).toLowerCase()); setCwRewardsLines(rows => rows.map((r, i) => i === index ? { ...r, itemName: value, itemId: match?.id || "" } : r)); }} placeholder="Select existing item or type a new item..." /><small>Existing catalog items are suggested. New names become inventory items automatically.</small></div><input className="cw-reward-qty" inputMode="numeric" value={line.quantity} onChange={e => setCwRewardsLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: formatMoneyInput(e.target.value).replace(/\./g, "") } : r))} placeholder="Qty" />{cwRewardsLines.length > 1 && <button type="button" className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setCwRewardsLines(rows => rows.filter((_, i) => i !== index))}>DELETE</button>}</div>)}<datalist id="cw-reward-item-options">{cwItems.filter(i => i.active !== false).map(i => <option key={i.id} value={i.name}>{`₲ ${money(i.unitCost)} each`}</option>)}</datalist></div><button type="button" className="cw-btn cw-add-reward-item" onClick={() => setCwRewardsLines(rows => [...rows, { itemId: "", itemName: "", quantity: "1" }])}>＋ ADD ITEM</button></section>
           <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">▤</span><div><b>3. NOTES <small>(OPTIONAL)</small></b></div></div><textarea value={cwRewardsNote} onChange={e => setCwRewardsNote(e.target.value)} maxLength={300} placeholder="September 4 CW winnings. Good game everyone!" /><div className="cw-char-count">{cwRewardsNote.length}/300</div></section>
         </div>
-        <aside className="cw-rewards-side"><section className="cw-reward-preview"><div className="cw-reward-side-head"><span>▣</span><div><b>TODAY'S REWARD PREVIEW</b><small>{formatDateTime(now, resolvedTimezone)}</small></div><em>TODAY</em></div><div className="cw-reward-totals"><div><small>GOLD EARNED</small><strong>₲ {money(num(cwRewardsGold, 0))}</strong></div><div><small>ITEMS EARNED</small><strong>{cwRewardsLines.reduce((n, l) => n + Math.max(0, Math.floor(num(l.quantity, 0))), 0)} PCS</strong></div></div><div className="cw-preview-items">{cwRewardsLines.filter(l => (l.itemName || l.itemId) && Math.floor(num(l.quantity, 0)) > 0).map((l, i) => { const item = cwItems.find(x => String(x.id) === String(l.itemId)); return <div key={i}><span>{item?.name || l.itemName || "Item"}</span><b>× {Math.floor(num(l.quantity, 0))}</b></div> })}{!cwRewardsLines.some(l => (l.itemName || l.itemId) && Math.floor(num(l.quantity, 0)) > 0) && <div className="cw-empty">No items added yet.</div>}</div></section>
+        <aside className="cw-rewards-side"><section className="cw-reward-preview"><div className="cw-reward-side-head"><span>▣</span><div><b>TODAY'S REWARD PREVIEW</b><small>{formatDateTime(now, resolvedTimezone)}</small></div><em>TODAY</em></div><div className="cw-reward-totals"><div><small>CURRENT GUILD GOLD</small><strong>₲ {money(treasuryBalance)}</strong></div><div><small>GOLD AFTER SAVE</small><strong>₲ {money(treasuryBalance + Math.max(0, num(cwRewardsGold, 0)))}</strong></div><div><small>ITEMS TO INVENTORY</small><strong>{cwRewardsLines.reduce((n, l) => n + Math.max(0, Math.floor(num(l.quantity, 0))), 0)} PCS</strong></div></div><div className="cw-preview-items">{cwRewardsLines.filter(l => (l.itemName || l.itemId) && Math.floor(num(l.quantity, 0)) > 0).map((l, i) => { const item = cwItems.find(x => String(x.id) === String(l.itemId)); return <div key={i}><span>{item?.name || l.itemName || "Item"}</span><b>× {Math.floor(num(l.quantity, 0))}</b></div> })}{!cwRewardsLines.some(l => (l.itemName || l.itemId) && Math.floor(num(l.quantity, 0)) > 0) && <div className="cw-preview-empty-state"><strong>NO ITEMS SELECTED</strong><span>Add the CW reward items above to preview what will enter Inventory Vault.</span></div>}</div></section>
           <section className="cw-reward-impact"><h3>▥ IMPACT & TRACKING</h3><p>This will be automatically recorded across the system.</p><div>✓ Add gold to Guild Treasury</div><div>✓ Add items to Inventory Vault stock</div><div>✓ Update Today's Earnings in Dashboard</div><div>✓ Log in Activity & Notification Feed</div><div>✓ Include in Treasury and Inventory History</div></section>
           <section className="cw-reward-important"><h3>ⓘ IMPORTANT</h3><p>• All items are added to available stock immediately.</p><p>• You can assign these items to players later.</p><p>• This action is recorded in the Activity Log and visible to the guild.</p></section>
         </aside>
@@ -1674,7 +1873,7 @@ export default function CWPage({ user, isAdmin }) {
       <div className="cw-rewards-layout cw-spending-layout">
         <div className="cw-rewards-main">
           <section className="cw-reward-step cw-reward-gold-step"><div className="cw-reward-step-head"><span className="cw-reward-icon cw-spending-icon">−</span><div><b>1. GOLD SPENT</b><small>Enter the total amount paid from Guild Gold.</small></div></div><div className="cw-gold-entry-row"><div className="cw-gold-input-wrap cw-spending-gold-input"><span>₲</span><input inputMode="decimal" value={cwSpendingGold} onChange={e => setCwSpendingGold(formatMoneyInput(e.target.value))} placeholder={cwSpendingLines.some(l => l.itemId) ? "Auto from stock" : "0"} /></div><button type="button" className="cw-btn cw-reward-preset cw-spending-preset" onClick={() => setCwSpendingGold(String(Math.max(0, treasuryBalance)))}>AVAILABLE GOLD</button></div></section>
-          <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon cw-spending-icon">◇</span><div><b>2. STOCK PURCHASED</b><small>Select the supplies bought with today's Clan War spending. These quantities enter stock automatically.</small></div></div><div className="cw-reward-item-editor">{cwSpendingLines.map((line, index) => { const item = cwItems.find(i => String(i.id) === String(line.itemId)); const total = item ? num(item.unitCost) * Math.floor(num(line.quantity, 0)) : 0; return <div className="cw-reward-edit-line cw-spending-edit-line" key={index}><span>{index + 1}</span><div className="cw-reward-item-name-wrap"><input list="cw-spending-item-options" value={line.itemName || item?.name || ""} onChange={e => { const value = e.target.value; const match = cwItems.find(i => clean(i.name).toLowerCase() === clean(value).toLowerCase()); setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, itemId: match?.id || "", itemName: value, unitCost: match ? formatMoneyInput(match.unitCost) : r.unitCost } : r)); }} placeholder="Select an item or type a new item..." /><small>Existing items are suggested. New items can be created here.</small>{!item && line.itemName && <input className="cw-spending-new-cost" inputMode="decimal" value={line.unitCost || ""} onChange={e => setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, unitCost: formatMoneyInput(e.target.value) } : r))} placeholder="New item unit cost" />}</div><input className="cw-reward-qty" inputMode="numeric" value={line.quantity} onChange={e => setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: e.target.value.replace(/[^0-9]/g, "") } : r))} placeholder="Qty" /><strong className="cw-spending-line-total">₲ {money(total || (!item ? num(line.unitCost, 0) * Math.floor(num(line.quantity, 0)) : 0))}</strong>{cwSpendingLines.length > 1 && <button type="button" className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setCwSpendingLines(rows => rows.filter((_, i) => i !== index))}>DELETE</button>}</div> })}</div><button type="button" className="cw-btn cw-add-reward-item" onClick={() => setCwSpendingLines(rows => [...rows, { itemId: "", quantity: "1" }])}>＋ ADD ITEM</button></section>
+          <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon cw-spending-icon">◇</span><div><b>2. STOCK PURCHASED</b><small>Select the supplies bought with today's Clan War spending. These quantities enter stock automatically.</small></div></div><div className="cw-reward-item-editor">{cwSpendingLines.map((line, index) => { const item = cwItems.find(i => String(i.id) === String(line.itemId)); const total = item ? num(item.unitCost) * Math.floor(num(line.quantity, 0)) : 0; return <div className="cw-reward-edit-line cw-spending-edit-line" key={index}><span>{index + 1}</span><div className="cw-reward-item-name-wrap"><input list="cw-spending-item-options" value={line.itemName || item?.name || ""} onChange={e => { const value = e.target.value; const match = cwItems.find(i => clean(i.name).toLowerCase() === clean(value).toLowerCase()); setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, itemId: match?.id || "", itemName: value, unitCost: match ? formatMoneyInput(match.unitCost) : r.unitCost } : r)); }} placeholder="Select an item or type a new item..." /><small>Existing items are suggested. New items can be created here.</small>{!item && line.itemName && <input className="cw-spending-new-cost" inputMode="decimal" value={line.unitCost || ""} onChange={e => setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, unitCost: formatMoneyInput(e.target.value) } : r))} placeholder="New item unit cost" />}</div><input className="cw-reward-qty" inputMode="numeric" value={line.quantity} onChange={e => setCwSpendingLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: formatMoneyInput(e.target.value).replace(/\./g, "") } : r))} placeholder="Qty" /><strong className="cw-spending-line-total">₲ {money(total || (!item ? num(line.unitCost, 0) * Math.floor(num(line.quantity, 0)) : 0))}</strong>{cwSpendingLines.length > 1 && <button type="button" className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setCwSpendingLines(rows => rows.filter((_, i) => i !== index))}>DELETE</button>}</div> })}</div><button type="button" className="cw-btn cw-add-reward-item" onClick={() => setCwSpendingLines(rows => [...rows, { itemId: "", quantity: "1" }])}>＋ ADD ITEM</button></section>
           <section className="cw-reward-step"><div className="cw-reward-step-head"><span className="cw-reward-icon">▤</span><div><b>3. NOTES <small>(OPTIONAL)</small></b></div></div><textarea value={cwSpendingNote} onChange={e => setCwSpendingNote(e.target.value)} maxLength={300} placeholder="Example: PUM BOX and CT BOX purchased for this week's Clan War." /><div className="cw-char-count">{cwSpendingNote.length}/300</div></section>
         </div>
         <aside className="cw-rewards-side">
@@ -1704,7 +1903,7 @@ export default function CWPage({ user, isAdmin }) {
               {!spendingInventoryPageRows.length && <div className="cw-receipt-empty">No matching guild stock.</div>}
             </div>
             <div className="cw-current-inventory-footer">
-              <span>{spendingInventoryRows.length} ITEM{spendingInventoryRows.length === 1 ? "" : "S"} · SHOWING 5 PER PAGE</span>
+              <span>{spendingInventoryRows.length} ITEM{spendingInventoryRows.length === 1 ? "" : "S"} · SHOWING 10 PER PAGE</span>
               <div>
                 <button type="button" className="cw-btn cw-btn-small" disabled={spendingInventoryPageSafe <= 1} onClick={() => setSpendingInventoryPage(p => Math.max(1, p - 1))}>‹</button>
                 <b>{spendingInventoryPageSafe} / {spendingInventoryPageCount}</b>
@@ -1732,7 +1931,7 @@ export default function CWPage({ user, isAdmin }) {
       <div className="cw-rewards-footer"><div><small>TODAY'S TOTALS</small><strong>GOLD: −₲ {money(Math.max(0, num(cwSpendingGold, 0) || cwSpendingLines.reduce((sum, l) => { const i = cwItems.find(x => String(x.id) === String(l.itemId)); return sum + (i ? num(i.unitCost) * Math.floor(num(l.quantity, 0)) : 0) }, 0)))}</strong><span>ITEMS: {cwSpendingLines.filter(l => l.itemId).length}</span><span>TOTAL QTY: {cwSpendingLines.reduce((n, l) => n + Math.max(0, Math.floor(num(l.quantity, 0))), 0)}</span></div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setCwSpendingModal(false)}>CANCEL</button><button className="cw-btn cw-rewards-save cw-spending-save" disabled={saving} onClick={saveCwSpending}>{saving ? "SAVING..." : "▣ SAVE SPENDING & STOCK"}</button></div></div>
     </Modal>}
 
-    {inventoryPurchaseModal && <Modal title={inventoryPurchaseModal === "free" ? "RECEIVE FREE CW STOCK" : "PURCHASE INVENTORY STOCK"} wide onClose={() => setInventoryPurchaseModal(false)}><div className="cw-form-grid"><label>TYPE<input value={inventoryPurchaseModal === "free" ? "CLAN WAR REWARD — ₲0" : "INVENTORY PURCHASE — GUILD EXPENSE"} readOnly /></label><label>DATE & TIME ADDED<input value={formatDateTime(now, resolvedTimezone)} readOnly /><small className="cw-field-help">Recorded automatically when this stock receipt is saved. Display follows the global timezone.</small></label><label className="cw-span-2">NOTE<textarea value={inventoryPurchaseNote} onChange={e => setInventoryPurchaseNote(e.target.value)} placeholder="Example: Guild Leader expense / Clan War reward" /></label></div><div className="cw-inventory-line-editor">{inventoryPurchaseLines.map((line, index) => { const item = cwItems.find(i => String(i.id) === String(line.itemId)); const total = item ? num(item.unitCost) * Math.floor(num(line.quantity, 0)) : 0; return <div className="cw-inventory-line" key={index}><select value={line.itemId} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, itemId: e.target.value } : r))}><option value="">SELECT ITEM...</option>{cwItems.filter(i => i.active !== false).map(i => <option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)} each</option>)}</select><input inputMode="numeric" value={line.quantity} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: e.target.value.replace(/[^0-9]/g, "") } : r))} placeholder="Quantity" /><strong>{inventoryPurchaseModal === "free" ? "₲ 0" : `₲ ${money(total)}`}</strong>{inventoryPurchaseLines.length > 1 && <button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setInventoryPurchaseLines(rows => rows.filter((_, i) => i !== index))}>REMOVE</button>}</div> })}</div><button className="cw-btn" onClick={() => setInventoryPurchaseLines(rows => [...rows, { itemId: "", quantity: "1" }])}>＋ ADD ITEM LINE</button><div className="cw-helper"><b>{inventoryPurchaseModal === "free" ? "TREASURY IMPACT: ₲0" : `TREASURY IMPACT: -₲ ${money(inventoryPurchaseLines.reduce((sum, l) => { const i = cwItems.find(x => String(x.id) === String(l.itemId)); return sum + (i ? num(i.unitCost) * Math.floor(num(l.quantity, 0)) : 0) }, 0))}`}</b><br />Received quantities are added to the Inventory Vault and can later be distributed without another Treasury charge.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setInventoryPurchaseModal(false)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={inventoryPurchaseModal === "free" ? saveFreeInventory : saveInventoryPurchase}>{saving ? "SAVING..." : inventoryPurchaseModal === "free" ? "RECEIVE STOCK — ₲0" : "PURCHASE & ADD TO VAULT"}</button></div></Modal>}
+    {inventoryPurchaseModal && <Modal title={inventoryPurchaseModal === "free" ? "RECEIVE FREE CW STOCK" : "PURCHASE INVENTORY STOCK"} wide onClose={() => setInventoryPurchaseModal(false)}><div className="cw-form-grid"><label>TYPE<input value={inventoryPurchaseModal === "free" ? "CLAN WAR REWARD — ₲0" : "INVENTORY PURCHASE — GUILD EXPENSE"} readOnly /></label><label>DATE & TIME ADDED<input value={formatDateTime(now, resolvedTimezone)} readOnly /><small className="cw-field-help">Recorded automatically when this stock receipt is saved. Display follows the global timezone.</small></label><label className="cw-span-2">NOTE<textarea value={inventoryPurchaseNote} onChange={e => setInventoryPurchaseNote(e.target.value)} placeholder="Example: Guild Leader expense / Clan War reward" /></label></div><div className="cw-inventory-line-editor">{inventoryPurchaseLines.map((line, index) => { const item = cwItems.find(i => String(i.id) === String(line.itemId)); const total = item ? num(item.unitCost) * Math.floor(num(line.quantity, 0)) : 0; return <div className="cw-inventory-line" key={index}><select value={line.itemId} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, itemId: e.target.value } : r))}><option value="">SELECT ITEM...</option>{cwItems.filter(i => i.active !== false).map(i => <option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)} each</option>)}</select><input inputMode="numeric" value={line.quantity} onChange={e => setInventoryPurchaseLines(rows => rows.map((r, i) => i === index ? { ...r, quantity: formatMoneyInput(e.target.value).replace(/\./g, "") } : r))} placeholder="Quantity" /><strong>{inventoryPurchaseModal === "free" ? "₲ 0" : `₲ ${money(total)}`}</strong>{inventoryPurchaseLines.length > 1 && <button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => setInventoryPurchaseLines(rows => rows.filter((_, i) => i !== index))}>REMOVE</button>}</div> })}</div><button className="cw-btn" onClick={() => setInventoryPurchaseLines(rows => [...rows, { itemId: "", quantity: "1" }])}>＋ ADD ITEM LINE</button><div className="cw-helper"><b>{inventoryPurchaseModal === "free" ? "TREASURY IMPACT: ₲0" : `TREASURY IMPACT: -₲ ${money(inventoryPurchaseLines.reduce((sum, l) => { const i = cwItems.find(x => String(x.id) === String(l.itemId)); return sum + (i ? num(i.unitCost) * Math.floor(num(l.quantity, 0)) : 0) }, 0))}`}</b><br />Received quantities are added to the Inventory Vault and can later be distributed without another Treasury charge.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setInventoryPurchaseModal(false)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={inventoryPurchaseModal === "free" ? saveFreeInventory : saveInventoryPurchase}>{saving ? "SAVING..." : inventoryPurchaseModal === "free" ? "RECEIVE STOCK — ₲0" : "PURCHASE & ADD TO VAULT"}</button></div></Modal>}
 
     {itemAssignmentModal && <Modal title={`${itemAssignmentModal.assignment ? "EDIT ITEM ASSIGNMENT" : "ASSIGN ITEM TO PLAYER"} • ${itemAssignmentModal.player?.ign || "INVENTORY"}`} wide onClose={() => setItemAssignmentModal(null)}>
       <div className="cw-assignment-hero">
@@ -1746,17 +1945,28 @@ export default function CWPage({ user, isAdmin }) {
       <section className="cw-assignment-stock-panel">
         <div className="cw-assignment-stock-head"><div><span className="cw-kicker">INVENTORY VAULT</span><h3>Select item from available stock</h3><p>Only stock with available units can be assigned.</p></div><div className="cw-assignment-stock-count"><strong>{assignmentInventoryRows.length}</strong><span>available item types</span></div></div>
         <div className="cw-assignment-stock-tools"><label className="cw-assignment-search"><span>SEARCH STOCK</span><input value={assignmentInventorySearch} onChange={e => { setAssignmentInventorySearch(e.target.value); setAssignmentInventoryPage(1); }} placeholder="Search item name or category..." /></label><label><span>TYPE</span><select value={assignmentInventoryCategory} onChange={e => { setAssignmentInventoryCategory(e.target.value); setAssignmentInventoryPage(1); }}>{assignmentInventoryCategories.map(c => <option key={c} value={c}>{c === "ALL" ? "ALL TYPES" : c}</option>)}</select></label></div>
-        <div className="cw-assignment-stock-table-wrap"><table className="cw-assignment-stock-table"><thead><tr><th>SELECT</th><th>ITEM</th><th>TYPE</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>UNIT COST</th><th>STATUS</th></tr></thead><tbody>{assignmentInventoryPageRows.map(({ item, st, category, status }) => { const selected = String(item.id) === String(itemAssignmentForm.itemId); return <tr key={item.id} className={selected ? "selected" : ""} onClick={() => setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) })}><td><button type="button" className={`cw-stock-select ${selected ? "selected" : ""}`} onClick={e => { e.stopPropagation(); setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) }); }}>{selected ? "✓" : "SELECT"}</button></td><td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td><td>{category}</td><td>{money(st.received)}</td><td>{money(st.distributed)}</td><td><strong>{money(st.available)}</strong></td><td>₲ {money(item.unitCost)}</td><td><span className={`cw-stock-status ${status === "OUT" ? "out" : status === "LOW" ? "low" : "in"}`}>{status}</span></td></tr>})}{!assignmentInventoryPageRows.length && <tr><td colSpan="8" className="cw-assignment-empty">No available stock matches your search/type.</td></tr>}</tbody></table></div>
-        <div className="cw-assignment-stock-pagination"><span>Showing {assignmentInventoryRows.length ? ((assignmentInventoryPageSafe - 1) * 5 + 1) : 0}–{Math.min(assignmentInventoryPageSafe * 5, assignmentInventoryRows.length)} of {assignmentInventoryRows.length}</span><div><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe <= 1} onClick={() => setAssignmentInventoryPage(p => Math.max(1, p - 1))}>‹</button><strong>{assignmentInventoryPageSafe} / {assignmentInventoryPageCount}</strong><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe >= assignmentInventoryPageCount} onClick={() => setAssignmentInventoryPage(p => Math.min(assignmentInventoryPageCount, p + 1))}>›</button></div></div>
+        <div className="cw-assignment-stock-table-wrap"><table className="cw-assignment-stock-table"><thead><tr><th>SELECT</th><th>ITEM</th><th>TYPE</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>UNIT COST</th><th>QTY TO ASSIGN</th><th>STATUS</th></tr></thead><tbody>{assignmentInventoryPageRows.map(({ item, st, category, status }) => { const selected = assignmentSelections.some(r => String(r.itemId) === String(item.id)); const selectedRow = assignmentSelections.find(r => String(r.itemId) === String(item.id)); return <tr key={item.id} className={selected ? "selected" : ""} onClick={() => !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) })}><td><button type="button" className={`cw-stock-select ${selected ? "selected" : ""}`} onClick={e => { e.stopPropagation(); !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) }); }}>{selected ? "✓" : "SELECT"}</button></td><td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td><td>{category}</td><td>{money(st.received)}</td><td>{money(st.distributed)}</td><td><strong>{money(st.available)}</strong></td><td>₲ {money(item.unitCost)}</td><td>{selected ? <input
+  className="cw-assignment-row-qty"
+  type="text"
+  inputMode="numeric"
+  pattern="[0-9]*"
+  value={selectedRow?.quantity ?? ""}
+  aria-label={`Quantity to assign for ${item.name}`}
+  onMouseDown={e => e.stopPropagation()}
+  onClick={e => e.stopPropagation()}
+  onFocus={e => e.stopPropagation()}
+  onChange={e => setAssignmentItemQuantity(item.id, e.target.value)}
+/> : <span className="cw-assignment-unselected">—</span>}</td><td><span className={`cw-stock-status ${status === "OUT" ? "out" : status === "LOW" ? "low" : "in"}`}>{status}</span></td></tr> })}{!assignmentInventoryPageRows.length && <tr><td colSpan="9" className="cw-assignment-empty">No available stock matches your search/type.</td></tr>}</tbody></table></div>
+        <div className="cw-assignment-stock-pagination"><span>Showing {assignmentInventoryRows.length ? ((assignmentInventoryPageSafe - 1) * PAGE_SIZE + 1) : 0}–{Math.min(assignmentInventoryPageSafe * PAGE_SIZE, assignmentInventoryRows.length)} of {assignmentInventoryRows.length}</span><div><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe <= 1} onClick={() => setAssignmentInventoryPage(p => Math.max(1, p - 1))}>‹</button><strong>{assignmentInventoryPageSafe} / {assignmentInventoryPageCount}</strong><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe >= assignmentInventoryPageCount} onClick={() => setAssignmentInventoryPage(p => Math.min(assignmentInventoryPageCount, p + 1))}>›</button></div></div>
       </section>
       <div className="cw-form-grid cw-assignment-bottom-grid">
         {!itemAssignmentModal.player && <label>PLAYER<input value={players.find(p => String(p.id) === String(itemAssignmentForm.playerId))?.ign || "Select a player above"} readOnly /></label>}
-        <label>QUANTITY<input inputMode="numeric" value={itemAssignmentForm.quantity} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, quantity: e.target.value.replace(/[^0-9]/g, "") })} min="1" /></label>
+        <label>QUANTITY<input type="text" inputMode="numeric" pattern="[0-9]*" value={itemAssignmentForm.quantity ?? ""} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, quantity: sanitizeQuantityInput(e.target.value) })} min="1" /></label>
         <label className="cw-span-2">NOTES<textarea value={itemAssignmentForm.notes} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, notes: e.target.value })} placeholder="Optional note about the item distribution" /></label>
         {itemAssignmentModal.assignment && <label className="cw-span-2">ADMIN COMMENT *<textarea value={itemAssignmentForm.adminComment} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, adminComment: e.target.value })} placeholder="Required when editing this item assignment." /></label>}
       </div>
-      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const stock = item ? stockForItem(item.id) : null; const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const remaining = stock ? stock.available - qty : 0; const status = !stock || stock.available <= 0 ? "is-out" : stock.available <= stock.threshold ? "is-low" : ""; return item ? <div className={`cw-stock-inline ${status}`}><span><strong>{money(stock.available)}</strong> available</span><span>{money(stock.received)} received</span><span>{money(stock.distributed)} distributed</span><span>{qty > 0 ? `${money(Math.max(0, remaining))} after` : "Enter quantity"}</span><span>₲ {money(num(item.unitCost) * qty)} value</span></div> : <div className="cw-assignment-no-selection">Select an item above to see live stock.</div>; })()}
-      {(() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const total = item ? num(item.unitCost) * qty : 0; const chosen = zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone) || now; return <div className="cw-assignment-summary"><div><small>DATE / TIME</small><strong>{formatDateTime(chosen, resolvedTimezone)}</strong></div><div><small>ITEM VALUE</small><strong>{item ? `₲ ${money(total)}` : "—"}</strong></div><div><small>TREASURY</small><strong>₲ 0</strong><span>Inventory distribution only</span></div><div><small>STOCK AFTER</small><strong>{item ? money(Math.max(0, stockForItem(item.id).available - qty)) : "—"}</strong></div></div>; })()}
+      {itemAssignmentModal.assignment || itemAssignmentModal.treasuryEntry ? (() => { const item = cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)); const stock = item ? stockForItem(item.id) : null; const qty = Math.floor(num(itemAssignmentForm.quantity, 0)); const remaining = stock ? stock.available - qty : 0; const status = !stock || stock.available <= 0 ? "is-out" : stock.available <= stock.threshold ? "is-low" : ""; return item ? <div className={`cw-stock-inline ${status}`}><span><strong>{money(stock.available)}</strong> available</span><span>{money(stock.received)} received</span><span>{money(stock.distributed)} distributed</span><span>{qty > 0 ? `${money(Math.max(0, remaining))} after` : "Enter quantity"}</span><span>₲ {money(num(item.unitCost) * qty)} value</span></div> : <div className="cw-assignment-no-selection">Select an item above to see live stock.</div>; })() : (() => { const lines = assignmentSelections.map(r => ({ ...r, item: cwItems.find(i => String(i.id) === String(r.itemId)), qty: Math.floor(num(r.quantity, 0)) })).filter(r => r.item && r.qty > 0); const totalQty = lines.reduce((n, r) => n + r.qty, 0); const totalValue = lines.reduce((n, r) => n + num(r.item.unitCost) * r.qty, 0); return <div className="cw-assignment-multi-summary"><div><small>SELECTED ITEM TYPES</small><strong>{lines.length}</strong></div><div><small>TOTAL QUANTITY</small><strong>{money(totalQty)} PCS</strong></div><div><small>INVENTORY VALUE</small><strong>₲ {money(totalValue)}</strong></div><div><small>TREASURY IMPACT</small><strong>₲ 0</strong><span>Inventory distribution only</span></div></div>; })()}
+      {(() => { const chosen = zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone) || now; return <div className="cw-assignment-summary"><div><small>DATE / TIME</small><strong>{formatDateTime(chosen, resolvedTimezone)}</strong></div><div><small>PLAYER</small><strong>{players.find(p => String(p.id) === String(itemAssignmentForm.playerId))?.ign || itemAssignmentModal.player?.ign || "—"}</strong></div><div><small>ITEM TYPES</small><strong>{itemAssignmentModal.assignment || itemAssignmentModal.treasuryEntry ? "1" : String(assignmentSelections.length)}</strong></div><div><small>STOCK</small><strong>{itemAssignmentModal.assignment || itemAssignmentModal.treasuryEntry ? (cwItems.find(i => String(i.id) === String(itemAssignmentForm.itemId)) ? money(Math.max(0, stockForItem(itemAssignmentForm.itemId).available - Math.floor(num(itemAssignmentForm.quantity, 0)))) : "—") : "Multiple selected"}</strong></div></div>; })()}
       <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setItemAssignmentModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving || !itemAssignmentForm.playerId || !itemAssignmentForm.itemId || !itemAssignmentForm.assignmentDateTime} onClick={saveItemAssignment}>{saving ? "SAVING..." : itemAssignmentModal.assignment ? "SAVE ITEM ASSIGNMENT" : itemAssignmentModal.treasuryEntry ? "LINK ITEM TO PLAYER" : "ASSIGN FROM INVENTORY"}</button></div>
     </Modal>}
 
@@ -1769,7 +1979,7 @@ export default function CWPage({ user, isAdmin }) {
         {salaryDraft.length ? salaryDraft.map(row => <div className="cw-salary-row" key={row.id}>
           <label><span>CLASS</span><select value={row.className} onChange={e => updateSalaryProfile(row.id, "className", e.target.value)}>{classes.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
           <label><span>ROLE</span><select value={row.role} onChange={e => updateSalaryProfile(row.id, "role", e.target.value)}>{roles.map(r => <option key={r} value={r}>{r}</option>)}<option value="All Roles">All Roles</option></select></label>
-          <label className="cw-salary-amount"><span>SALARY / CW</span><div><input inputMode="decimal" value={row.salaryGold ?? ""} onChange={e => updateSalaryProfile(row.id, "salaryGold", e.target.value)} placeholder="0" /><em>GOLD</em></div></label>
+          <label className="cw-salary-amount"><span>SALARY / CW</span><div><input inputMode="decimal" value={row.salaryGold ?? ""} onChange={e => updateSalaryProfile(row.id, "salaryGold", formatMoneyInput(e.target.value))} placeholder="0" /><em>GOLD</em></div></label>
           <button type="button" className="cw-btn cw-btn-danger cw-btn-small cw-salary-delete" onClick={() => deleteSalaryProfile(row.id)} aria-label={`Delete ${row.className} ${row.role} salary`}>DELETE</button>
         </div>) : <div className="cw-salary-empty">No salary classifications configured. Add one for each Class + Role combination you use.</div>}
       </div>
@@ -1779,10 +1989,10 @@ export default function CWPage({ user, isAdmin }) {
 
     {roleModal && <Modal title="MANAGE CW ROLES" onClose={() => setRoleModal(false)}><div className="cw-helper">Add future roles without changing the code. Existing default roles are protected from removal.</div><div className="cw-role-manager">{roles.map(r => <div className="cw-role-manager-row" key={r}><span>{r}</span>{isAdmin && !DEFAULT_ROLES.includes(r) && <button className="cw-btn cw-btn-danger cw-btn-small" onClick={async () => { const next = roles.filter(x => x !== r); await setDoc(doc(db, "cwSettings", "current"), { roles: next, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }, { merge: true }); await audit({ category: "PLAYER", title: "CW ROLE REMOVED", message: `${r} was removed from Clan War roles.`, entityType: "cw-role", details: [`Role: ${r}`] }) }}>REMOVE</button>}</div>)}</div><div className="cw-role-add"><input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="Example: Debuffer / Scout / Coordinator" /><button className="cw-btn cw-btn-primary" onClick={async () => { const v = clean(newRole); if (!v || roles.some(x => x.toLowerCase() === v.toLowerCase())) return; await setDoc(doc(db, "cwSettings", "current"), { roles: [...roles, v], updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }, { merge: true }); await audit({ category: "PLAYER", title: "CW ROLE ADDED", message: `${v} was added to Clan War roles.`, entityType: "cw-role", details: [`Role: ${v}`] }); setNewRole("") }}>＋ ADD ROLE</button></div></Modal>}
 
-    {selectedPlayer && <Modal title="PLAYER HISTORY" wide onClose={() => setSelectedPlayer(null)}>
+    {selectedPlayer && <Modal title="PLAYER HISTORY" wide className="cw-history-modal" onClose={() => setSelectedPlayer(null)}>
       {(() => {
-        const playerAttendanceRows = attendance.filter(r => String(r.playerId) === String(selectedPlayer.id)).sort((a, b) => (safeDate(b.scheduledAt || b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.scheduledAt || a.updatedAt || a.createdAt)?.getTime() || 0));
-        const playerItemRows = itemAssignments.filter(r => String(r.playerId) === String(selectedPlayer.id)).sort((a, b) => (safeDate(b.scheduledAt || b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.scheduledAt || a.updatedAt || a.createdAt)?.getTime() || 0));
+        const playerAttendanceRows = attendance.filter(r => String(r.playerId) === String(selectedPlayer.id)).sort((a, b) => updatedTimeMs(b, "scheduledAt", "createdAt") - updatedTimeMs(a, "scheduledAt", "createdAt"));
+        const playerItemRows = itemAssignments.filter(r => String(r.playerId) === String(selectedPlayer.id)).sort((a, b) => updatedTimeMs(b, "scheduledAt", "createdAt") - updatedTimeMs(a, "scheduledAt", "createdAt"));
         const q = playerHistorySearch.toLowerCase().trim();
         const filteredAttendance = playerAttendanceRows.filter(r => !q || [r.ign, r.className, r.role, r.receivedItem, r.notes, r.dateKey, r.updatedBy, r.createdBy].some(v => clean(v).toLowerCase().includes(q)));
         const filteredItems = playerItemRows.filter(r => !q || [r.playerName, r.itemName, r.notes, r.dateKey, r.updatedBy, r.createdBy].some(v => clean(v).toLowerCase().includes(q)));
@@ -1791,8 +2001,8 @@ export default function CWPage({ user, isAdmin }) {
         const legacyItemRows = filteredAttendance.filter(r => clean(r.receivedItem));
         const itemRows = filteredItems;
         const legacyItemDisplayRows = legacyItemRows.map(r => ({ ...r, __legacyItem: true, itemName: r.receivedItem, quantity: Math.max(1, num(r.itemQuantity, 1)), totalCost: num(r.itemCostGold) }));
-        const itemDisplayRows = [...itemRows, ...legacyItemDisplayRows].sort((a, b) => (safeDate(b.scheduledAt || b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.scheduledAt || a.updatedAt || a.createdAt)?.getTime() || 0));
-        const allActivityRows = [...filteredAttendance.map(r => ({ ...r, __activityType: "attendance" })), ...itemDisplayRows.map(r => ({ ...r, __activityType: "item" }))].sort((a, b) => (safeDate(b.scheduledAt || b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.scheduledAt || a.updatedAt || a.createdAt)?.getTime() || 0));
+        const itemDisplayRows = [...itemRows, ...legacyItemDisplayRows].sort((a, b) => updatedTimeMs(b, "scheduledAt", "createdAt") - updatedTimeMs(a, "scheduledAt", "createdAt"));
+        const allActivityRows = [...filteredAttendance.map(r => ({ ...r, __activityType: "attendance" })), ...itemDisplayRows.map(r => ({ ...r, __activityType: "item" }))].sort((a, b) => updatedTimeMs(b, "scheduledAt", "createdAt") - updatedTimeMs(a, "scheduledAt", "createdAt"));
         const rows = playerHistoryTab === "salary" ? salaryRows : playerHistoryTab === "items" ? itemDisplayRows : allActivityRows;
         const totalLogEntries = filteredAttendance.length + filteredItems.length;
         const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -1802,13 +2012,18 @@ export default function CWPage({ user, isAdmin }) {
         return <>
           <div className="cw-history-player-head">
             <div className="cw-history-avatar"><ClassEmblem name={selectedPlayer.className || selectedPlayer.class} /></div>
-            <div><div className="cw-kicker">PLAYER HISTORY</div><h3>{selectedPlayer.ign}</h3><p>{selectedPlayer.className || selectedPlayer.class} • {selectedPlayer.role || "Role not set"}</p></div>
+            <div className="cw-history-player-main"><div className="cw-kicker">PLAYER HISTORY</div><h3>{selectedPlayer.ign}</h3><p>{selectedPlayer.className || selectedPlayer.class} • {selectedPlayer.role || "Role not set"}</p></div>
+            <div className="cw-history-player-meta">
+              <div><span>GUILD</span><strong>{selectedPlayer.guild || selectedPlayer.guildName || "24-7-G"}</strong></div>
+              <div><span>JOINED</span><strong>{formatDate(selectedPlayer.joinedAt || selectedPlayer.joinDate || selectedPlayer.createdAt, resolvedTimezone)}</strong></div>
+              <div><span>STATUS</span><strong className={selectedPlayer.active === false ? "is-disabled" : "is-active"}>● {selectedPlayer.active === false ? "Disabled" : "Active"}</strong><small>{selectedPlayer.active === false ? "Offline" : "Online"}</small></div>
+            </div>
           </div>
           <div className="cw-history-stats">
             <div><span className="cw-history-stat-icon">✦</span><div><small>CW DAYS ATTENDED</small><strong>{count(stats.days)}</strong><em>All-time participation</em></div></div>
-            <div><span className="cw-history-stat-icon gold">₲</span><div><small>TOTAL SALARY</small><strong className="cw-gold">₲ {money(stats.salary)}</strong><em>Lifetime CW salary</em></div></div>
+            <div><span className="cw-history-stat-icon gold">₲</span><div><small>TOTAL SALARY EARNED</small><strong className="cw-gold">₲ {money(stats.salary)}</strong><em>Lifetime CW salary</em></div></div>
             <div><span className="cw-history-stat-icon item">◇</span><div><small>ITEMS RECEIVED</small><strong>{count(stats.items)}</strong><em>Recorded item distributions</em></div></div>
-            <div><span className="cw-history-stat-icon log">▤</span><div><small>TOTAL LOG ENTRIES</small><strong>{count(totalLogEntries)}</strong><em>CW attendance + item history</em></div></div>
+            <div><span className="cw-history-stat-icon log">▤</span><div><small>TOTAL ACTIVITY</small><strong>{count(totalLogEntries)}</strong><em>Attendance + item records</em></div></div>
           </div>
           <div className="cw-history-toolbar"><input value={playerHistorySearch} onChange={e => { setPlayerHistorySearch(e.target.value); setPlayerHistoryPage(1) }} placeholder="Search date, role, salary, item, notes..." /><div><small>ACTIVITY LOG</small><b>{count(totalLogEntries)} ENTRIES</b></div></div>
           <div className="cw-history-tabs">
@@ -1816,22 +2031,16 @@ export default function CWPage({ user, isAdmin }) {
             <button className={playerHistoryTab === "salary" ? "active" : ""} onClick={() => { setPlayerHistoryTab("salary"); setPlayerHistoryPage(1) }}>SALARY HISTORY</button>
             <button className={playerHistoryTab === "items" ? "active" : ""} onClick={() => { setPlayerHistoryTab("items"); setPlayerHistoryPage(1) }}>ITEM RECEIVED HISTORY</button>
           </div>
-          <div className="cw-history-summary-strip">
-            <div><small>ATTENDANCE RECORDS</small><b>{count(attendanceRows.length)}</b></div>
-            <div><small>SALARY RECORDS</small><b>₲ {money(salaryRows.reduce((sum, r) => sum + num(r.salaryGold), 0))}</b></div>
-            <div><small>ITEM DISTRIBUTIONS</small><b>{count(legacyItemRows.length + itemRows.length)}</b></div>
-            <div><small>ITEM COST</small><b>₲ {money(totalItemCost)}</b></div>
-          </div>
           {playerHistoryTab === "all" && <div className="cw-history-table-wrap"><table className="cw-table cw-history-table cw-history-fit-table"><thead><tr><th>DATE / TIME</th><th>ACTIVITY</th><th>CLASS</th><th>ROLE</th><th>SALARY</th><th>ITEM</th><th>QTY / COST</th><th>UPDATED BY</th><th>ACTIONS</th></tr></thead><tbody>
             {pageRows.map(r => r.__activityType === "item" ? <tr key={`item-${r.id}`}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><span className="cw-notice-category-badge cw-notice-category-item">ITEM</span></td><td><span className="cw-class"><ClassEmblem name={r.className} small />{r.className || selectedPlayer.className || selectedPlayer.class}</span></td><td>{r.role || selectedPlayer.role || "—"}</td><td>—</td><td><strong>{r.itemName || r.receivedItem || "—"}</strong></td><td>{r.quantity ? `${count(r.quantity)} pcs • ₲ ${money(r.totalCost ?? r.itemCostGold)}` : `₲ ${money(r.totalCost ?? r.itemCostGold)}`}</td><td>{r.updatedBy || r.createdBy || "System"}<small>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</small></td><td className="cw-history-actions">{isAdmin && (r.__legacyItem ? <button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openAttendanceRecord(r, "edit") }}>EDIT</button> : <><button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openItemAssignment(selectedPlayer, r) }}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteItemAssignment(r)}>DELETE</button></>)}</td></tr> : <tr key={`attendance-${r.id}`}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><span className="cw-notice-category-badge cw-notice-category-attendance">ATTENDANCE</span></td><td><span className="cw-class"><ClassEmblem name={r.className} small />{r.className}</span></td><td><span className="cw-role">{r.role || "—"}</span></td><td className="cw-gold">₲ {money(r.salaryGold)}</td><td>{r.receivedItem || "—"}</td><td>₲ {money(r.itemCostGold)}</td><td>{r.updatedBy || r.createdBy || "System"}<small>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</small></td><td className="cw-history-actions">{isAdmin && <><button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openAttendanceRecord(r, "edit") }}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteAttendance(r)}>DELETE</button></>}</td></tr>)}
             {!pageRows.length && <tr><td colSpan="9" className="cw-empty">No CW activity history found for this player.</td></tr>}
           </tbody></table></div>}
           {playerHistoryTab === "salary" && <div className="cw-history-table-wrap"><table className="cw-table cw-history-table cw-history-fit-table"><thead><tr><th>CW DATE / TIME</th><th>CLASS</th><th>ROLE</th><th>SALARY PAID</th><th>UPDATED</th><th>UPDATED BY</th><th>ACTIONS</th></tr></thead><tbody>
-            {pageRows.map(r => <tr key={r.id}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><span className="cw-class"><ClassEmblem name={r.className} small />{r.className}</span></td><td>{r.role || "—"}</td><td className="cw-gold"><strong>₲ {money(r.salaryGold)}</strong></td><td>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</td><td>{r.updatedBy || r.createdBy || "System"}</td><td>{isAdmin && <button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openAttendanceRecord(r, "edit") }}>EDIT</button>}</td></tr>)}
+            {pageRows.map(r => <tr key={r.id}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><span className="cw-class"><ClassEmblem name={r.className} small />{r.className}</span></td><td>{r.role || "—"}</td><td className="cw-gold"><strong>₲ {money(r.salaryGold)}</strong></td><td>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</td><td>{r.updatedBy || r.createdBy || "System"}</td><td className="cw-history-no-action">—</td></tr>)}
             {!pageRows.length && <tr><td colSpan="7" className="cw-empty">No salary history found.</td></tr>}
           </tbody></table></div>}
           {playerHistoryTab === "items" && <div className="cw-history-table-wrap"><table className="cw-table cw-history-table cw-history-fit-table"><thead><tr><th>CW DATE / TIME</th><th>ITEM RECEIVED</th><th>QTY</th><th>ITEM COST</th><th>ROLE</th><th>NOTES</th><th>UPDATED BY</th><th>ACTIONS</th></tr></thead><tbody>
-            {pageRows.map(r => <tr key={r.id}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><strong>{r.itemName || r.receivedItem}</strong></td><td>{r.quantity ? `${count(r.quantity)} pcs` : "—"}</td><td className="cw-gold">₲ {money(r.totalCost ?? r.itemCostGold)}</td><td>{r.role || selectedPlayer.role || "—"}</td><td title={r.notes || ""}>{r.notes || "—"}</td><td>{r.updatedBy || r.createdBy || "System"}<small>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</small></td><td>{isAdmin && (r.itemName ? <><button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openItemAssignment(selectedPlayer, r) }}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteItemAssignment(r)}>DELETE</button></> : <button className="cw-btn cw-btn-small" onClick={() => { setSelectedPlayer(null); openAttendanceRecord(r, "edit") }}>EDIT</button>)}</td></tr>)}
+            {pageRows.map(r => <tr key={r.id}><td><strong>{formatDate(r.scheduledAt || r.dateKey, resolvedTimezone)}</strong><small>{formatTime(r.scheduledAt || r.dateKey, resolvedTimezone)}</small></td><td><strong>{r.itemName || r.receivedItem}</strong></td><td>{r.quantity ? `${count(r.quantity)} pcs` : "—"}</td><td className="cw-gold">₲ {money(r.totalCost ?? r.itemCostGold)}</td><td>{r.role || selectedPlayer.role || "—"}</td><td title={r.notes || ""}>{r.notes || "—"}</td><td>{r.updatedBy || r.createdBy || "System"}<small>{formatDateTime(r.updatedAt || r.createdAt, resolvedTimezone)}</small></td><td className="cw-history-no-action">—</td></tr>)}
             {!pageRows.length && <tr><td colSpan="8" className="cw-empty">No item distribution history found.</td></tr>}
           </tbody></table></div>}
           <div className="cw-history-footer"><span>Showing {rows.length ? count((playerHistoryPage - 1) * PAGE_SIZE + 1) : 0}-{count(Math.min(playerHistoryPage * PAGE_SIZE, rows.length))} of {count(rows.length)} entries</span><div className="cw-pagination"><button disabled={playerHistoryPage <= 1} onClick={() => setPlayerHistoryPage(p => p - 1)}>‹</button><span>{playerHistoryPage} / {pageCount}</span><button disabled={playerHistoryPage >= pageCount} onClick={() => setPlayerHistoryPage(p => p + 1)}>›</button></div></div>
@@ -1854,7 +2063,61 @@ export default function CWPage({ user, isAdmin }) {
 
     {adminConfirm && <Modal title={adminConfirm.title} wide onClose={() => setAdminConfirm(null)}><div className="cw-confirm-warning"><strong>ADMIN ACTION WILL BE LOGGED</strong><p>{adminConfirm.message}</p></div><label>ADMIN COMMENT *<textarea autoFocus value={adminConfirm.comment} onChange={e => setAdminConfirm({ ...adminConfirm, comment: e.target.value })} placeholder="Explain why you are making this change..." /></label><div className="cw-helper">This comment is stored in the Guild Notice Board with the action, changed record and administrator.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAdminConfirm(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={runAdminAction}>CONFIRM & LOG</button></div></Modal>}
 
-    {auditDetail && <Modal title="ACTIVITY DETAILS" wide onClose={() => setAuditDetail(null)}><div className="cw-detail-grid"><div><small>ACTION</small><strong>{auditDetail.title || "Activity"}</strong></div><div><small>CREATED BY</small><strong>{auditDetail.createdBy || "System"}</strong></div><div><small>DATE & TIME</small><strong>{formatDateTime(auditDetail.createdAt || auditDetail.timestamp, resolvedTimezone)}</strong></div><div><small>MODULE</small><strong>{auditDetail.module === "treasury" ? "TREASURY" : "CLAN WAR"}</strong></div></div><div className="cw-detail-block"><small>DETAILS</small><p>{auditDetail.message || "—"}</p></div>{Array.isArray(auditDetail.details) && auditDetail.details.length > 0 && <div className="cw-detail-block"><small>RECORD</small><ul>{auditDetail.details.map((x, i) => <li key={i}>{x}</li>)}</ul></div>}{Array.isArray(auditDetail.changes) && auditDetail.changes.length > 0 && <div className="cw-detail-block"><small>CHANGES</small><div className="cw-change-list">{auditDetail.changes.map((x, i) => <div key={i}><b>{x.field}</b><span>{x.from || "—"} → {x.to || "—"}</span></div>)}</div></div>}</Modal>}
+    {treasuryDetail && (() => {
+      const amount = num(treasuryDetail.amount);
+      const incoming = amount >= 0;
+      const linkedAttendance = Boolean(treasuryDetail.sourceAttendanceId);
+      const linkedAssignment = Boolean(treasuryDetail.sourceItemAssignmentId);
+      const sourceLabel = linkedAttendance
+        ? "CW Attendance / Salary"
+        : linkedAssignment
+          ? "CW Item Assignment"
+          : treasuryDetail.sourceModule === "cw-rewards" || treasuryDetail.source === "clan-war-reward"
+            ? "CW Rewards"
+            : treasuryTypeLabel(treasuryDetail);
+      const recordSummary = treasuryDetail.description || treasuryTypeLabel(treasuryDetail) || "Treasury transaction";
+      return (
+        <Modal title="ACTIVITY DETAILS" wide onClose={() => setTreasuryDetail(null)}>
+          <div className="cw-detail-grid cw-treasury-detail-grid">
+            <div><small>ACTION</small><strong>{treasuryTypeLabel(treasuryDetail)}</strong></div>
+            <div><small>AMOUNT</small><strong className={incoming ? "cw-in" : "cw-out"}>{incoming ? "+" : "-"}₲ {money(Math.abs(amount))}</strong></div>
+            <div><small>UPDATED BY</small><strong>{treasuryDetail.updatedBy || treasuryDetail.createdBy || "System"}</strong></div>
+            <div><small>UPDATED AT</small><strong>{formatDateTime(treasuryDetail.updatedAt || treasuryDetail.transactionAt || treasuryDetail.createdAt, resolvedTimezone)}</strong></div>
+          </div>
+          <div className="cw-detail-block">
+            <small>SUMMARY</small>
+            <p>{displayAuditText(recordSummary)}{treasuryDetail.item ? ` • Item: ${displayAuditText(treasuryDetail.item)}` : ""}{treasuryDetail.playerName ? ` • Player: ${displayAuditText(treasuryDetail.playerName)}` : ""}</p>
+          </div>
+          <div className="cw-detail-block">
+            <small>RECORD MAPPING</small>
+            <div className="cw-change-list">
+              <div><b>MODULE</b><span>{sourceLabel}</span></div>
+              {treasuryDetail.playerName && <div><b>PLAYER / RECIPIENT</b><span>{displayAuditText(treasuryDetail.playerName)}</span></div>}
+              {treasuryDetail.item && <div><b>ITEM / SUPPLY</b><span>{displayAuditText(treasuryDetail.item)}</span></div>}
+              {treasuryDetail.balanceBefore !== undefined && <div><b>BALANCE CHANGE</b><span>₲ {money(treasuryDetail.balanceBefore)} → ₲ {money(treasuryDetail.balanceAfter)}</span></div>}
+              <div><b>DIRECTION</b><span>{incoming ? "Guild Treasury received funds" : "Guild Treasury spent funds"}</span></div>
+            </div>
+          </div>
+          <div className="cw-detail-block">
+            <small>DETAILS</small>
+            <ul>
+              {treasuryDetail.description && <li><b>Description:</b> {displayAuditText(treasuryDetail.description)}</li>}
+              {treasuryDetail.item && <li><b>Item / purchase:</b> {displayAuditText(treasuryDetail.item)}</li>}
+              {treasuryDetail.playerName && <li><b>Player:</b> {displayAuditText(treasuryDetail.playerName)}</li>}
+              {treasuryDetail.dateKey && <li><b>CW date:</b> {displayAuditText(treasuryDetail.dateKey)}</li>}
+              {treasuryDetail.adminComment && <li><b>Admin reason:</b> {displayAuditText(treasuryDetail.adminComment)}</li>}
+              <li><b>Recorded:</b> {treasuryDetail.createdBy || "System"} • {formatDateTime(treasuryDetail.createdAt || treasuryDetail.transactionAt, resolvedTimezone)}</li>
+              {linkedAttendance && <li><b>Connection:</b> Linked to the CW attendance record and its salary/item distribution.</li>}
+              {linkedAssignment && <li><b>Connection:</b> Linked to the CW inventory assignment and player distribution.</li>}
+              {!linkedAttendance && !linkedAssignment && <li><b>Connection:</b> Standalone Guild Treasury ledger entry.</li>}
+            </ul>
+          </div>
+          {treasuryDetail.changes?.length ? <div className="cw-detail-block"><small>CHANGES</small><div className="cw-change-list">{treasuryDetail.changes.map((change, index) => <div key={index}><b>{displayAuditText(change.field || "CHANGE")}</b><span>{displayAuditText(change.from || "—")} → {displayAuditText(change.to || "—")}</span></div>)}</div></div> : null}
+        </Modal>
+      );
+    })()}
+
+    {auditDetail && <Modal title="ACTIVITY DETAILS" wide onClose={() => setAuditDetail(null)}><div className="cw-detail-grid"><div><small>ACTION</small><strong>{auditDetail.title || "Activity"}</strong></div><div><small>CREATED BY</small><strong>{auditDetail.createdBy || "System"}</strong></div><div><small>CREATED</small><strong>{formatDateTime(auditDetail.createdAt || auditDetail.timestamp, resolvedTimezone)}</strong></div><div><small>LAST UPDATED</small><strong>{formatDateTime(auditDetail.updatedAt || auditDetail.createdAt || auditDetail.timestamp, resolvedTimezone)}</strong></div><div><small>MODULE</small><strong>{clean(auditDetail.module) || "CLAN WAR"}</strong></div></div><div className="cw-detail-block"><small>DETAILS</small><p>{displayAuditText(auditDetail.message) || "—"}</p></div><div className="cw-detail-block"><small>RECORD MAPPING</small><div className="cw-change-list"><div><b>PLAYER / RECIPIENT</b><span>{auditDetail.recipientPlayerName || auditDetail.playerName || "—"}</span></div>{auditDetail.entityId && <div><b>RECORD</b><span>{displayAuditText(auditDetail.entityType || "Activity")} {auditDetail.playerName || auditDetail.item || auditDetail.description ? `• ${auditDetail.playerName || auditDetail.item || auditDetail.description}` : ""}</span></div>}{auditDetail.rewardName && <div><b>REWARD</b><span>{auditDetail.rewardName}</span></div>}{auditDetail.scheduleId && auditDetail.scheduleName && <div><b>SCHEDULE</b><span>{auditDetail.scheduleName}</span></div>}</div></div>{Array.isArray(auditDetail.details) && auditDetail.details.length > 0 && <div className="cw-detail-block"><small>RECORD</small><ul>{auditDetail.details.map((x, i) => { const text = displayAuditText(x); if (!text || /^(claim record|reward id|claim id|schedule id|item id|player id|uid|user id|treasury id)\b/i.test(text)) return null; return <li key={i}>{text}</li>; })}</ul></div>}{Array.isArray(auditDetail.changes) && auditDetail.changes.length > 0 && <div className="cw-detail-block"><small>CHANGES</small><div className="cw-change-list">{auditDetail.changes.map((x, i) => { const change = typeof x === "string" ? { field: "ACTION", from: "", to: x } : x; return <div key={i}><b>{displayAuditText(change.field || "CHANGE")}</b><span>{displayAuditText(change.from || "—")} → {displayAuditText(change.to || "—")}</span></div>; })}</div></div>}{(auditDetail.connections?.links?.length || auditDetail.connectionMap?.length) ? <div className="cw-detail-block"><small>LINKED RECORDS</small><div className="cw-change-list">{(auditDetail.connections?.links || auditDetail.connectionMap || []).map((link, i) => <div key={i}><b>{displayAuditText(link.label || "LINK")}</b><span>{displayAuditText(link.collection || "Linked record")}{link.playerName ? ` • ${link.playerName}` : ""}{link.rewardName ? ` • ${link.rewardName}` : ""}</span></div>)}</div></div> : null}</Modal>}
 
   </div>;
 }

@@ -732,7 +732,8 @@
 }
 
 .cw-modal-wide {
-  width: min(980px, 100%)
+  width: min(1180px, 100%);
+  max-width: 1180px;
 }
 
 .cw-modal-head {
@@ -7443,3 +7444,1876 @@
 .cw-assignment-bottom-grid{margin-bottom:12px}.cw-assignment-no-selection{border:1px dashed #21495b;padding:12px;color:#648b9f;font-size:11px;margin-bottom:12px;text-align:center}
 .cw-assignment-summary{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:1px;background:#174156;border:1px solid #174156;border-radius:8px;overflow:hidden;margin:10px 0 14px}.cw-assignment-summary>div{background:#071a25;padding:11px}.cw-assignment-summary strong{display:block;color:#ecf8fc;font-size:12px;margin-top:4px}.cw-assignment-summary span{display:block;color:#60879b;font-size:9px;margin-top:3px}
 @media (max-width:760px){.cw-assignment-hero{display:block}.cw-assignment-live{border-left:0;border-top:1px solid rgba(255,255,255,.09);padding:10px 0 0;margin-top:12px;text-align:left}.cw-assignment-stock-tools{grid-template-columns:1fr}.cw-assignment-summary{grid-template-columns:1fr 1fr}.cw-assignment-stock-pagination{gap:10px}.cw-assignment-stock-pagination span{max-width:55%}}
+
+
+/* =====================================================================
+   CW V2 — BH-CONSISTENT 3-TAB NAV + ACTIVITY DRAWER
+   Activity & Notifications is a control, not a fourth navigation tab.
+   It expands directly below the nav and slides closed without changing
+   the active CW section.
+   ===================================================================== */
+.cw-primary-nav {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(290px, .92fr) !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  min-height: 62px;
+  overflow: hidden;
+  border: 1px solid #17465e !important;
+  border-radius: 7px !important;
+  background: linear-gradient(180deg, #071a27 0%, #06131d 100%) !important;
+  box-shadow: 0 8px 26px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.025);
+}
+.cw-primary-nav .cw-tab,
+.cw-primary-nav .cw-notification-toggle {
+  min-width: 0; min-height: 60px; height: 60px; margin: 0 !important;
+  border: 0 !important; border-right: 1px solid #173b50 !important;
+  border-radius: 0 !important; background: transparent !important;
+  display: flex; align-items: center; justify-content: center; gap: 11px;
+  padding: 8px 18px; position: relative; color: #6f93a7; text-align: left;
+}
+.cw-primary-nav .cw-tab.active {
+  color: #effaff !important;
+  background: linear-gradient(180deg, #0a96d4 0%, #075d8d 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(39,204,255,.38), 0 0 18px rgba(0,172,239,.08);
+}
+.cw-primary-nav .cw-tab:hover:not(.active) { color:#c8e9f5; background:rgba(11,75,103,.18) !important; }
+.cw-primary-nav .cw-tab-icon {
+  flex:0 0 34px; width:34px; height:34px; display:grid; place-items:center;
+  border:1px solid #a67a00; border-radius:50%; color:#e6ad13; background:rgba(3,15,23,.42);
+}
+.cw-primary-nav .cw-tab-icon svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.cw-primary-nav .cw-tab.active .cw-tab-icon-schedule { color:#effaff; border-color:rgba(255,255,255,.8); }
+.cw-primary-nav .cw-tab-copy { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:3px; }
+.cw-primary-nav .cw-tab-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; font-weight:900; letter-spacing:.055em; color:inherit; }
+.cw-primary-nav .cw-tab-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:7px; line-height:1; font-weight:800; letter-spacing:.08em; color:rgba(169,205,220,.68); text-transform:uppercase; }
+.cw-primary-nav .cw-notification-toggle { cursor:pointer; border-right:0 !important; padding-right:15px; color:#a9bdc8; }
+.cw-primary-nav .cw-notification-toggle .cw-tab-icon-notices { border-color:#b88a0b; color:#d5a313; }
+.cw-primary-nav .cw-notification-toggle:hover { color:#effaff; background:rgba(137,100,0,.13) !important; }
+.cw-primary-nav .cw-notification-toggle.is-on { color:#f4fbff; background:linear-gradient(180deg,rgba(22,105,146,.34),rgba(7,41,59,.42)) !important; box-shadow:inset 0 0 20px rgba(0,179,255,.08); }
+.cw-primary-nav .cw-notification-toggle.is-on .cw-tab-icon-notices { color:#f7fdff; border-color:#32cfff; box-shadow:0 0 12px rgba(32,199,255,.28); }
+.cw-toggle-track { flex:0 0 auto; width:54px; height:28px; padding:3px; display:flex; align-items:center; justify-content:flex-start; border:1px solid #2b5368; border-radius:999px; background:#07151f; transition:all .25s ease; }
+.cw-toggle-knob { width:20px; height:20px; border-radius:50%; background:#91a9b8; box-shadow:0 1px 4px rgba(0,0,0,.45); transition:transform .28s cubic-bezier(.2,.8,.2,1),background .2s ease,box-shadow .2s ease; }
+.cw-notification-toggle.is-on .cw-toggle-track { justify-content:flex-end; border-color:#17bdf3; background:linear-gradient(90deg,#087da9,#0bb7ee); box-shadow:0 0 12px rgba(11,183,238,.18); }
+.cw-notification-toggle.is-on .cw-toggle-knob { background:#f7fbff; box-shadow:0 0 10px rgba(255,255,255,.65); }
+.cw-activity-drawer { margin-top:8px !important; margin-bottom:10px !important; overflow:hidden !important; transform-origin:top center; transition:max-height .38s cubic-bezier(.2,.75,.2,1),opacity .25s ease,transform .38s ease,margin .38s ease; will-change:max-height,opacity,transform; }
+.cw-activity-drawer.is-open { max-height:1400px; opacity:1; transform:translateY(0); pointer-events:auto; }
+.cw-activity-drawer.is-closed { max-height:0; margin-top:0 !important; margin-bottom:0 !important; opacity:0; transform:translateY(-12px) scaleY(.985); pointer-events:none; border-width:0 !important; }
+.cw-activity-drawer.cw-panel { border:1px solid #0d6c9d !important; background:linear-gradient(180deg,#061b2b 0%,#06131d 100%) !important; box-shadow:0 12px 32px rgba(0,0,0,.24),inset 0 1px rgba(48,198,255,.08); }
+.cw-activity-drawer .cw-notification-board-head { background:linear-gradient(180deg,#082b46,#061722) !important; border-bottom-color:#145276; }
+.cw-activity-drawer .cw-kicker { color:#24c8ff; }
+.cw-activity-drawer .cw-notification-counts>div { border-color:#14587a; background:#061722; }
+.cw-activity-drawer .cw-notification-counts>div:first-child { border-color:#13b9ef; box-shadow:0 0 12px rgba(19,185,239,.08); }
+.cw-activity-drawer .cw-notification-counts>div:first-child span { color:#24c8ff; }
+.cw-activity-drawer .cw-unified-notice-toolbar { background:#06131d; border-bottom-color:#123d54; }
+.cw-activity-drawer .cw-unified-notice-table-wrap { max-height:none !important; overflow-x:hidden !important; overflow-y:visible !important; }
+.cw-activity-drawer .cw-unified-notice-table tbody tr { transition:background .16s ease; }
+.cw-activity-drawer .cw-unified-notice-table tbody tr:hover { background:rgba(15,145,197,.09); }
+@media (max-width:1000px) {
+  .cw-primary-nav { grid-template-columns:repeat(3,minmax(0,1fr)) minmax(235px,.9fr) !important; }
+  .cw-primary-nav .cw-tab,.cw-primary-nav .cw-notification-toggle { padding-left:10px; padding-right:10px; gap:7px; }
+  .cw-primary-nav .cw-tab-icon { flex-basis:30px; width:30px; height:30px; }
+  .cw-primary-nav .cw-tab-copy strong { font-size:8px; } .cw-primary-nav .cw-tab-copy small { font-size:6px; }
+  .cw-toggle-track { width:46px; }
+}
+@media (max-width:700px) {
+  .cw-primary-nav { grid-template-columns:repeat(3,minmax(0,1fr)) !important; overflow:visible; position:relative; margin-bottom:48px !important; }
+  .cw-primary-nav .cw-tab,.cw-primary-nav .cw-notification-toggle { min-height:58px; height:58px; padding:7px 5px; gap:4px; }
+  .cw-primary-nav .cw-tab-icon { display:none; }
+  .cw-primary-nav .cw-tab-copy { text-align:center; width:100%; }
+  .cw-primary-nav .cw-notification-toggle { position:absolute; right:8px; top:66px; width:auto; min-height:38px; height:38px; padding:5px 7px; z-index:10; border:1px solid #17465e !important; border-radius:6px !important; background:#06131d !important; }
+  .cw-primary-nav .cw-notification-toggle .cw-tab-copy small { display:none; }
+  .cw-primary-nav .cw-notification-toggle .cw-tab-copy strong { font-size:7px; }
+  .cw-toggle-track { width:42px; height:24px; } .cw-toggle-knob { width:17px; height:17px; }
+}
+
+
+/* =====================================================================
+   CLEAN CANONICAL NAV — CW MATCHES THE APPROVED BH NAVIGATION
+   Same angular/chevron treatment, sizing, colors and Activity toggle.
+   ===================================================================== */
+.cw-primary-nav.cw-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(300px, 1fr) !important;
+  align-items: stretch !important;
+  width: calc(100% - 52px) !important;
+  max-width: none !important;
+  min-height: 54px !important;
+  height: 54px !important;
+  margin: 12px 26px 10px !important;
+  padding: 3px !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  border: 1px solid #17648a !important;
+  border-radius: 9px !important;
+  background: linear-gradient(180deg, #071a29, #061521) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 8px 25px rgba(0,0,0,.18) !important;
+}
+
+.cw-primary-nav > .cw-tab,
+.cw-primary-nav > .cw-notification-toggle {
+  position: relative !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  flex: none !important;
+  margin: 0 !important;
+  padding: 7px 20px !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-right: 1px solid #17445c !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+  background: linear-gradient(180deg, rgba(10,27,41,.96), rgba(7,21,32,.96)) !important;
+  color: #91a6b5 !important;
+  overflow: hidden !important;
+  cursor: pointer;
+}
+
+.cw-primary-nav > .cw-tab:hover {
+  color: #eefaff !important;
+  background: linear-gradient(180deg, rgba(13,45,62,.98), rgba(7,25,38,.98)) !important;
+}
+
+/* Active first tab — same BH cyan chevron. */
+.cw-primary-nav > .cw-tab.active {
+  color: #f2fbff !important;
+  background: linear-gradient(180deg, #1599d2 0%, #0878ad 58%, #075d8b 100%) !important;
+  border: 1px solid #21c9ff !important;
+  box-shadow: inset 0 0 18px rgba(0,220,255,.24), 0 0 15px rgba(0,177,238,.18) !important;
+  clip-path: polygon(3% 0, 96% 0, 100% 50%, 96% 100%, 3% 100%, 0 50%) !important;
+  z-index: 2 !important;
+}
+
+.cw-primary-nav > .cw-tab:nth-child(2) .cw-tab-icon,
+.cw-primary-nav > .cw-tab:nth-child(3) .cw-tab-icon {
+  color: #e0ad2e !important;
+}
+.cw-primary-nav > .cw-tab.active .cw-tab-icon { color: #fff !important; }
+
+.cw-primary-nav .cw-tab-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  flex: 0 0 34px !important;
+  border: 1px solid #a67a00 !important;
+  border-radius: 50% !important;
+  background: rgba(3,15,23,.42) !important;
+  color: #e6ad13 !important;
+  filter: drop-shadow(0 0 5px currentColor) !important;
+}
+
+.cw-primary-nav .cw-tab-icon svg {
+  width: 28px !important;
+  height: 28px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.65 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+.cw-primary-nav > .cw-tab.active .cw-tab-icon-schedule {
+  color: #baf4ff !important;
+  border-color: rgba(255,255,255,.8) !important;
+}
+
+.cw-primary-nav .cw-tab-copy {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  text-align: left !important;
+}
+.cw-primary-nav .cw-tab-copy strong {
+  color: currentColor !important;
+  font-size: 10px !important;
+  font-weight: 950 !important;
+  line-height: 1.1 !important;
+  letter-spacing: .08em !important;
+  white-space: nowrap !important;
+}
+.cw-primary-nav .cw-tab-copy small {
+  color: rgba(183,217,232,.72) !important;
+  font-size: 8px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+  letter-spacing: .025em !important;
+  white-space: nowrap !important;
+  text-transform: uppercase !important;
+}
+
+/* Activity & Notifications remains a separate control, not a tab. */
+.cw-primary-nav > .cw-notification-toggle {
+  border-right: 0 !important;
+  justify-content: center !important;
+  color: #aeb7b5 !important;
+  background: linear-gradient(180deg, rgba(12,27,38,.98), rgba(7,19,29,.98)) !important;
+  transition: background .22s ease, color .22s ease, box-shadow .22s ease, border-color .22s ease !important;
+}
+.cw-primary-nav > .cw-notification-toggle:hover {
+  color: #f0f5f5 !important;
+  background: linear-gradient(180deg, rgba(27,38,43,.98), rgba(10,22,30,.98)) !important;
+}
+.cw-primary-nav > .cw-notification-toggle.is-on {
+  color: #fff1b8 !important;
+  background: linear-gradient(180deg, #5b4813, #30260d) !important;
+  border: 1px solid #b88922 !important;
+  box-shadow: inset 0 0 16px rgba(224,177,48,.14), 0 0 14px rgba(218,169,42,.12) !important;
+  clip-path: polygon(0 0, 96% 0, 100% 50%, 96% 100%, 0 100%) !important;
+  z-index: 3 !important;
+}
+
+.cw-primary-nav .cw-tab-icon-notices {
+  width: 34px !important;
+  height: 34px !important;
+  flex-basis: 34px !important;
+  border-color: #b88a0b !important;
+  color: #d5a313 !important;
+}
+.cw-primary-nav .cw-tab-icon-notices svg {
+  width: 25px !important;
+  height: 25px !important;
+}
+.cw-primary-nav > .cw-notification-toggle.is-on .cw-tab-icon-notices {
+  color: #fff4c8 !important;
+  border-color: #e2b83a !important;
+}
+
+.cw-primary-nav .cw-toggle-track {
+  position: relative !important;
+  width: 42px !important;
+  height: 22px !important;
+  flex: 0 0 42px !important;
+  padding: 0 !important;
+  border: 1px solid #596a75 !important;
+  border-radius: 999px !important;
+  background: #0a1720 !important;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.22) !important;
+  transition: all .22s ease !important;
+}
+.cw-primary-nav .cw-toggle-knob {
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: #a9b6bd !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,.55) !important;
+  transition: transform .22s ease, background .22s ease, box-shadow .22s ease !important;
+}
+.cw-primary-nav > .cw-notification-toggle.is-on .cw-toggle-track {
+  border-color: #e2b83a !important;
+  background: #6d5411 !important;
+  box-shadow: inset 0 1px 5px rgba(0,0,0,.35), 0 0 8px rgba(224,177,48,.16) !important;
+}
+.cw-primary-nav > .cw-notification-toggle.is-on .cw-toggle-knob {
+  transform: translateX(20px) !important;
+  background: #fff !important;
+  box-shadow: 0 0 8px rgba(255,239,184,.7) !important;
+}
+
+.cw-primary-nav > .cw-notification-toggle .cw-tab-copy small {
+  color: rgba(183,201,207,.58) !important;
+}
+.cw-primary-nav > .cw-notification-toggle.is-on .cw-tab-copy small {
+  color: rgba(255,235,169,.66) !important;
+}
+
+@media (max-width: 1050px) {
+  .cw-primary-nav.cw-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(230px, 1.05fr) !important;
+  }
+  .cw-primary-nav > .cw-tab,
+  .cw-primary-nav > .cw-notification-toggle { padding: 7px 10px !important; gap: 7px !important; }
+  .cw-primary-nav .cw-tab-copy strong { font-size: 8px !important; }
+  .cw-primary-nav .cw-tab-copy small { font-size: 6.5px !important; }
+  .cw-primary-nav .cw-toggle-track { width: 36px !important; flex-basis: 36px !important; }
+  .cw-primary-nav > .cw-notification-toggle.is-on .cw-toggle-knob { transform: translateX(17px) !important; }
+}
+
+@media (max-width: 720px) {
+  .cw-primary-nav.cw-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    height: auto !important;
+    min-height: 52px !important;
+  }
+  .cw-primary-nav > .cw-tab,
+  .cw-primary-nav > .cw-notification-toggle {
+    min-height: 46px !important;
+    height: 46px !important;
+    padding: 6px 5px !important;
+    gap: 5px !important;
+  }
+  .cw-primary-nav .cw-tab-copy small { display: none !important; }
+  .cw-primary-nav .cw-tab-copy strong { font-size: 7px !important; letter-spacing: .045em !important; }
+  .cw-primary-nav .cw-tab-icon { width: 19px !important; height: 19px !important; flex-basis: 19px !important; }
+  .cw-primary-nav .cw-tab-icon svg { width: 18px !important; height: 18px !important; }
+  .cw-primary-nav .cw-toggle-track { width: 31px !important; height: 18px !important; flex-basis: 31px !important; }
+  .cw-primary-nav .cw-toggle-knob { width: 12px !important; height: 12px !important; top: 2px !important; left: 2px !important; }
+  .cw-primary-nav > .cw-notification-toggle.is-on .cw-toggle-knob { transform: translateX(13px) !important; }
+}
+
+@media (max-width: 480px) {
+  .cw-primary-nav.cw-tabs { width: calc(100% - 12px) !important; margin-left: 6px !important; margin-right: 6px !important; }
+  .cw-primary-nav > .cw-tab,
+  .cw-primary-nav > .cw-notification-toggle { padding: 5px 3px !important; gap: 3px !important; }
+  .cw-primary-nav .cw-tab-copy strong { font-size: 6px !important; }
+  .cw-primary-nav .cw-toggle-track { display: none !important; }
+}
+
+/* =========================================================
+   FINAL CW/BH VISUAL PARITY
+   Keep CW behavior intact while matching the approved BH HUD.
+========================================================= */
+.cw-hero {
+  position: relative !important;
+  min-height: 82px !important;
+  padding: 14px 18px 14px 74px !important;
+  margin-bottom: 10px !important;
+  box-sizing: border-box !important;
+}
+
+.cw-hero::before {
+  content: "⚔" !important;
+  position: absolute !important;
+  left: 16px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 44px !important;
+  height: 44px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid rgba(0, 198, 255, .45) !important;
+  border-radius: 4px !important;
+  color: #00c8ff !important;
+  font-size: 25px !important;
+  background: rgba(0, 120, 180, .12) !important;
+  box-shadow: 0 0 20px rgba(0, 194, 255, .08) !important;
+}
+
+.cw-hero-side {
+  min-width: 210px !important;
+  text-align: right !important;
+}
+
+.cw-live-dot {
+  color: #39e889 !important;
+  font-size: 10px !important;
+  font-weight: 950 !important;
+  letter-spacing: .12em !important;
+}
+
+.cw-updated {
+  color: #d9eaf2 !important;
+  font-size: 9px !important;
+  font-weight: 850 !important;
+  letter-spacing: .04em !important;
+  margin-top: 5px !important;
+}
+
+.cw-timezone-label {
+  color: #4d829d !important;
+  font-size: 7px !important;
+  font-weight: 750 !important;
+  letter-spacing: .07em !important;
+  margin-top: 5px !important;
+}
+
+/* The CW notification board uses the exact same full-width audit-table
+   proportions as BH: one table, 10 rows per page, no split columns. */
+.cw-unified-notice-table-wrap {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+  border: 1px solid #29465c !important;
+  border-radius: 8px !important;
+  background: #06131f !important;
+  box-sizing: border-box !important;
+}
+
+.cw-unified-notice-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+  background: #06131f !important;
+  font-size: 10px !important;
+}
+
+.cw-unified-notice-table .c-num { width: 42px !important; }
+.cw-unified-notice-table .c-status { width: 70px !important; }
+.cw-unified-notice-table .c-icon { width: 46px !important; }
+.cw-unified-notice-table .c-category { width: 118px !important; }
+.cw-unified-notice-table .c-message { width: auto !important; }
+.cw-unified-notice-table .c-time { width: 158px !important; }
+.cw-unified-notice-table .c-by { width: 150px !important; }
+.cw-unified-notice-table .c-open { width: 34px !important; }
+
+.cw-unified-notice-table th {
+  height: 34px !important;
+  padding: 0 9px !important;
+  background: #091c2a !important;
+  border-bottom: 1px solid #29465c !important;
+  color: #7895a7 !important;
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+}
+
+.cw-unified-notice-table th:first-child { text-align: center !important; }
+
+.cw-unified-notice-table td {
+  height: 54px !important;
+  padding: 7px 9px !important;
+  border-bottom: 1px solid rgba(41, 70, 92, .58) !important;
+  color: #b4c8d3 !important;
+  font-size: 10px !important;
+  vertical-align: middle !important;
+}
+
+.cw-unified-notice-table tbody tr:last-child td { border-bottom: 0 !important; }
+.cw-unified-notice-row:hover td { background: rgba(0, 157, 219, .055) !important; }
+.cw-unified-notice-table .notice-number { text-align: center !important; color: #7290a0 !important; }
+.cw-unified-notice-table .notice-time { color: #a9c0cc !important; white-space: nowrap !important; font-size: 8px !important; }
+.cw-unified-notice-table .notice-by { color: #a9c0cc !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; font-size: 8px !important; }
+.cw-unified-notice-table .notice-open { text-align: center !important; color: #20c4ff !important; }
+.cw-unified-notice-table .notice-open { font-size: 21px !important; }
+
+.cw-unified-message strong {
+  color: #edf7fb !important;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+}
+
+.cw-unified-message span {
+  color: #7291a2 !important;
+  font-size: 7px !important;
+  line-height: 1.25 !important;
+}
+
+.cw-unified-pagination {
+  min-height: 38px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  padding: 7px !important;
+  background: #06131d !important;
+  border-top: 1px solid #15384c !important;
+  box-sizing: border-box !important;
+}
+
+.cw-unified-pagination button {
+  min-width: 25px !important;
+  height: 24px !important;
+  padding: 0 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid #1b4358 !important;
+  border-radius: 4px !important;
+  background: #071b29 !important;
+  color: #8eacba !important;
+  font-size: 8px !important;
+}
+
+.cw-unified-pagination button.active {
+  background: #087fb5 !important;
+  border-color: #16a9df !important;
+  color: #fff !important;
+}
+
+.cw-unified-pagination button:disabled { opacity: .45 !important; }
+
+@media (max-width: 900px) {
+  .cw-unified-notice-table-wrap { overflow-x: auto !important; overflow-y: hidden !important; }
+  .cw-unified-notice-table { min-width: 760px !important; }
+}
+
+@media (max-width: 760px) {
+  .cw-hero { padding-left: 68px !important; }
+  .cw-hero::before { left: 12px !important; }
+  .cw-hero-side { min-width: 150px !important; }
+}
+
+@media (max-width: 560px) {
+  .cw-hero { padding-left: 18px !important; }
+  .cw-hero::before { display: none !important; }
+  .cw-hero-side { min-width: 0 !important; }
+  .cw-live-dot { font-size: 8px !important; }
+  .cw-updated { font-size: 8px !important; }
+  .cw-timezone-label { font-size: 6px !important; }
+}
+
+/* =========================================================
+   CANONICAL CW NOTIFICATION PLACEMENT — FINAL
+   The notification board is always directly below the primary
+   navigation, matching the approved BH layout. It must never
+   appear above the hero or after the active content panels.
+   ========================================================= */
+.cw-page {
+  display: flex !important;
+  flex-direction: column !important;
+}
+.cw-page > .cw-hero { order: 10 !important; }
+.cw-page > .cw-message { order: 20 !important; }
+.cw-page > .cw-primary-nav { order: 50 !important; }
+.cw-page > #cw-notification-board {
+  order: 60 !important;
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
+  align-self: stretch !important;
+  z-index: 20 !important;
+}
+.cw-page > .cw-date-window { order: 70 !important; }
+.cw-page > .cw-schedule-panel { order: 80 !important; }
+.cw-page > .cw-panel:not(#cw-notification-board) { order: 90 !important; }
+
+/* Keep the drawer in normal document flow. Closed means collapsed,
+   not moved elsewhere in the page. */
+.cw-page > #cw-notification-board.is-open {
+  max-height: 1400px !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  margin-top: 8px !important;
+  margin-bottom: 10px !important;
+  pointer-events: auto !important;
+}
+.cw-page > #cw-notification-board.is-closed {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  transform: translateY(-12px) scaleY(.985) !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+
+/* =========================================================
+   CW PLAYER HISTORY — FINAL FIT / RESPONSIVE OVERRIDE
+   Keeps the full history design intact while making the modal,
+   stats and tables fit correctly. ALL ACTIVITY is the only
+   history view that exposes admin edit/delete controls.
+   ========================================================= */
+.modal.modal-wide.cw-history-modal {
+  width: min(1180px, calc(100vw - 32px));
+  max-width: 1180px !important;
+  max-height: calc(100vh - 32px);
+}
+
+.modal.modal-wide.cw-history-modal .modal-body {
+  min-width: 0;
+  overflow-x: hidden;
+  padding: 16px;
+}
+
+.cw-history-player-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid #173b50;
+}
+
+.cw-history-player-head > div:last-child {
+  min-width: 0;
+}
+
+.cw-history-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #0fbce8;
+  border-radius: 8px;
+  background: #061722;
+  box-shadow: 0 0 18px rgba(0,190,255,.08);
+}
+
+.cw-history-avatar .cw-class-emblem {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+}
+
+.cw-history-player-head h3 {
+  margin: 2px 0 2px;
+  color: #effaff;
+  font-size: 22px;
+  line-height: 1.05;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-history-player-head p {
+  margin: 0;
+  color: #7596a7;
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-history-stats {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.cw-history-stats > div {
+  min-width: 0;
+  min-height: 70px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #19435a;
+  border-radius: 7px;
+  background: #06131d;
+  overflow: hidden;
+}
+
+.cw-history-stat-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+}
+
+.cw-history-stats > div > div {
+  min-width: 0;
+}
+
+.cw-history-stats small,
+.cw-history-stats strong,
+.cw-history-stats em {
+  display: block;
+  min-width: 0;
+}
+
+.cw-history-stats small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-history-stats strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-history-stats em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-history-toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 0 9px;
+}
+
+.cw-history-toolbar > div {
+  width: 105px;
+  min-width: 105px;
+}
+
+.cw-history-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.cw-history-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cw-history-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #173b50;
+  border-radius: 5px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cw-history-fit-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.cw-history-fit-table th,
+.cw-history-fit-table td {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-history-fit-table th {
+  white-space: nowrap;
+}
+
+.cw-history-fit-table td {
+  white-space: nowrap;
+}
+
+.cw-history-fit-table td > strong,
+.cw-history-fit-table td > small,
+.cw-history-fit-table td > span,
+.cw-history-fit-table td > div {
+  max-width: 100%;
+}
+
+.cw-history-fit-table td small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 9-column ALL ACTIVITY table */
+.cw-history-fit-table th:nth-child(1), .cw-history-fit-table td:nth-child(1) { width: 11%; }
+.cw-history-fit-table th:nth-child(2), .cw-history-fit-table td:nth-child(2) { width: 10%; }
+.cw-history-fit-table th:nth-child(3), .cw-history-fit-table td:nth-child(3) { width: 11%; }
+.cw-history-fit-table th:nth-child(4), .cw-history-fit-table td:nth-child(4) { width: 10%; }
+.cw-history-fit-table th:nth-child(5), .cw-history-fit-table td:nth-child(5) { width: 10%; }
+.cw-history-fit-table th:nth-child(6), .cw-history-fit-table td:nth-child(6) { width: 13%; }
+.cw-history-fit-table th:nth-child(7), .cw-history-fit-table td:nth-child(7) { width: 12%; }
+.cw-history-fit-table th:nth-child(8), .cw-history-fit-table td:nth-child(8) { width: 13%; }
+.cw-history-fit-table th:nth-child(9), .cw-history-fit-table td:nth-child(9) { width: 10%; }
+
+.cw-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.cw-history-actions .cw-btn {
+  min-width: 42px;
+  padding: 0 7px;
+}
+
+.cw-history-no-action {
+  color: #536f7e;
+  text-align: center;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .modal.modal-wide.cw-history-modal {
+    width: calc(100vw - 18px);
+    max-height: calc(100vh - 18px);
+  }
+
+  .modal.modal-wide.cw-history-modal .modal-body {
+    padding: 12px;
+  }
+
+  .cw-history-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cw-history-fit-table {
+    min-width: 920px;
+  }
+}
+
+@media (max-width: 600px) {
+  .modal.modal-wide.cw-history-modal {
+    width: calc(100vw - 10px);
+    max-height: calc(100vh - 10px);
+  }
+
+  .modal.modal-wide.cw-history-modal .modal-body {
+    padding: 9px;
+  }
+
+  .cw-history-player-head {
+    gap: 9px;
+  }
+
+  .cw-history-avatar {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .cw-history-avatar .cw-class-emblem {
+    width: 29px;
+    height: 29px;
+  }
+
+  .cw-history-player-head h3 {
+    font-size: 18px;
+  }
+
+  .cw-history-stats {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .cw-history-stats > div {
+    min-height: 58px;
+  }
+
+  .cw-history-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .cw-history-toolbar > div {
+    width: auto;
+    min-width: 0;
+  }
+
+  .cw-history-tabs button {
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 8px;
+  }
+
+  .cw-history-fit-table {
+    min-width: 900px;
+  }
+
+  .cw-history-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cw-history-footer .cw-pagination {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+}
+
+/* CW wide modal: full-width history on desktop, contained and scrollable on small screens. */
+.cw-modal-backdrop { padding: 12px; }
+.cw-modal-wide { box-sizing: border-box; max-height: calc(100vh - 24px); }
+@media (max-width: 700px) {
+  .cw-modal-backdrop { padding: 6px; }
+  .cw-modal-wide { width: 100%; max-width: 100%; max-height: calc(100vh - 12px); border-radius: 6px; }
+  .cw-modal-wide .cw-modal-body { padding: 10px; }
+}
+
+
+.cw-history-player-main { min-width: 0; }
+.cw-history-player-meta {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #173b50;
+  margin-top: 2px;
+  padding-top: 10px;
+}
+.cw-history-player-meta > div {
+  min-width: 0;
+  padding: 0 14px;
+  border-right: 1px solid #19435a;
+}
+.cw-history-player-meta > div:first-child { padding-left: 0; }
+.cw-history-player-meta > div:last-child { border-right: 0; }
+.cw-history-player-meta span,
+.cw-history-player-meta strong,
+.cw-history-player-meta small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cw-history-player-meta span { color:#4f8ba4; font-size:7px; font-weight:900; letter-spacing:.12em; }
+.cw-history-player-meta strong { margin-top:3px; color:#e7f7ff; font-size:10px; }
+.cw-history-player-meta small { margin-top:2px; color:#66899a; font-size:7px; }
+.cw-history-player-meta .is-active { color:#20d99d; }
+.cw-history-player-meta .is-disabled { color:#ff667a; }
+@media (max-width: 600px) {
+  .cw-history-player-meta { grid-template-columns: 1fr; gap: 8px; }
+  .cw-history-player-meta > div { padding: 0; border-right: 0; }
+}
+
+
+/* =========================================================
+   CW HISTORY + NOTIFICATION POLISH — PRESERVE ALL PRIOR FIXES
+   Only addresses the requested fit/placement issues.
+   ========================================================= */
+
+/* Match the BH notification header treatment exactly. */
+.cw-unified-notifications-panel .cw-notification-board-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  min-height: 96px !important;
+  padding: 16px 22px !important;
+  box-sizing: border-box !important;
+}
+.cw-unified-notifications-panel .cw-unified-notice-title-wrap {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+.cw-unified-notice-emblem {
+  width: 48px !important;
+  height: 48px !important;
+  flex: 0 0 48px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px solid #0fbce8 !important;
+  border-radius: 9px !important;
+  background: linear-gradient(145deg, rgba(0,201,255,.14), rgba(40,77,126,.16)) !important;
+  color: #20c8ff !important;
+  box-shadow: 0 0 20px rgba(0,190,255,.08) !important;
+}
+.cw-unified-notice-emblem span {
+  font-size: 24px !important;
+  line-height: 1 !important;
+}
+.cw-unified-notifications-panel .cw-notification-board-head h2 {
+  margin: 3px 0 4px !important;
+  font-size: 22px !important;
+  line-height: 1.05 !important;
+}
+.cw-unified-notifications-panel .cw-notification-board-head p {
+  font-size: 9px !important;
+  line-height: 1.35 !important;
+}
+
+/* Give the CW history modal the same usable scale as the BH history modal.
+   The table then has enough room for every column and the action buttons. */
+.cw-modal-wide.cw-history-modal {
+  width: min(1450px, calc(100vw - 32px)) !important;
+  max-width: 1450px !important;
+  max-height: calc(100vh - 28px) !important;
+}
+.cw-history-modal .cw-modal-body {
+  padding: 18px !important;
+  overflow-x: hidden !important;
+}
+
+/* Keep player identity, guild, joined date and status on one clean desktop row. */
+.cw-history-player-head {
+  grid-template-columns: auto minmax(220px, 1fr) minmax(430px, 1.15fr) !important;
+  align-items: center !important;
+  min-height: 76px !important;
+  padding: 2px 0 14px !important;
+}
+.cw-history-player-meta {
+  grid-column: auto !important;
+  border-top: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.cw-history-player-meta > div {
+  padding: 0 18px !important;
+}
+.cw-history-player-meta > div:first-child { padding-left: 18px !important; }
+.cw-history-player-meta > div:last-child { padding-right: 0 !important; }
+
+.cw-history-stats {
+  gap: 10px !important;
+  margin: 14px 0 !important;
+}
+.cw-history-stats > div {
+  min-height: 82px !important;
+  padding: 12px 14px !important;
+  gap: 12px !important;
+}
+.cw-history-stat-icon {
+  width: 40px !important;
+  height: 40px !important;
+  flex-basis: 40px !important;
+  font-size: 18px !important;
+}
+.cw-history-stats small { font-size: 8px !important; }
+.cw-history-stats strong { font-size: 20px !important; }
+.cw-history-stats em { font-size: 7px !important; }
+
+/* Desktop: fit all 9 columns without cutting EDIT/DELETE. */
+.cw-history-fit-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.cw-history-fit-table th,
+.cw-history-fit-table td {
+  box-sizing: border-box !important;
+}
+.cw-history-fit-table th:nth-child(1), .cw-history-fit-table td:nth-child(1) { width: 11% !important; }
+.cw-history-fit-table th:nth-child(2), .cw-history-fit-table td:nth-child(2) { width: 9% !important; }
+.cw-history-fit-table th:nth-child(3), .cw-history-fit-table td:nth-child(3) { width: 10% !important; }
+.cw-history-fit-table th:nth-child(4), .cw-history-fit-table td:nth-child(4) { width: 10% !important; }
+.cw-history-fit-table th:nth-child(5), .cw-history-fit-table td:nth-child(5) { width: 9% !important; }
+.cw-history-fit-table th:nth-child(6), .cw-history-fit-table td:nth-child(6) { width: 15% !important; }
+.cw-history-fit-table th:nth-child(7), .cw-history-fit-table td:nth-child(7) { width: 11% !important; }
+.cw-history-fit-table th:nth-child(8), .cw-history-fit-table td:nth-child(8) { width: 15% !important; }
+.cw-history-fit-table th:nth-child(9), .cw-history-fit-table td:nth-child(9) { width: 10% !important; }
+.cw-history-fit-table .cw-history-actions {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 5px !important;
+  overflow: visible !important;
+}
+.cw-history-fit-table .cw-history-actions .cw-btn {
+  flex: 0 0 auto !important;
+  min-width: 48px !important;
+  height: 30px !important;
+  padding: 0 7px !important;
+  font-size: 8px !important;
+}
+
+@media (max-width: 1100px) {
+  .cw-modal-wide.cw-history-modal {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+  }
+  .cw-history-fit-table {
+    min-width: 1050px !important;
+  }
+  .cw-history-player-head {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+  }
+  .cw-history-player-meta {
+    grid-column: 1 / -1 !important;
+    border-top: 1px solid #173b50 !important;
+    margin-top: 4px !important;
+    padding-top: 10px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .cw-unified-notifications-panel .cw-notification-board-head {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    padding: 13px !important;
+  }
+  .cw-unified-notice-emblem {
+    width: 42px !important;
+    height: 42px !important;
+    flex-basis: 42px !important;
+  }
+  .cw-unified-notifications-panel .cw-notification-board-head h2 {
+    font-size: 18px !important;
+  }
+  .cw-unified-notifications-panel .cw-notification-counts {
+    width: 100% !important;
+  }
+  .cw-modal-wide.cw-history-modal {
+    width: calc(100vw - 8px) !important;
+    max-width: calc(100vw - 8px) !important;
+    max-height: calc(100vh - 8px) !important;
+  }
+  .cw-history-modal .cw-modal-body {
+    padding: 10px !important;
+  }
+  .cw-history-player-head {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+  }
+  .cw-history-player-meta {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .cw-history-player-meta > div,
+  .cw-history-player-meta > div:first-child,
+  .cw-history-player-meta > div:last-child {
+    padding: 0 !important;
+    border-right: 0 !important;
+  }
+  .cw-history-stats {
+    grid-template-columns: 1fr !important;
+  }
+  .cw-history-fit-table {
+    min-width: 980px !important;
+  }
+}
+
+/* ================================================================
+   CLEAN 17 — targeted CW polish
+   Only the requested schedule / treasury / reward-preview / inventory
+   assignment presentation is changed. Existing behavior is preserved.
+   ================================================================ */
+
+/* Local calendar + occurrence schedule: one connected professional block */
+.cw-page > .cw-date-window,
+.cw-page > .cw-schedule-panel {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+.cw-page > .cw-date-window {
+  margin-bottom: 0 !important;
+  border: 1px solid #174b67 !important;
+  border-bottom: 0 !important;
+  border-radius: 10px 10px 0 0 !important;
+  background: linear-gradient(180deg, rgba(8,29,43,.98), rgba(6,20,31,.98)) !important;
+  padding: 18px 20px !important;
+  min-height: 108px !important;
+}
+.cw-date-window-copy h2 {
+  font-size: 21px !important;
+  line-height: 1.15 !important;
+  margin: 4px 0 5px !important;
+}
+.cw-date-window-copy p {
+  font-size: 11px !important;
+  color: #7fa1b3 !important;
+  margin: 0 !important;
+}
+.cw-date-window-controls {
+  display: grid !important;
+  grid-template-columns: minmax(175px, 1fr) minmax(180px, 210px) minmax(175px, 1fr) !important;
+  align-items: end !important;
+  gap: 8px !important;
+  min-width: 470px !important;
+}
+.cw-date-window-controls label {
+  display: grid !important;
+  gap: 5px !important;
+}
+.cw-date-window-controls label span {
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  letter-spacing: .12em !important;
+  color: #5f8ca3 !important;
+}
+.cw-date-window-controls select,
+.cw-date-window-controls > button {
+  width: 100% !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  box-sizing: border-box !important;
+  border: 1px solid #1d5772 !important;
+  border-radius: 7px !important;
+  background: #061923 !important;
+  color: #d9f3ff !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: .04em !important;
+  padding: 0 12px !important;
+}
+.cw-date-window-controls > button {
+  cursor: pointer !important;
+}
+.cw-date-window-controls > button.active,
+.cw-date-window-controls > button:hover {
+  border-color: #16bdf1 !important;
+  background: linear-gradient(180deg, #0c5d7b, #08354a) !important;
+  box-shadow: 0 0 18px rgba(22,189,241,.12) !important;
+}
+.cw-page > .cw-schedule-panel {
+  margin-top: 0 !important;
+  border: 1px solid #174b67 !important;
+  border-top: 1px solid rgba(31,104,137,.7) !important;
+  border-radius: 0 0 10px 10px !important;
+  background: #071a26 !important;
+  padding: 18px 20px 20px !important;
+}
+.cw-schedule-panel .cw-section-head {
+  margin-bottom: 14px !important;
+  padding-bottom: 13px !important;
+  border-bottom: 1px solid #153c51 !important;
+}
+.cw-schedule-panel .cw-section-head h2 {
+  font-size: 21px !important;
+  margin: 4px 0 !important;
+}
+.cw-schedule-panel .cw-section-head p {
+  font-size: 10px !important;
+  color: #7698aa !important;
+}
+.cw-occurrence-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+.cw-occurrence-card {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid #1a5069 !important;
+  border-radius: 8px !important;
+  background: #061722 !important;
+}
+.cw-occurrence-card.today {
+  border-color: #12bfe9 !important;
+  box-shadow: 0 0 0 1px rgba(18,191,233,.13), 0 8px 22px rgba(0,0,0,.18) !important;
+}
+.cw-occurrence-card .cw-war-art {
+  height: 82px !important;
+}
+.cw-occurrence-card .cw-occ-body {
+  padding: 12px 13px 13px !important;
+}
+.cw-occurrence-card .cw-occ-body > strong {
+  font-size: 19px !important;
+}
+.cw-occurrence-card .cw-occ-date {
+  font-size: 9px !important;
+}
+.cw-occurrence-card .cw-occ-body > span {
+  font-size: 9px !important;
+}
+
+/* Treasury: clear hierarchy instead of nested/competing boxes */
+.cw-treasury-panel {
+  background: linear-gradient(180deg, #071a26 0%, #061520 100%) !important;
+}
+.cw-treasury-panel > .cw-section-head {
+  padding: 18px 20px !important;
+  margin: 0 0 12px !important;
+  border: 1px solid #174b67 !important;
+  border-radius: 9px !important;
+  background: #081d2a !important;
+}
+.cw-treasury-panel > .cw-section-head h2 {
+  font-size: 22px !important;
+  margin: 4px 0 6px !important;
+}
+.cw-treasury-panel > .cw-section-head p {
+  max-width: 1100px !important;
+  font-size: 10px !important;
+  line-height: 1.55 !important;
+  color: #7598ab !important;
+}
+.cw-finance-hub {
+  display: grid !important;
+  gap: 9px !important;
+  padding: 10px !important;
+  margin: 0 0 12px !important;
+  border: 1px solid #17506b !important;
+  border-radius: 9px !important;
+  background: #061722 !important;
+}
+.cw-finance-hub-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 9px !important;
+}
+.cw-finance-hub-group {
+  min-height: 68px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 12px 14px !important;
+  border: 1px solid #153f54 !important;
+  border-radius: 7px !important;
+  background: linear-gradient(180deg, #091e2b, #071722) !important;
+}
+.cw-finance-hub-label span {
+  display: block !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  color: #d8eff8 !important;
+}
+.cw-finance-hub-label small {
+  display: block !important;
+  margin-top: 4px !important;
+  color: #6d91a3 !important;
+  font-size: 8px !important;
+  line-height: 1.35 !important;
+}
+.cw-finance-hub .cw-btn {
+  min-width: 205px !important;
+  height: 34px !important;
+  font-size: 8px !important;
+}
+.cw-treasury-equation {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 42px !important;
+  padding: 0 13px !important;
+  margin-bottom: 10px !important;
+  border: 1px solid #173f54 !important;
+  border-radius: 7px !important;
+  background: #061722 !important;
+  overflow: hidden !important;
+}
+.cw-treasury-equation > span:not(.cw-equation-note) {
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  color: #7194a6 !important;
+  letter-spacing: .07em !important;
+}
+.cw-treasury-equation b { font-size: 13px !important; }
+.cw-treasury-equation i { color: #3f7187 !important; }
+.cw-equation-note { margin-left: auto !important; font-size: 8px !important; color: #57798b !important; }
+.cw-treasury-stats {
+  grid-template-columns: repeat(4, minmax(0,1fr)) !important;
+  gap: 9px !important;
+  margin-bottom: 12px !important;
+}
+.cw-treasury-stat {
+  min-height: 92px !important;
+  padding: 14px !important;
+  border-radius: 8px !important;
+  background: #071a26 !important;
+  border: 1px solid #17445b !important;
+}
+.cw-treasury-stat small { font-size: 8px !important; }
+.cw-treasury-stat strong { font-size: 20px !important; margin: 6px 0 !important; }
+.cw-treasury-stat em { font-size: 8px !important; }
+.cw-guild-inventory-card {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto auto !important;
+  align-items: center !important;
+  gap: 18px !important;
+  padding: 13px 15px !important;
+  margin-bottom: 12px !important;
+  border: 1px solid #17506b !important;
+  border-radius: 8px !important;
+  background: #071a26 !important;
+}
+.cw-guild-inventory-copy h3 { font-size: 16px !important; margin: 3px 0 !important; }
+.cw-guild-inventory-copy p { font-size: 8px !important; color: #6e91a2 !important; }
+.cw-guild-inventory-stats { display: flex !important; gap: 0 !important; border: 1px solid #173f54 !important; border-radius: 6px !important; overflow: hidden !important; }
+.cw-guild-inventory-stats > div { min-width: 92px !important; padding: 8px 11px !important; text-align: center !important; border-right: 1px solid #173f54 !important; }
+.cw-guild-inventory-stats > div:last-child { border-right: 0 !important; }
+.cw-guild-inventory-stats strong { display: block !important; font-size: 16px !important; }
+.cw-guild-inventory-stats span { font-size: 7px !important; color: #63889b !important; }
+.cw-guild-inventory-view { height: 34px !important; font-size: 8px !important; }
+.cw-treasury-filter-row {
+  padding: 9px !important;
+  margin-bottom: 8px !important;
+  border: 1px solid #163d51 !important;
+  border-radius: 7px !important;
+  background: #061722 !important;
+}
+.cw-treasury-panel .cw-table-scroll {
+  border: 1px solid #1a5069 !important;
+  border-radius: 7px !important;
+  background: #061722 !important;
+}
+.cw-treasury-table th { height: 38px !important; font-size: 8px !important; }
+.cw-treasury-table td { height: 56px !important; font-size: 9px !important; }
+
+/* Reward preview: useful live impact, no seeded/filler item */
+.cw-reward-preview .cw-reward-totals {
+  grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+}
+.cw-reward-preview .cw-reward-totals strong { font-size: 16px !important; }
+.cw-preview-empty-state {
+  display: grid !important;
+  gap: 4px !important;
+  padding: 18px 12px !important;
+  text-align: center !important;
+  border: 1px dashed #1b4a61 !important;
+  border-radius: 6px !important;
+  background: rgba(3,14,22,.5) !important;
+}
+.cw-preview-empty-state strong { color: #8fb4c6 !important; font-size: 9px !important; letter-spacing: .08em !important; }
+.cw-preview-empty-state span { color: #5e8294 !important; font-size: 8px !important; line-height: 1.4 !important; }
+
+/* Assign from Inventory: multiple item types + per-row quantity */
+.cw-assignment-stock-table-wrap { overflow-x: auto !important; }
+.cw-assignment-stock-table {
+  min-width: 930px !important;
+}
+.cw-assignment-stock-table th,
+.cw-assignment-stock-table td {
+  padding: 9px 8px !important;
+  white-space: nowrap !important;
+}
+.cw-assignment-stock-table th { font-size: 8px !important; }
+.cw-assignment-stock-table td { font-size: 9px !important; }
+.cw-assignment-stock-table tr.selected {
+  background: rgba(11,111,146,.18) !important;
+  box-shadow: inset 3px 0 0 #16bdf1 !important;
+}
+.cw-assignment-row-qty {
+  width: 72px !important;
+  height: 30px !important;
+  box-sizing: border-box !important;
+  border: 1px solid #1b607c !important;
+  border-radius: 5px !important;
+  background: #03121b !important;
+  color: #e8faff !important;
+  text-align: center !important;
+  font-weight: 900 !important;
+}
+.cw-assignment-row-qty:focus { outline: 0 !important; border-color: #16bdf1 !important; box-shadow: 0 0 0 2px rgba(22,189,241,.1) !important; }
+.cw-assignment-unselected { color: #47697a !important; }
+.cw-stock-select {
+  min-width: 48px !important;
+  height: 28px !important;
+  padding: 0 8px !important;
+  font-size: 8px !important;
+  font-weight: 900 !important;
+}
+.cw-stock-select.selected { background: #0b86ad !important; border-color: #18c6f4 !important; color: white !important; }
+.cw-assignment-multi-summary {
+  display: grid !important;
+  grid-template-columns: repeat(4,minmax(0,1fr)) !important;
+  gap: 8px !important;
+  margin-top: 10px !important;
+  padding: 9px !important;
+  border: 1px solid #16475e !important;
+  border-radius: 7px !important;
+  background: #061722 !important;
+}
+.cw-assignment-multi-summary > div { padding: 7px 9px !important; border-right: 1px solid #14394c !important; }
+.cw-assignment-multi-summary > div:last-child { border-right: 0 !important; }
+.cw-assignment-multi-summary small { display: block !important; color: #5e8497 !important; font-size: 7px !important; letter-spacing: .08em !important; }
+.cw-assignment-multi-summary strong { display: block !important; margin-top: 4px !important; color: #dff7ff !important; font-size: 13px !important; }
+.cw-assignment-multi-summary span { display: block !important; color: #5f8191 !important; font-size: 7px !important; margin-top: 2px !important; }
+
+@media (max-width: 1050px) {
+  .cw-occurrence-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .cw-finance-hub-row { grid-template-columns: 1fr !important; }
+  .cw-treasury-stats { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  .cw-guild-inventory-card { grid-template-columns: 1fr; }
+  .cw-assignment-multi-summary { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+}
+@media (max-width: 700px) {
+  .cw-page > .cw-date-window { padding: 13px !important; }
+  .cw-date-window-controls { grid-template-columns: 1fr !important; min-width: 0 !important; margin-top: 10px !important; }
+  .cw-page > .cw-schedule-panel { padding: 13px !important; }
+  .cw-occurrence-grid { grid-template-columns: 1fr !important; }
+  .cw-treasury-stats { grid-template-columns: 1fr !important; }
+  .cw-treasury-equation { flex-wrap: wrap !important; padding: 9px !important; }
+  .cw-equation-note { width: 100% !important; margin-left: 0 !important; }
+  .cw-finance-hub-group { grid-template-columns: 1fr !important; }
+  .cw-finance-hub .cw-btn { width: 100% !important; min-width: 0 !important; }
+  .cw-reward-preview .cw-reward-totals { grid-template-columns: 1fr !important; }
+  .cw-assignment-multi-summary { grid-template-columns: 1fr !important; }
+}
+
+/* =========================================================
+   CLEAN 19 — TREASURY DETAIL VIEW
+   Treasury ledger rows open a compact, professional activity
+   detail view. Keep identifiers out of the presentation.
+========================================================= */
+.cw-treasury-ledger-row {
+  cursor: pointer;
+  transition: background .16s ease, box-shadow .16s ease;
+}
+.cw-treasury-ledger-row:hover,
+.cw-treasury-ledger-row:focus-visible {
+  background: rgba(0, 168, 230, .055);
+  box-shadow: inset 2px 0 0 rgba(0, 194, 255, .75);
+  outline: none;
+}
+.cw-treasury-ledger-row td:first-child strong {
+  color: #dff6ff;
+}
+.cw-treasury-detail-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.cw-treasury-detail-grid .cw-in { color: #45e3a0; }
+.cw-treasury-detail-grid .cw-out { color: #ff647b; }
+@media (max-width: 760px) {
+  .cw-treasury-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .cw-treasury-detail-grid { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   FINAL CW DESKTOP SPACE + SCHEDULE + CATALOG ACTION REPAIR
+   ========================================================= */
+@media (min-width: 1600px) {
+  .cw-page {
+    padding-left: clamp(22px, 1.5vw, 34px) !important;
+    padding-right: clamp(22px, 1.5vw, 34px) !important;
+  }
+}
+
+/* The calendar is one connected control instead of three visually
+   separated select boxes. Today remains the central anchor. */
+.cw-date-window {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 2.25fr) !important;
+  align-items: center !important;
+  gap: 22px !important;
+  padding: 14px 16px !important;
+  margin: 0 0 10px !important;
+  border-color: #24516a !important;
+  background: linear-gradient(135deg, #0a1b29 0%, #08151f 100%) !important;
+}
+
+.cw-date-window-copy h2 {
+  font-size: 17px !important;
+  line-height: 1.1 !important;
+}
+
+.cw-date-window-copy p {
+  max-width: 650px;
+  font-size: 9px !important;
+}
+
+.cw-date-window-controls {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  padding: 7px !important;
+  border: 1px solid #173e54 !important;
+  border-radius: 8px !important;
+  background: #06131d !important;
+}
+
+.cw-window-group {
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid #17394c;
+  border-radius: 6px;
+  background: #081925;
+}
+
+.cw-window-group-label {
+  display: block;
+  margin: 0 0 5px 2px;
+  color: #5e8ca2;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.cw-window-options {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.cw-window-options button,
+.cw-window-today {
+  min-width: 0;
+  height: 38px;
+  border: 1px solid #21465b;
+  border-radius: 5px;
+  background: #0a1d2b;
+  color: #9ab9c8;
+  font-size: 8px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s, transform .15s;
+}
+
+.cw-window-options button small {
+  display: block;
+  margin-top: 1px;
+  font-size: 5px;
+  color: #53788b;
+  letter-spacing: .02em;
+}
+
+.cw-window-options button:hover,
+.cw-window-options button.active {
+  border-color: #10b8ec;
+  background: linear-gradient(180deg, #0e4964, #0a3045);
+  color: #effcff;
+}
+
+.cw-window-options button:hover { transform: translateY(-1px); }
+
+.cw-window-options button.active small { color: #9ceaff; }
+
+.cw-window-today {
+  min-width: 84px;
+  padding: 0 12px;
+  border-color: #10b8ec;
+  background: linear-gradient(180deg, #0e6387, #084a67);
+  color: #fff;
+  align-self: center;
+}
+
+.cw-window-today b,
+.cw-window-today span {
+  display: block;
+}
+
+.cw-window-today b { font-size: 8px; letter-spacing: .08em; }
+.cw-window-today span { margin-top: 2px; font-size: 6px; color: #a9eaff; letter-spacing: .14em; }
+
+/* Schedule is visually one section: header, divider and cards all live
+   inside the same surface. */
+.cw-schedule-panel {
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-color: #24516a !important;
+  background: linear-gradient(180deg, #0a1b29, #07131d) !important;
+}
+
+.cw-schedule-panel .cw-section-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 15px !important;
+  margin: 0 !important;
+  padding: 14px 16px 12px !important;
+  border-bottom: 1px solid #17394c !important;
+  background: linear-gradient(180deg, #0b1e2c, #091925) !important;
+}
+
+.cw-schedule-panel .cw-section-head > div:first-child { min-width: 0; }
+.cw-schedule-panel .cw-section-head h2 { margin: 3px 0 3px !important; font-size: 18px !important; }
+.cw-schedule-panel .cw-section-head p { font-size: 8px !important; }
+
+.cw-schedule-panel .cw-occurrence-grid {
+  padding: 10px !important;
+  gap: 9px !important;
+  background: #07131d !important;
+}
+
+.cw-schedule-panel .cw-occurrence-card {
+  min-height: 184px !important;
+  border-color: #1e455b !important;
+  background: #091a27 !important;
+}
+
+.cw-schedule-panel .cw-occurrence-card:hover { border-color: #1dbce9 !important; }
+.cw-schedule-panel .cw-occurrence-card.today { border-color: #12bde9 !important; }
+
+/* Wider modal means the catalog has enough room for a real action area. */
+.cw-modal-wide {
+  width: min(1600px, calc(100vw - 32px)) !important;
+  max-width: 1600px !important;
+}
+
+.cw-catalog-table-scroll {
+  margin: 0 !important;
+  overflow-x: auto !important;
+}
+
+.cw-catalog-table {
+  min-width: 1260px !important;
+  table-layout: fixed !important;
+}
+
+.cw-catalog-table th:nth-child(1) { width: 18%; }
+.cw-catalog-table th:nth-child(2) { width: 9%; }
+.cw-catalog-table th:nth-child(3) { width: 11%; }
+.cw-catalog-table th:nth-child(4) { width: 9%; }
+.cw-catalog-table th:nth-child(5) { width: 20%; }
+.cw-catalog-table th:nth-child(6) { width: 14%; }
+.cw-catalog-table th:nth-child(7) { width: 19%; }
+
+.cw-catalog-table td {
+  vertical-align: middle !important;
+}
+
+.cw-catalog-table td small,
+.cw-catalog-updated + small {
+  display: block;
+  margin-top: 3px;
+  color: #527f92;
+  font-size: 6.5px;
+}
+
+.cw-catalog-updated {
+  white-space: nowrap;
+  color: #c5e2ef;
+  font-size: 7.5px;
+}
+
+.cw-catalog-actions {
+  min-width: 0 !important;
+  width: auto;
+  white-space: nowrap !important;
+  text-align: right;
+}
+
+.cw-catalog-actions .cw-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 72px !important;
+  min-height: 30px !important;
+  margin: 2px 0 2px 5px !important;
+  padding: 0 9px !important;
+  border-radius: 5px !important;
+  font-size: 7px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.cw-catalog-actions .cw-action-assign {
+  min-width: 92px !important;
+  border-color: #0daee1 !important;
+  color: #7be2ff !important;
+  background: rgba(0, 136, 183, .12) !important;
+}
+
+.cw-catalog-actions .cw-action-assign:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+  border-color: #355365 !important;
+  color: #6c8592 !important;
+  background: #0a1721 !important;
+}
+
+.cw-catalog-actions .cw-action-edit {
+  border-color: #2a5268 !important;
+  color: #c3dce8 !important;
+  background: #0a1a26 !important;
+}
+
+.cw-catalog-actions .cw-action-disable {
+  border-color: #c33c58 !important;
+  color: #ff7188 !important;
+  background: rgba(165, 34, 58, .08) !important;
+}
+
+.cw-catalog-actions .cw-action-enable {
+  border-color: #14b6e5 !important;
+  color: #80e4ff !important;
+}
+
+.cw-catalog-action-guide {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.4fr) repeat(3, minmax(180px, 1fr));
+  gap: 6px;
+  margin: 0 0 9px;
+  padding: 7px;
+  border: 1px solid #183e52;
+  border-radius: 6px;
+  background: #06131d;
+}
+
+.cw-catalog-action-guide > div {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #143447;
+  border-radius: 5px;
+  background: #091a26;
+}
+
+.cw-catalog-action-guide b,
+.cw-catalog-action-guide strong {
+  display: block;
+  color: #55d7ff;
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: .1em;
+}
+
+.cw-catalog-action-guide span {
+  display: block;
+  margin-top: 3px;
+  color: #688d9e;
+  font-size: 6.5px;
+  line-height: 1.35;
+}
+
+.cw-catalog-action-guide > div:first-child b { color: #dceff7; }
+.cw-catalog-action-guide > div:nth-child(2) strong { color: #55d7ff; }
+.cw-catalog-action-guide > div:nth-child(3) strong { color: #c9dce7; }
+.cw-catalog-action-guide > div:nth-child(4) strong { color: #ff7188; }
+
+/* The Actions header is intentionally a plain, non-interactive label. */
+.cw-catalog-table thead th:last-child {
+  cursor: default !important;
+  user-select: none;
+}
+
+@media (max-width: 1250px) {
+  .cw-date-window {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .cw-date-window-controls {
+    grid-template-columns: 1fr !important;
+  }
+  .cw-window-today { width: 100%; }
+  .cw-catalog-action-guide { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 760px) {
+  .cw-window-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cw-catalog-action-guide { grid-template-columns: 1fr; }
+  .cw-catalog-table { min-width: 1180px !important; }
+  .cw-modal-wide { width: calc(100vw - 12px) !important; max-width: calc(100vw - 12px) !important; }
+}
+
+
+/* CLEAN 35 — occurrence center emblem uses the approved V favicon only.
+   Remove the old shield/cw-war icon treatment so it cannot overlap the V. */
+.cw-occurrence-card .cw-war-logo {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 8 !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+}
+.cw-occurrence-card .cw-war-logo::before,
+.cw-occurrence-card .cw-war-logo::after {
+  content: none !important;
+  display: none !important;
+}
+.cw-occurrence-card .cw-war-logo img {
+  display: block !important;
+  width: 46px !important;
+  height: 46px !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,.45) !important;
+}
+@media (max-width: 760px) {
+  .cw-occurrence-card .cw-war-logo,
+  .cw-occurrence-card .cw-war-logo img {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+}
