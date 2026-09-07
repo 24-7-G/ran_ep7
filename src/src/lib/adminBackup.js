@@ -5,6 +5,7 @@ import {
   query,
   where,
   writeBatch,
+  setDoc,
   Timestamp,
   GeoPoint,
   serverTimestamp,
@@ -133,11 +134,23 @@ export async function restoreBackup(db, backup, { replace = false, onProgress } 
 }
 
 /* -------------------------------------------------------------------------- */
-/* XLSX                                                                       */
+/* XLSX — human-readable Excel export                                         */
+/*                                                                            */
+/* IMPORTANT: Keep this workbook intentionally simple. It is a human backup,  */
+/* not a Firebase programmer dump. The exact machine restore remains JSON.    */
+/* We deliberately do NOT generate styles.xml, panes, filters, merged cells,  */
+/* or other optional OOXML features here. This produces conservative XLSX      */
+/* files that Microsoft Excel can open without its repair/recovery dialog.    */
 /* -------------------------------------------------------------------------- */
 
 function xmlEscape(value) {
-  return String(value ?? "")
+  // XML 1.0 does not allow most C0 control characters. Also normalize lone
+  // surrogate code units so TextEncoder cannot turn them into malformed XML.
+  const text = String(value ?? "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "�")
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "$1�");
+  return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -145,51 +158,385 @@ function xmlEscape(value) {
     .replace(/'/g, "&apos;");
 }
 
-function cell(value) {
-  return `<c t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+function excelColumnName(number) {
+  let n = Math.max(1, Number(number) || 1);
+  let out = "";
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    out = String.fromCharCode(65 + remainder) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
 }
 
-function sheetXml(headers, rows) {
-  const allRows = [headers, ...rows];
-  const body = allRows.map((row, r) => {
-    const values = row.map((value) => cell(value));
-    return `<row r="${r + 1}">${values.join("")}</row>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+const HUMAN_FIELD_NAMES = {
+  id: "Record ID",
+  uid: "User ID",
+  playerId: "Player ID",
+  playerName: "Player Name",
+  ign: "Player Name",
+  displayName: "Name",
+  email: "Email",
+  name: "Name",
+  class: "Class",
+  level: "Level",
+  status: "Status",
+  active: "Active",
+  role: "Role",
+  category: "Category",
+  issueType: "Issue Type",
+  subject: "Subject",
+  description: "Description",
+  question: "Question",
+  answer: "Answer",
+  details: "Details",
+  action: "Action",
+  changes: "Changes",
+  date: "Date",
+  created: "Created",
+  createdBy: "Created By",
+  createdByUid: "Created By User ID",
+  createdAt: "Created At",
+  updatedAt: "Updated At",
+  updatedBy: "Updated By",
+  updatedByUid: "Updated By User ID",
+  claimedAt: "Claimed At",
+  claimedBy: "Claimed By",
+  rewardId: "Reward ID",
+  rewardName: "Reward Name",
+  reward: "Reward",
+  claimId: "Claim ID",
+  points: "Points",
+  pointsUsed: "Points Used",
+  balance: "Balance",
+  cost: "Cost (Points)",
+  stock: "Stock",
+  quantity: "Quantity",
+  itemId: "Item ID",
+  itemName: "Item Name",
+  item: "Item",
+  salary: "Salary",
+  amount: "Amount",
+  result: "Result",
+  boss: "Boss",
+  bossId: "Boss ID",
+  bossName: "Boss Name",
+  schedule: "Schedule",
+  scheduleTime: "Schedule Time",
+  timezone: "Timezone",
+  type: "Type",
+  joinDate: "Join Date",
+  attendanceDate: "Attendance Date",
+  occurrenceDate: "Occurrence Date",
+  recordId: "Record ID",
+  ticketId: "Ticket ID",
+  reason: "Reason",
+  label: "Label",
+  expiresAt: "Expires At",
+  backupDate: "Backup Date",
+};
+
+const HUMAN_COLLECTION_NAMES = {
+  raids: "Raids",
+  raidSchedules: "Raid Schedule",
+  players: "Players",
+  bhAttendance: "BH Attendance",
+  bhBalances: "BH Balances",
+  bhRewards: "BH Rewards",
+  bhRewardClaims: "BH Reward Claims",
+  bhDuckRaceStatus: "BH Duck Race Status",
+  bhScoring: "BH Scoring",
+  bhScoringHistory: "BH Scoring History",
+  cwPlayers: "CW Players",
+  cwAttendance: "CW Attendance",
+  cwSchedules: "CW Schedule",
+  cwSettings: "CW Settings",
+  cwItems: "CW Items / Inventory",
+  cwItemAssignments: "CW Item Assignments",
+  cwInventoryTransactions: "CW Inventory Transactions",
+  treasuryEntries: "Guild Treasury",
+  treasuryConfig: "Treasury Settings",
+  guildTickets: "Guild Tickets",
+  guildNotices: "Activity Log / Notices",
+  adminUsers: "Administrators",
+  adminRequests: "Admin Registration Requests",
+  adminSettings: "Admin Settings",
+};
+
+function humanCollectionName(name) {
+  return HUMAN_COLLECTION_NAMES[name] || String(name || "Data")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function humanFieldName(field, collectionName = "") {
+  if (field === "id") {
+    const lower = String(collectionName).toLowerCase();
+    if (lower.includes("player")) return "Player ID";
+    if (lower.includes("reward")) return "Reward ID";
+    if (lower.includes("ticket")) return "Ticket ID";
+    return "Record ID";
+  }
+  if (HUMAN_FIELD_NAMES[field]) return HUMAN_FIELD_NAMES[field];
+  return String(field || "Field")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function displayCellValue(value) {
+  if (value == null) return "";
+  if (value && typeof value === "object" && value.__type === "timestamp") return value.value || "";
+  if (value && typeof value === "object" && value.__type === "geopoint") return `${value.latitude}, ${value.longitude}`;
+  if (Array.isArray(value)) return value.map(displayCellValue).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function humanValue(row, ...keys) {
+  for (const key of keys) {
+    if (key === "id") return row?.id ?? "";
+    if (row?.data && row.data[key] !== undefined && row.data[key] !== null) return row.data[key];
+  }
+  return "";
+}
+
+function recordRows(backup, collectionName) {
+  return Array.isArray(backup.collections?.[collectionName]) ? backup.collections[collectionName] : [];
+}
+
+function humanRowsForCollection(backup, collectionName, columns) {
+  return recordRows(backup, collectionName).map((record) =>
+    columns.map((column) => displayCellValue(humanValue(record, ...(column.keys || []))))
+  );
+}
+
+function combinedRows(backup, definitions) {
+  const rows = [];
+  for (const definition of definitions) {
+    for (const record of recordRows(backup, definition.collection)) {
+      rows.push(definition.map(record, backup));
+    }
+  }
+  return rows;
+}
+
+const HUMAN_SHEETS = [
+  {
+    name: "Players",
+    title: "PLAYERS",
+    subtitle: "Guild roster — easy-to-read player information.",
+    collection: "players",
+    columns: [
+      ["Player ID", ["playerId", "id"]], ["Player Name", ["playerName", "displayName", "name"]],
+      ["Class", ["class"]], ["Level", ["level"]], ["Status", ["status"]], ["Join Date", ["joinDate"]],
+    ],
+  },
+  {
+    name: "BH Attendance",
+    title: "BOSS HUNT ATTENDANCE",
+    subtitle: "Attendance records and points earned.",
+    collection: "bhAttendance",
+    columns: [
+      ["Date", ["date", "attendanceDate", "occurrenceDate"]], ["Player", ["playerName", "displayName", "playerId"]],
+      ["Boss", ["bossName", "boss"]], ["Points", ["points"]], ["Status", ["status"]], ["Recorded By", ["createdBy", "updatedBy"]],
+    ],
+  },
+  {
+    name: "BH Balances",
+    title: "BOSS HUNT BALANCES",
+    subtitle: "Current attendance-point balances by player.",
+    collection: "bhBalances",
+    columns: [
+      ["Player", ["playerName", "displayName", "playerId"]], ["Player ID", ["playerId", "id"]],
+      ["Balance", ["balance", "points"]], ["Updated At", ["updatedAt", "createdAt"]],
+    ],
+  },
+  {
+    name: "BH Rewards",
+    title: "BOSS HUNT REWARDS",
+    subtitle: "Reward catalog, costs, stock, and status.",
+    collection: "bhRewards",
+    columns: [
+      ["Reward ID", ["rewardId", "id"]], ["Reward Name", ["rewardName", "name"]], ["Type", ["type"]],
+      ["Cost (Points)", ["cost"]], ["Stock", ["stock"]], ["Status", ["status"]],
+    ],
+  },
+  {
+    name: "BH Claims",
+    title: "BOSS HUNT CLAIMS",
+    subtitle: "Rewards actually claimed by players.",
+    collection: "bhRewardClaims",
+    columns: [
+      ["Claim Date", ["claimedAt", "createdAt"]], ["Player", ["playerName", "displayName", "playerId"]],
+      ["Reward", ["rewardName", "reward"]], ["Points Used", ["pointsUsed", "cost"]], ["Status", ["status"]], ["Claimed By", ["claimedBy", "createdBy"]],
+    ],
+  },
+  {
+    name: "BH Scoring",
+    title: "BOSS HUNT SCORING",
+    subtitle: "Current scoring configuration and records.",
+    collection: "bhScoring",
+    columns: [
+      ["Player", ["playerName", "displayName", "playerId"]], ["Points", ["points", "score"]],
+      ["Status", ["status"]], ["Updated At", ["updatedAt", "createdAt"]],
+    ],
+  },
+  {
+    name: "CW Players",
+    title: "CLAN WAR PLAYERS",
+    subtitle: "Clan War roster and player status.",
+    collection: "cwPlayers",
+    columns: [
+      ["Player ID", ["playerId", "id"]], ["Player Name", ["ign", "playerName", "displayName", "name"]],
+      ["Class", ["class"]], ["Level", ["level"]], ["Status", ["status", "active"]],
+    ],
+  },
+  {
+    name: "CW Attendance",
+    title: "CLAN WAR ATTENDANCE",
+    subtitle: "Clan War attendance, results, and salary records.",
+    collection: "cwAttendance",
+    columns: [
+      ["Date", ["date", "attendanceDate", "occurrenceDate"]], ["Player", ["playerName", "ign", "playerId"]],
+      ["Result", ["result", "status"]], ["Salary", ["salary", "amount"]], ["Recorded By", ["createdBy", "updatedBy"]],
+    ],
+  },
+  {
+    name: "CW Schedule",
+    title: "CLAN WAR SCHEDULE",
+    subtitle: "Clan War occurrence schedule and timing.",
+    collection: "cwSchedules",
+    columns: [
+      ["Schedule", ["schedule", "name", "label"]], ["Date", ["date", "occurrenceDate"]],
+      ["Time", ["scheduleTime", "time"]], ["Timezone", ["timezone"]], ["Status", ["status"]], ["Updated At", ["updatedAt", "createdAt"]],
+    ],
+  },
+  {
+    name: "CW Items",
+    title: "CLAN WAR ITEMS",
+    subtitle: "Guild item catalog and inventory setup.",
+    collection: "cwItems",
+    columns: [
+      ["Item ID", ["itemId", "id"]], ["Item Name", ["itemName", "name", "item"]], ["Quantity", ["quantity", "stock"]],
+      ["Status", ["status", "active"]], ["Created At", ["createdAt"]], ["Updated At", ["updatedAt"]],
+    ],
+  },
+  {
+    name: "CW Inventory",
+    title: "CLAN WAR INVENTORY",
+    subtitle: "Item assignments and inventory transactions.",
+    customRows: (backup) => combinedRows(backup, [
+      {
+        collection: "cwItemAssignments",
+        map: (r) => ["ASSIGNMENT", humanValue(r, "itemName", "item"), humanValue(r, "playerName", "ign", "playerId"), humanValue(r, "quantity"), humanValue(r, "status"), humanValue(r, "createdAt", "updatedAt")],
+      },
+      {
+        collection: "cwInventoryTransactions",
+        map: (r) => ["TRANSACTION", humanValue(r, "itemName", "item"), humanValue(r, "playerName", "ign", "playerId"), humanValue(r, "quantity"), humanValue(r, "action", "status"), humanValue(r, "createdAt", "updatedAt")],
+      },
+    ]),
+    customHeaders: ["Record Type", "Item", "Player", "Quantity", "Action / Status", "Date"],
+  },
+  {
+    name: "Treasury",
+    title: "GUILD TREASURY",
+    subtitle: "Guild money movements and salary records.",
+    collection: "treasuryEntries",
+    columns: [
+      ["Date", ["date", "createdAt"]], ["Player", ["playerName", "ign", "playerId"]],
+      ["Amount", ["amount", "salary"]], ["Reason", ["reason", "details"]], ["Recorded By", ["createdBy", "updatedBy"]],
+    ],
+  },
+  {
+    name: "Tickets",
+    title: "GUILD TICKETS",
+    subtitle: "Support requests using the structured category and issue fields.",
+    collection: "guildTickets",
+    columns: [
+      ["Ticket ID", ["ticketId", "id"]], ["Player", ["ign", "playerName", "playerId"]], ["Category", ["category"]],
+      ["Issue Type", ["issueType"]], ["Subject", ["subject"]], ["Status", ["status"]], ["Priority", ["priority"]],
+      ["Created At", ["createdAt"]], ["Updated At", ["updatedAt"]],
+    ],
+  },
+  {
+    name: "Activity Log",
+    title: "UNIFIED ACTIVITY LOG",
+    subtitle: "Human-readable audit activity. This is the single activity/history feed.",
+    collection: "guildNotices",
+    columns: [
+      ["Date/Time", ["createdAt", "updatedAt"]], ["Area", ["area", "source"]], ["Action", ["action"]],
+      ["Player", ["playerName", "ign", "playerId"]], ["Details", ["details", "description"]], ["Changes", ["changes"]], ["By", ["createdBy", "updatedBy"]],
+    ],
+  },
+  {
+    name: "Raid Schedule",
+    title: "RAID SCHEDULE",
+    subtitle: "Boss raid schedules and timing.",
+    collection: "raidSchedules",
+    columns: [
+      ["Boss", ["bossName", "name", "boss"]], ["Schedule Type", ["type"]], ["Schedule", ["schedule"]],
+      ["Time", ["scheduleTime", "time"]], ["Timezone", ["timezone"]], ["Status", ["status"]], ["Updated At", ["updatedAt", "createdAt"]],
+    ],
+  },
+];
+
+function normalizeHumanSheet(definition, backup) {
+  const headers = definition.customHeaders || definition.columns.map(([label]) => label);
+  const rows = definition.customRows
+    ? definition.customRows(backup).map((row) => row.map(displayCellValue))
+    : humanRowsForCollection(backup, definition.collection, definition.columns.map(([label, keys]) => ({ label, keys })));
+  return { name: definition.name, title: definition.title, subtitle: definition.subtitle, headers, rows };
 }
 
 function makeSheets(backup) {
-  const sheets = [];
-  sheets.push({
-    name: "README",
-    headers: ["Field", "Value"],
-    rows: [
-      ["Backup Format", backup.format],
-      ["Backup Version", backup.version],
-      ["Exported At", backup.exportedAt],
-      ["Application", backup.application || "RAN Online EP7 Classic Guild Management"],
-      ["Purpose", "Complete application backup. Use the embedded Backup JSON sheet for exact restoration."],
-    ],
-  });
+  const collectionEntries = Object.entries(backup.collections || {});
+  const totalDocuments = collectionEntries.reduce((sum, [, rows]) => sum + (rows?.length || 0), 0);
+  const sheets = [
+    {
+      name: "Summary",
+      title: "RAN ONLINE EP7 CLASSIC — GUILD BACKUP",
+      subtitle: "Human-readable backup. The separate JSON file is the exact machine restore copy.",
+      headers: ["Backup Information", "Value"],
+      rows: [
+        ["Backup Date", backup.exportedAt],
+        ["Application", backup.application || "RAN Online EP7 Classic Guild Management"],
+        ["Total Collections", collectionEntries.length],
+        ["Total Records", totalDocuments],
+        ["Human Backup", "This workbook is designed for normal people to read and manage."],
+        ["Exact Restore", "Use the matching .json backup for a complete Firebase restore."],
+        ["Security", "Sensitive Firebase security fields are kept out of the human sheets."],
+      ],
+    },
+    {
+      name: "Data Coverage",
+      title: "DATA COVERAGE",
+      subtitle: "Every Firebase backup collection is accounted for. Technical collections remain in the exact JSON backup.",
+      headers: ["Firebase Collection", "Human Sheet", "Records", "Purpose"],
+      rows: collectionEntries.map(([name, rows]) => {
+        const human = HUMAN_SHEETS.find((sheet) => sheet.collection === name || (name === "cwItemAssignments" && sheet.name === "CW Inventory") || (name === "cwInventoryTransactions" && sheet.name === "CW Inventory"));
+        return [humanCollectionName(name), human?.name || "Exact JSON only", rows?.length || 0, human ? human.subtitle : "Technical/security data preserved for exact restore."];
+      }),
+    },
+    ...HUMAN_SHEETS
+      .filter((definition) => definition.customRows || definition.collection)
+      .map((definition) => normalizeHumanSheet(definition, backup)),
+  ];
 
-  for (const [name, records] of Object.entries(backup.collections || {})) {
-    const keys = Array.from(new Set(records.flatMap((row) => Object.keys(row.data || {}))));
-    const headers = ["DOCUMENT_ID", ...keys];
-    const rows = records.map((row) => [row.id, ...keys.map((key) => {
-      const value = row.data?.[key];
-      return typeof value === "object" ? JSON.stringify(value) : value == null ? "" : String(value);
-    })]);
-    sheets.push({ name: name.slice(0, 31), headers, rows });
-  }
-
-  // The XLSX is intentionally self-contained: this sheet stores the exact JSON
-  // payload, allowing an exported XLSX to be imported back into the application.
+  // Keep the exact restore payload inside the workbook as a hidden final sheet.
+  // This preserves XLSX import while keeping normal users out of the technical dump.
   const raw = encodeBase64(JSON.stringify(backup));
   const backupRows = [];
-  // Excel cells have a practical text limit, so split the exact JSON payload
-  // into safe-sized chunks. The importer concatenates them in row order.
   for (let i = 0; i < raw.length; i += 30000) backupRows.push([raw.slice(i, i + 30000)]);
-  sheets.push({ name: "Backup JSON", headers: ["EXACT_BACKUP_BASE64"], rows: backupRows });
+  sheets.push({
+    name: "Backup JSON",
+    title: "EXACT BACKUP PAYLOAD — DO NOT EDIT",
+    subtitle: "Hidden technical restore payload. Use the separate JSON file for normal backup management.",
+    headers: ["EXACT_BACKUP_BASE64"],
+    rows: backupRows,
+    hidden: true,
+  });
   return sheets;
 }
 
@@ -197,9 +544,7 @@ function encodeBase64(text) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
   const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   return btoa(binary);
 }
 
@@ -224,9 +569,7 @@ const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n += 1) {
     let c = n;
-    for (let k = 0; k < 8; k += 1) {
-      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    }
+    for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
     table[n] = c >>> 0;
   }
   return table;
@@ -234,9 +577,7 @@ const CRC32_TABLE = (() => {
 
 function crc32(bytes) {
   let crc = 0xffffffff;
-  for (let i = 0; i < bytes.length; i += 1) {
-    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
-  }
+  for (let i = 0; i < bytes.length; i += 1) crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
   return (crc ^ 0xffffffff) >>> 0;
 }
 
@@ -246,47 +587,88 @@ function zipStored(entries, mime = "application/zip") {
   const local = [];
   const central = [];
   let offset = 0;
-
   entries.forEach(({ name, text, bytes }) => {
     const nameBytes = utf8(name);
     const data = bytes instanceof Uint8Array ? bytes : utf8(text ?? "");
     const crc = crc32(data);
-    const header = concatBytes([
-      u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes,
-    ]);
+    const header = concatBytes([u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes]);
     local.push(header, data);
-
-    const cdir = concatBytes([
-      u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes,
-    ]);
+    const cdir = concatBytes([u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes]);
     central.push(cdir);
     offset += header.length + data.length;
   });
-
   const centralBytes = concatBytes(central);
   const localBytes = concatBytes(local);
-  const end = concatBytes([
-    u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(centralBytes.length), u32(localBytes.length), u16(0),
-  ]);
+  const end = concatBytes([u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(centralBytes.length), u32(localBytes.length), u16(0)]);
   return new Blob([localBytes, centralBytes, end], { type: mime });
 }
 
-export function buildXlsx(backup) {
-  const sheets = makeSheets(backup);
-  const workbookSheets = sheets.map((sheet, index) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("");
+function safeExcelSheetName(name, usedNames = new Set()) {
+  const base = String(name || "Sheet")
+    .replace(/[\\\/\?\*\[\]:]/g, "-")
+    .replace(/^'+/, "")
+    .trim()
+    .slice(0, 31) || "Sheet";
+  let candidate = base;
+  let counter = 2;
+  while (usedNames.has(candidate)) {
+    const suffix = `-${counter++}`;
+    candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function sheetCell(value, ref) {
+  const text = displayCellValue(value);
+  return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
+}
+
+function sheetXml({ title, subtitle, headers, rows }) {
+  const lastColumn = excelColumnName(Math.max(1, headers.length));
+  const lastRow = Math.max(3, rows.length + 3);
+  const allRows = [];
+  allRows.push(`<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(title)}</t></is></c></row>`);
+  allRows.push(`<row r="2"><c r="A2" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(subtitle || "")}</t></is></c></row>`);
+  allRows.push(`<row r="3">${headers.map((value, index) => sheetCell(value, `${excelColumnName(index + 1)}3`)).join("")}</row>`);
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 4;
+    const normalized = headers.map((_, columnIndex) => row?.[columnIndex] ?? "");
+    allRows.push(`<row r="${rowNumber}">${normalized.map((value, columnIndex) => sheetCell(value, `${excelColumnName(columnIndex + 1)}${rowNumber}`)).join("")}</row>`);
+  });
+
+  const dimension = `A1:${lastColumn}${lastRow}`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="${dimension}"/><sheetData>${allRows.join("")}</sheetData></worksheet>`;
+}
+
+function buildXlsxFromSheets(sheets) {
+  const usedNames = new Set();
+  const normalizedSheets = sheets.map((sheet) => ({ ...sheet, name: safeExcelSheetName(sheet.name, usedNames) }));
+  const workbookSheets = normalizedSheets.map((sheet, index) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}"${sheet.hidden ? ` state="hidden"` : ""} r:id="rId${index + 1}"/>`).join("");
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>`;
-  const workbookRels = sheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("");
+  const workbookRels = normalizedSheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("");
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
-  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`;
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${normalizedSheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`;
   const workbookRelationships = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${workbookRels}</Relationships>`;
   const entries = [
     { name: "[Content_Types].xml", text: contentTypes },
     { name: "_rels/.rels", text: rels },
     { name: "xl/workbook.xml", text: workbook },
     { name: "xl/_rels/workbook.xml.rels", text: workbookRelationships },
-    ...sheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, text: sheetXml(sheet.headers, sheet.rows) })),
+    ...normalizedSheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, text: sheetXml(sheet) })),
   ];
   return zipStored(entries);
+}
+
+export function buildXlsx(backup) {
+  return buildXlsxFromSheets(makeSheets(backup));
+}
+
+async function buildHumanWorkbookEntries() {
+  // CLEAN 41 intentionally creates ONE human workbook. Separate table-by-table
+  // XLSX files were confusing and made it harder to guarantee compatibility.
+  return [];
 }
 
 export async function downloadBlob(blob, filename) {
@@ -315,17 +697,8 @@ export async function prepareBackupFiles(db) {
   const jsonText = JSON.stringify(backup, null, 2);
   const xlsxBlob = buildXlsx(backup);
   const jsonBlob = new Blob([jsonText], { type: "application/json" });
-  const readme = [
-    "RAN ONLINE EP7 CLASSIC — COMPLETE LOCAL BACKUP",
-    `Backup date: ${now.toLocaleString()}`,
-    "",
-    "This backup contains two matching formats:",
-    "1. JSON — exact machine restore format.",
-    "2. XLSX — organized human-readable workbook containing the exact JSON payload in the Backup JSON sheet.",
-    "",
-    "Either JSON or XLSX can be imported back into the Administrator Portal.",
-  ].join("\n");
-
+  const readme = buildBackupReadme(backup, folder);
+  const individualExcel = await buildHumanWorkbookEntries();
   return {
     backup,
     folder,
@@ -333,39 +706,110 @@ export async function prepareBackupFiles(db) {
     jsonText,
     jsonBlob,
     xlsxBlob,
-    jsonName: `${folder}/${folder}_CONSOLIDATED.json`,
-    xlsxName: `${folder}/${folder}_CONSOLIDATED.xlsx`,
+    individualExcel,
+    jsonName: `${folder}/${folder}.json`,
+    xlsxName: `${folder}/${folder}.xlsx`,
     readmeName: `${folder}/README.txt`,
     readme,
   };
 }
 
+async function saveBackupMetadata(db, metadata) {
+  const backupRef = doc(collection(db, "adminBackups"));
+  await setDoc(backupRef, { ...metadata, createdAt: serverTimestamp() });
+  return backupRef.id;
+}
+
+async function buildCompleteBackupZip(files) {
+  const entries = [
+    { name: files.jsonName, text: files.jsonText },
+    { name: files.xlsxName, bytes: new Uint8Array(await files.xlsxBlob.arrayBuffer()) },
+    { name: files.readmeName, text: files.readme },
+  ];
+  return zipStored(entries, "application/zip");
+}
+
+function buildBackupReadme(backup, folder) {
+  const totalDocuments = Object.values(backup.collections || {}).reduce((sum, rows) => sum + (rows?.length || 0), 0);
+  return [
+    "RAN ONLINE EP7 CLASSIC — COMPLETE GUILD BACKUP",
+    `Backup date: ${new Date(backup.exportedAt).toLocaleString()}`,
+    `Collections: ${Object.keys(backup.collections || {}).length}`,
+    `Records: ${totalDocuments}`,
+    "",
+    "FILES",
+    "-----",
+    `1. ${folder}.xlsx — one human-readable workbook for normal people to read and manage.`,
+    `2. ${folder}.json — exact machine-readable restore backup containing all Firebase data.`,
+    "3. README.txt — this explanation.",
+    "",
+    "EXCEL WORKBOOK",
+    "The workbook uses simple Excel worksheets with clear human headers. Technical/security collections are preserved in the exact JSON backup instead of being exposed as confusing management sheets.",
+    "The workbook also contains a hidden Backup JSON sheet so the application can restore an XLSX backup when needed.",
+    "",
+    "RESTORE",
+    "Use Administrator Portal → Backup / Restore. JSON is the preferred exact restore format; XLSX is supported for application-generated backups.",
+    "",
+    "NO FIREBASE STORAGE",
+    "Backup files are downloaded locally. Firebase stores only lightweight backup metadata.",
+  ].join("\n");
+}
+
+export async function saveBackupAndDownload(db, { actorUid = "", actor = "Administrator" } = {}) {
+  const files = await prepareBackupFiles(db);
+  const metadata = {
+    folder: files.folder,
+    backupDate: files.backup.exportedAt,
+    actorUid,
+    actor,
+    storage: "local-download",
+    collectionCount: Object.keys(files.backup.collections || {}).length,
+    documentCount: Object.values(files.backup.collections || {}).reduce((sum, rows) => sum + (rows?.length || 0), 0),
+    includesConsolidatedXlsx: true,
+    includesIndividualExcelFolder: false,
+    workbookDesign: "single-human-readable-workbook-plus-exact-json",
+  };
+  const backupId = await saveBackupMetadata(db, metadata);
+  const bundle = await buildCompleteBackupZip(files);
+  await downloadBlob(bundle, `${files.folder}_COMPLETE_${files.stamp}.zip`);
+  return { files, metadata, backupId };
+}
+
+export async function saveBackupToChosenFolder(db) {
+  const files = await prepareBackupFiles(db);
+  if (typeof window === "undefined" || typeof window.showDirectoryPicker !== "function") throw new Error("Your browser does not support direct folder saving. Use BACKUP + DOWNLOAD BOTH • ZIP instead.");
+  const root = await window.showDirectoryPicker({ mode: "readwrite" });
+  const folder = await root.getDirectoryHandle(files.folder, { create: true });
+
+  const writeFile = async (parent, filename, content) => {
+    const handle = await parent.getFileHandle(filename, { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  };
+
+  await writeFile(folder, `${files.folder}.json`, files.jsonText);
+  await writeFile(folder, `${files.folder}.xlsx`, files.xlsxBlob);
+  await writeFile(folder, "README.txt", files.readme);
+  return files.backup;
+}
+
 export async function downloadBackup(db) {
   const files = await prepareBackupFiles(db);
-  const xlsxBytes = new Uint8Array(await files.xlsxBlob.arrayBuffer());
-
-  // Browsers commonly block multiple automatic downloads. The ZIP is the
-  // reliable cross-browser/mobile backup: it always contains BOTH JSON and XLSX
-  // in the dated RAN_TODAY folder, plus a README.
-  const bundle = zipStored([
-    { name: files.jsonName, text: files.jsonText },
-    { name: files.xlsxName, bytes: xlsxBytes },
-    { name: files.readmeName, text: files.readme },
-  ], "application/zip");
-
-  await downloadBlob(bundle, `${files.folder}_CONSOLIDATED_${files.stamp}.zip`);
+  const bundle = await buildCompleteBackupZip(files);
+  await downloadBlob(bundle, `${files.folder}_COMPLETE_${files.stamp}.zip`);
   return files.backup;
 }
 
 export async function downloadJsonBackup(db) {
   const files = await prepareBackupFiles(db);
-  await downloadBlob(files.jsonBlob, `${files.folder}_CONSOLIDATED.json`);
+  await downloadBlob(files.jsonBlob, `${files.folder}.json`);
   return files.backup;
 }
 
 export async function downloadXlsxBackup(db) {
   const files = await prepareBackupFiles(db);
-  await downloadBlob(files.xlsxBlob, `${files.folder}_CONSOLIDATED.xlsx`);
+  await downloadBlob(files.xlsxBlob, `${files.folder}.xlsx`);
   return files.backup;
 }
 

@@ -24,6 +24,8 @@ import {
   BACKUP_COLLECTIONS,
   archiveCollections,
   downloadBackup,
+  saveBackupAndDownload,
+  saveBackupToChosenFolder,
   downloadJsonBackup,
   downloadXlsxBackup,
   listArchives,
@@ -148,6 +150,8 @@ export default function AdminPage({ user, isAdmin }) {
       uid: user.uid,
       email: user.email || "",
       displayName: user.displayName || user.email || "Administrator",
+      role: "admin",
+      status: "active",
       active: true,
       lastSeenAt: serverTimestamp(),
     }, { merge: true }).catch(() => {});
@@ -268,6 +272,8 @@ export default function AdminPage({ user, isAdmin }) {
         uid: user.uid,
         email: email || user.email || "",
         displayName: name || email || "Administrator",
+        role: "admin",
+        status: "active",
         backupReminderDays: profile.backupReminderDays,
         active: true,
         updatedAt: serverTimestamp(),
@@ -379,6 +385,8 @@ export default function AdminPage({ user, isAdmin }) {
     try {
       await updateDoc(doc(db, "adminUsers", admin.id), {
         active,
+        role: "admin",
+        status: active ? "active" : "disabled",
         updatedAt: serverTimestamp(),
         updatedByUid: user.uid,
         updatedBy: actorName(user),
@@ -403,13 +411,29 @@ export default function AdminPage({ user, isAdmin }) {
     setError("");
     setMessage("");
     try {
-      await downloadBackup(db);
+      const saved = await saveBackupAndDownload(db, { actorUid: user.uid, actor: actorName(user) });
       await markBackupComplete();
-      setMessage("Backup created successfully. Open the downloaded RAN_TODAY folder inside the ZIP to find BOTH the matching JSON and XLSX files.");
+      setMessage(`Backup recorded in Firebase and downloaded locally. JSON + consolidated XLSX + a separate Excel folder of organized table-by-table XLSX files are inside ${saved.files.folder}. Firebase Storage is not used.`);
     } catch (err) {
       setError(err?.message || "Backup failed.");
     } finally {
       setBackupBusy(false);
+    }
+  }
+
+  async function exportToFolder() {
+    if (!isAdmin || backupBusy || backupFormatBusy) return;
+    setBackupFormatBusy("folder");
+    setError("");
+    setMessage("");
+    try {
+      await saveBackupToChosenFolder(db);
+      await markBackupComplete();
+      setMessage("Both JSON and XLSX were saved into the selected RAN_TODAY date folder.");
+    } catch (err) {
+      setError(err?.message || "Folder backup failed. Use the ZIP backup if your browser does not support folder access.");
+    } finally {
+      setBackupFormatBusy("");
     }
   }
 
@@ -773,14 +797,15 @@ export default function AdminPage({ user, isAdmin }) {
           <article className="admin-card admin-card-wide">
             <div className="admin-card-kicker">COMPLETE APPLICATION BACKUP</div>
             <h2>Export Everything</h2>
-            <p>One export produces a single dated RAN_TODAY bundle containing BOTH matching files: JSON for exact machine restore and XLSX for organized human-readable review. The XLSX also contains the exact JSON payload, so either file can be imported.</p>
+            <p>One export produces a single dated RAN_TODAY bundle containing BOTH matching files: JSON for exact machine restore and one XLSX workbook for normal people to read and manage. The XLSX keeps a hidden exact JSON payload so application-generated XLSX backups can also be restored.</p>
             <div className="admin-collection-chips">{BACKUP_COLLECTIONS.map((name) => <span key={name}>{name}</span>)}</div>
             <div className="backup-actions">
-              <button className="admin-btn primary large" disabled={backupBusy || backupFormatBusy} onClick={exportAll}>{backupBusy ? "CREATING BOTH FILES..." : "DOWNLOAD BOTH • ZIP"}</button>
+              <button className="admin-btn primary large" disabled={backupBusy || backupFormatBusy} onClick={exportAll}>{backupBusy ? "CREATING BOTH FILES..." : "BACKUP + DOWNLOAD BOTH • ZIP"}</button>
+              <button className="admin-btn" disabled={backupBusy || backupFormatBusy} onClick={exportToFolder}>{backupFormatBusy === "folder" ? "SAVING..." : "SAVE BOTH TO FOLDER"}</button>
               <button className="admin-btn" disabled={backupBusy || backupFormatBusy} onClick={() => exportSingleBackup("json")}>{backupFormatBusy === "json" ? "EXPORTING..." : "JSON ONLY"}</button>
               <button className="admin-btn" disabled={backupBusy || backupFormatBusy} onClick={() => exportSingleBackup("xlsx")}>{backupFormatBusy === "xlsx" ? "EXPORTING..." : "XLSX ONLY"}</button>
             </div>
-            <div className="backup-output-note"><strong>ZIP CONTENTS:</strong> RAN_TODAY_YYYY-MM-DD/ → consolidated JSON + consolidated XLSX + README. The XLSX contains the exact JSON payload in its <em>Backup JSON</em> sheet, so either format can be imported.</div>
+            <div className="backup-output-note"><strong>ZIP CONTENTS:</strong> RAN_TODAY_YYYY-MM-DD/ → <strong>one human-readable XLSX</strong> + <strong>one exact JSON restore file</strong> + README. The XLSX uses simple sheets such as Players, BH Attendance, BH Rewards, CW Attendance, CW Inventory, Treasury, Tickets, Activity Log, and Raid/CW Schedule. Technical/security data stays in the exact JSON backup. The hidden <em>Backup JSON</em> sheet is only for XLSX restore support.</div>
           </article>
 
           <article className="admin-card">

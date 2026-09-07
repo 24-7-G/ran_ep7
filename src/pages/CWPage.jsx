@@ -1,7 +1,7 @@
 /* Clan War page — 3-tab navigation + slide-down Activity & Notifications drawer. */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc,
+  addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { PRIMARY_TIMEZONE, GUILD_CLASSES } from "../lib/constants";
@@ -18,6 +18,7 @@ import cwWarIcon from "../icons/cw-war.svg";
 import guildWarArtwork from "../bosses/guild-war.png";
 import ranVIcon from "../assets/ran-v-icon.png";
 import "./CWPage.css";
+import "./LIVE_ATTENDANCE_STATUS_PATCH.css";
 
 const CW_DAYS = [
   { key: 0, label: "SUNDAY" },
@@ -35,6 +36,152 @@ const CLASS_ICONS = {
   Swordman: "⚔", Archer: "🏹", Gunner: "▰", Shaman: "✦", Extreme: "✹", Brawler: "✊",
 };
 
+
+
+/* =========================================================
+   TYPE + SELECT COMBOBOX
+   - Existing values are suggestions, not hard restrictions.
+   - Users may type a brand-new value and keep it.
+========================================================= */
+function TypeSelect({
+  value,
+  onChange,
+  options = [],
+  id,
+  placeholder = "Type or select...",
+  className = "",
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const rootRef = useRef(null);
+  const current = String(value ?? "");
+  const normalized = Array.from(new Map(
+    options
+      .map((option) => typeof option === "string" ? { value: option, label: option } : option)
+      .filter((option) => option && String(option.value ?? "").trim())
+      .map((option) => [String(option.value).trim().toLowerCase(), { value: String(option.value).trim(), label: String(option.label ?? option.value).trim() }])
+  ).values());
+  const query = current.toLowerCase().trim();
+  const filtered = normalized.filter((option) => !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query));
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const choose = (option) => {
+    onChange(option.value);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((index) => Math.min(index + 1, filtered.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Enter" && open && activeIndex >= 0 && filtered[activeIndex]) {
+      event.preventDefault();
+      choose(filtered[activeIndex]);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="ran-type-select" style={{ position: "relative", width: "100%" }}>
+      <input
+        id={id}
+        className={className}
+        value={current}
+        disabled={disabled}
+        autoComplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+          setActiveIndex(-1);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      {open && !disabled && (
+        <div
+          className="ran-type-select-menu"
+          role="listbox"
+          style={{
+            position: "absolute",
+            zIndex: 10000,
+            left: 0,
+            right: 0,
+            top: "calc(100% + 4px)",
+            maxHeight: 230,
+            overflowY: "auto",
+            padding: 5,
+            border: "1px solid rgba(0,183,255,.45)",
+            borderRadius: 8,
+            background: "#061923",
+            boxShadow: "0 14px 35px rgba(0,0,0,.55)",
+          }}
+        >
+          {filtered.length ? filtered.map((option, index) => (
+            <button
+              type="button"
+              key={`${option.value}-${index}`}
+              role="option"
+              aria-selected={activeIndex === index}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(option)}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "9px 10px",
+                border: 0,
+                borderRadius: 5,
+                background: activeIndex === index ? "rgba(0,183,255,.16)" : "transparent",
+                color: "#e9f7ff",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              {option.label}
+            </button>
+          )) : (
+            <div style={{ padding: "9px 10px", color: "#7899a8", fontSize: 11 }}>
+              NEW VALUE — press Enter or keep typing
+            </div>
+          )}
+          {current.trim() && !normalized.some((option) => option.value.toLowerCase() === current.trim().toLowerCase()) && (
+            <div style={{ padding: "7px 10px", marginTop: 3, borderTop: "1px solid rgba(74,138,162,.18)", color: "#62e6ff", fontSize: 10, fontWeight: 800 }}>
+              ✓ NEW VALUE: {current.trim()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function lower(value) { return String(value ?? "").trim().toLowerCase(); }
 function clean(v) { return v == null ? "" : String(v).trim(); }
 function num(v, fallback = 0) {
   const cleaned = typeof v === "string" ? v.replace(/,/g, "").trim() : v;
@@ -202,7 +349,7 @@ function NoticeItem({ item, timezone, onClick }) {
 
 export default function CWPage({ user, isAdmin }) {
   const { resolvedTimezone } = useGlobalDisplayTimezone();
-  const [players, setPlayers] = useState([]), [attendance, setAttendance] = useState([]), [schedules, setSchedules] = useState([]), [notices, setNotices] = useState([]), [treasuryEntries, setTreasuryEntries] = useState([]);
+  const [players, setPlayers] = useState([]), [attendance, setAttendance] = useState([]), [bhAttendance, setBhAttendance] = useState([]), [schedules, setSchedules] = useState([]), [notices, setNotices] = useState([]), [treasuryEntries, setTreasuryEntries] = useState([]);
   const [roleSettings, setRoleSettings] = useState({ roles: DEFAULT_ROLES });
   const [salarySettings, setSalarySettings] = useState({ byClass: {}, byClassRole: [] });
   const [loading, setLoading] = useState(true), [message, setMessage] = useState("");
@@ -217,7 +364,21 @@ export default function CWPage({ user, isAdmin }) {
   const [playerSearch, setPlayerSearch] = useState(""), [roleFilter, setRoleFilter] = useState("all"), [classFilter, setClassFilter] = useState("all"), [playerPage, setPlayerPage] = useState(1);
   const [historySearch, setHistorySearch] = useState(""), [historyPage, setHistoryPage] = useState(1);
   const [treasurySearch, setTreasurySearch] = useState(""), [treasuryCategoryFilter, setTreasuryCategoryFilter] = useState("all"), [treasuryDateFilter, setTreasuryDateFilter] = useState(""), [treasuryFrom, setTreasuryFrom] = useState(""), [treasuryTo, setTreasuryTo] = useState(""), [treasuryPage, setTreasuryPage] = useState(1);
-  const [playerModal, setPlayerModal] = useState(null), [playerForm, setPlayerForm] = useState({ ign: "", className: GUILD_CLASSES?.[0] || "Swordman", role: DEFAULT_ROLES[0] });
+  const [playerModal, setPlayerModal] = useState(null), [playerForm, setPlayerForm] = useState({ ign: "", className: GUILD_CLASSES?.[0] || "Swordman", role: DEFAULT_ROLES[0], weapon: "" });
+  const [bulkPlayerModal, setBulkPlayerModal] = useState(false), [bulkPlayerGroups, setBulkPlayerGroups] = useState([{ id: 1, igns: "", className: GUILD_CLASSES?.[0] || "Swordman", role: DEFAULT_ROLES[0], weapon: "" }]), [bulkPlayerSaving, setBulkPlayerSaving] = useState(false);
+  const [bulkAttendanceModal, setBulkAttendanceModal] = useState(false), [bulkAttendanceText, setBulkAttendanceText] = useState(""), [bulkAttendanceSaving, setBulkAttendanceSaving] = useState(false), [bulkAttendanceError, setBulkAttendanceError] = useState(""), [bulkAttendanceComment, setBulkAttendanceComment] = useState("");
+  const [cwBulkAttendanceDate, setCwBulkAttendanceDate] = useState("");
+  const [cwBulkAttendancePlayers, setCwBulkAttendancePlayers] = useState([]);
+  const [cwBulkAttendanceSearch, setCwBulkAttendanceSearch] = useState("");
+  const [cwBulkAttendanceClassFilter, setCwBulkAttendanceClassFilter] = useState("all");
+  const [cwBulkAttendanceStatusFilter, setCwBulkAttendanceStatusFilter] = useState("all");
+  const [cwBulkAttendancePage, setCwBulkAttendancePage] = useState(1);
+  const [bulkToolsModal, setBulkToolsModal] = useState(null), [bulkToolsText, setBulkToolsText] = useState(""), [bulkToolsDate, setBulkToolsDate] = useState(""), [bulkToolsSalary, setBulkToolsSalary] = useState(""), [bulkToolsItemId, setBulkToolsItemId] = useState(""), [bulkToolsQuantity, setBulkToolsQuantity] = useState("1"), [bulkToolsSaving, setBulkToolsSaving] = useState(false), [bulkToolsError, setBulkToolsError] = useState(""), [bulkToolsComment, setBulkToolsComment] = useState("");
+  const [bulkToolsFrom, setBulkToolsFrom] = useState(""), [bulkToolsTo, setBulkToolsTo] = useState(""), [bulkToolsSearch, setBulkToolsSearch] = useState(""), [bulkToolsPage, setBulkToolsPage] = useState(1), [bulkToolsSelected, setBulkToolsSelected] = useState([]);
+  const [bulkPlayerEditClass, setBulkPlayerEditClass] = useState("");
+  const [bulkPlayerEditRole, setBulkPlayerEditRole] = useState("");
+  const [bulkPlayerEditWeapon, setBulkPlayerEditWeapon] = useState("");
+  const [bulkAttendanceEditItemCost, setBulkAttendanceEditItemCost] = useState(""), [bulkAttendanceEditReceivedItem, setBulkAttendanceEditReceivedItem] = useState(""), [bulkAttendanceEditNotes, setBulkAttendanceEditNotes] = useState("");
   const [attendanceModal, setAttendanceModal] = useState(null), [attendanceForm, setAttendanceForm] = useState({ salaryGold: "", itemCostGold: "", receivedItem: "", notes: "", adminComment: "" });
   const [cwItems, setCwItems] = useState([]), [itemAssignments, setItemAssignments] = useState([]), [inventoryTransactions, setInventoryTransactions] = useState([]);
   const [inventoryTransactionsLoaded, setInventoryTransactionsLoaded] = useState(false);
@@ -262,6 +423,22 @@ export default function CWPage({ user, isAdmin }) {
             ...attendanceDoc.data(),
           }))
         );
+      }
+    );
+
+    const unsubscribeBhAttendance = onSnapshot(
+      collection(db, "bhAttendance"),
+      (snapshot) => {
+        setBhAttendance(
+          snapshot.docs.map((attendanceDoc) => ({
+            id: attendanceDoc.id,
+            ...attendanceDoc.data(),
+          }))
+        );
+      },
+      (error) => {
+        console.error("BH attendance listener error:", error);
+        setBhAttendance([]);
       }
     );
 
@@ -368,6 +545,7 @@ export default function CWPage({ user, isAdmin }) {
     return () => {
       unsubscribePlayers();
       unsubscribeAttendance();
+      unsubscribeBhAttendance();
       unsubscribeItems();
       unsubscribeItemAssignments();
       unsubscribeInventoryTransactions();
@@ -397,6 +575,38 @@ export default function CWPage({ user, isAdmin }) {
   const currentOccurrence = occurrences.find(o => o.key === todayKey);
   const todayOccurrence = currentOccurrence || null;
   const shownOccurrence = selectedOccurrence || currentOccurrence || nextOccurrence;
+
+  // LIVE CW ATTENDANCE STATUS — additive only.
+  // This status is derived from today's scheduled occurrence and never
+  // changes historical attendance, salary, item, notice, or audit data.
+  const cwLiveStatusByPlayer = useMemo(() => {
+    const todayOccurrences = occurrences
+      .filter(o => o.key === todayKey)
+      .sort((a, b) => (safeDate(a.at)?.getTime() || 0) - (safeDate(b.at)?.getTime() || 0));
+    const nowMs = now.getTime();
+    const completed = todayOccurrences.filter(o => (safeDate(o.at)?.getTime() || Infinity) <= nowMs);
+    const latest = completed[completed.length - 1] || null;
+    const upcoming = todayOccurrences.find(o => (safeDate(o.at)?.getTime() || Infinity) > nowMs) || null;
+    const result = {};
+
+    players.forEach(p => {
+      if (!todayOccurrences.length) {
+        result[String(p.id)] = { state: "none", label: "NO CW TODAY", occurrence: null };
+        return;
+      }
+      if (!latest && upcoming) {
+        result[String(p.id)] = { state: "upcoming", label: "UPCOMING", occurrence: upcoming };
+        return;
+      }
+      const attended = attendance.some(r => String(r.playerId) === String(p.id) && clean(r.dateKey) === latest.key);
+      result[String(p.id)] = {
+        state: attended ? "attended" : "missed",
+        label: attended ? "ATTENDED" : "DID NOT ATTEND",
+        occurrence: latest,
+      };
+    });
+    return result;
+  }, [occurrences, todayKey, now, players, attendance]);
   const inventoryStock = useMemo(() => {
     const map = {};
     const addStock = (idValue, quantityValue, direction) => {
@@ -455,7 +665,7 @@ export default function CWPage({ user, isAdmin }) {
   const rosterPlayers = useMemo(() => players.slice().sort((a, b) => playerLatestUpdateMs(b) - playerLatestUpdateMs(a) || ((a.active === false ? 1 : 0) - (b.active === false ? 1 : 0)) || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" })), [players, attendance, itemAssignments]);
   const classes = useMemo(() => Array.from(new Set([...(GUILD_CLASSES || []), ...players.map(p => clean(p.className || p.class)).filter(Boolean)])), [players]);
   const roles = useMemo(() => Array.from(new Set([...(roleSettings.roles || DEFAULT_ROLES), ...players.map(p => clean(p.role)).filter(Boolean)])), [roleSettings, players]);
-  const filteredPlayers = useMemo(() => { const q = playerSearch.toLowerCase().trim(); return rosterPlayers.filter(p => (!q || [p.ign, p.className || p.class, p.role].some(v => clean(v).toLowerCase().includes(q))) && (classFilter === "all" || clean(p.className || p.class) === classFilter) && (roleFilter === "all" || clean(p.role) === roleFilter)) }, [rosterPlayers, playerSearch, classFilter, roleFilter]);
+  const filteredPlayers = useMemo(() => { const q = playerSearch.toLowerCase().trim(); return rosterPlayers.filter(p => (!q || [p.ign, p.className || p.class, p.role, p.weapon].some(v => clean(v).toLowerCase().includes(q))) && (classFilter === "all" || clean(p.className || p.class) === classFilter) && (roleFilter === "all" || clean(p.role) === roleFilter)) }, [rosterPlayers, playerSearch, classFilter, roleFilter]);
   const playerPageCount = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
   const visiblePlayers = filteredPlayers.slice((playerPage - 1) * PAGE_SIZE, playerPage * PAGE_SIZE);
   const historyRows = useMemo(() => attendance.filter(r => !historySearch.trim() || [r.ign, r.className, r.role, r.receivedItem, r.notes].some(v => clean(v).toLowerCase().includes(historySearch.toLowerCase().trim()))).sort((a, b) => updatedTimeMs(b, "updatedAt", "createdAt") - updatedTimeMs(a, "updatedAt", "createdAt")), [attendance, historySearch]);
@@ -533,8 +743,352 @@ export default function CWPage({ user, isAdmin }) {
     } catch (e) { console.error(e) }
   }
 
-  function openAddPlayer() { setPlayerForm({ ign: "", className: classes[0] || "Swordman", role: roles[0] || DEFAULT_ROLES[0] }); setPlayerModal({ mode: "add" }) }
-  function openEditPlayer(p) { setPlayerForm({ ign: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role) || roles[0] }); setPlayerModal({ mode: "edit", player: p }) }
+  const cwBulkRawLines = (value) => String(value || "").split(/\r?\n/).map(clean).filter(Boolean);
+  const cwBulkLines = (value) => Array.from(new Set(cwBulkRawLines(value)));
+  function openBulkPlayerModal() { if (!isAdmin) return; setBulkPlayerGroups([{ id: Date.now(), igns: "", className: classes[0] || "Swordman", role: roles[0] || DEFAULT_ROLES[0], weapon: "" }]); setBulkPlayerModal(true); setMessage(""); }
+  async function saveBulkPlayers() {
+    if (!isAdmin) return; const existing = new Set(players.map(p => clean(p.ign).toLowerCase()).filter(Boolean)), seen = new Set(), entries = [], errors = [];
+    bulkPlayerGroups.forEach((g, i) => { const lines = cwBulkLines(g.igns); if (!lines.length) return; if (!clean(g.className)) errors.push(`Group ${i + 1}: class is required.`); if (!clean(g.role)) errors.push(`Group ${i + 1}: role is required.`); lines.forEach(ign => { const key = ign.toLowerCase(); if (existing.has(key)) errors.push(`${ign} already exists in the CW roster.`); else if (seen.has(key)) errors.push(`${ign} is listed more than once.`); else { seen.add(key); entries.push({ ign, className: clean(g.className), role: clean(g.role), weapon: clean(g.weapon) }); } }); });
+    if (!entries.length) errors.push("Enter at least one IGN."); if (errors.length) { setMessage(errors.slice(0, 12).join(" ")); return; } setBulkPlayerSaving(true); setMessage("");
+    try { const batch = writeBatch(db), refs = entries.map(() => doc(collection(db, "cwPlayers"))); entries.forEach((e, i) => batch.set(refs[i], { ign: e.ign, className: e.className, role: e.role, weapon: e.weapon, active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null })); await batch.commit(); await audit({ category: "PLAYER", title: "CW PLAYERS ADDED IN BULK", message: `${entries.length} players were added to the Clan War roster in bulk.`, entityType: "cw-player-bulk", details: entries.map((e, i) => `${i + 1}. ${e.ign} • ${e.className} • ${e.role}${e.weapon ? ` • Preferred Weapon: ${e.weapon}` : ""}`).concat([`Added by: ${actor(user)}`]) }); setBulkPlayerModal(false); setPlayerModal(null); setMessage(`${entries.length} player${entries.length === 1 ? "" : "s"} saved.`); } catch (e) { setMessage(e?.message || "Unable to save players in bulk."); } finally { setBulkPlayerSaving(false); }
+  }
+  const cwBulkAttendanceDateOptions = useMemo(() => Array.from(new Set(occurrences.map(o => o?.key).filter(Boolean))).sort((a, b) => b.localeCompare(a)), [occurrences]);
+  const cwBulkSelectedOccurrence = useMemo(() => occurrences.find(o => o?.key === cwBulkAttendanceDate) || null, [occurrences, cwBulkAttendanceDate]);
+  const hasCWAttendanceForDate = (playerId, dateValue) => attendance.some(r => String(r.playerId) === String(playerId) && clean(r.dateKey) === clean(dateValue));
+  const cwBulkAttendanceVisiblePlayers = useMemo(() => {
+    const q = clean(cwBulkAttendanceSearch).toLowerCase();
+    return players
+      .filter(p => p.active !== false)
+      .filter(p => cwBulkAttendanceClassFilter === "all" || clean(p.className || p.class) === cwBulkAttendanceClassFilter)
+      .filter(p => {
+        if (cwBulkAttendanceStatusFilter === "all") return true;
+        const attended = hasCWAttendanceForDate(p.id, cwBulkAttendanceDate);
+        return cwBulkAttendanceStatusFilter === "attended" ? attended : !attended;
+      })
+      .filter(p => !q || [p.ign, p.className, p.class, p.role, p.weapon].some(v => clean(v).toLowerCase().includes(q)))
+      .sort((a, b) => clean(a.ign).localeCompare(clean(b.ign), undefined, { sensitivity: "base", numeric: true }));
+  }, [players, attendance, cwBulkAttendanceDate, cwBulkAttendanceSearch, cwBulkAttendanceClassFilter, cwBulkAttendanceStatusFilter]);
+  const cwBulkAttendancePageCount = Math.max(1, Math.ceil(cwBulkAttendanceVisiblePlayers.length / 5));
+  const cwBulkAttendanceSafePage = Math.min(Math.max(1, cwBulkAttendancePage), cwBulkAttendancePageCount);
+  const cwBulkAttendancePageRows = cwBulkAttendanceVisiblePlayers.slice((cwBulkAttendanceSafePage - 1) * 5, cwBulkAttendanceSafePage * 5);
+
+  function openBulkAttendance() {
+    if (!isAdmin) return;
+    const preferredDate = cwBulkAttendanceDateOptions.includes(todayKey) ? todayKey : (cwBulkAttendanceDateOptions[0] || todayKey);
+    setBulkToolsModal(null);
+    setPlayerModal(null);
+    setCwBulkAttendanceDate(preferredDate);
+    setCwBulkAttendancePlayers([]);
+    setCwBulkAttendanceSearch("");
+    setCwBulkAttendanceClassFilter("all");
+    setCwBulkAttendanceStatusFilter("all");
+    setCwBulkAttendancePage(1);
+    setBulkAttendanceText("");
+    setBulkAttendanceComment("");
+    setBulkAttendanceError("");
+    setBulkAttendanceSaving(false);
+    setBulkAttendanceModal(true);
+  }
+  const toggleCwBulkAttendancePlayer = (playerId) => {
+    const id = String(playerId);
+    setCwBulkAttendancePlayers(cur => cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]);
+  };
+  const toggleCwBulkAttendancePage = () => {
+    const ids = cwBulkAttendancePageRows.map(p => String(p.id));
+    setCwBulkAttendancePlayers(cur => ids.length && ids.every(id => cur.includes(id))
+      ? cur.filter(id => !ids.includes(id))
+      : Array.from(new Set([...cur, ...ids]))
+    );
+  };
+  async function saveBulkAttendance() {
+    if (!isAdmin || bulkAttendanceSaving) return;
+    const occurrence = cwBulkSelectedOccurrence;
+    if (!occurrence) { setBulkAttendanceError("Select a saved scheduled CW date before saving."); return; }
+    if (!cwBulkAttendancePlayers.length) { setBulkAttendanceError("Select at least one player."); return; }
+    if (!clean(bulkAttendanceComment)) { setBulkAttendanceError("Admin comment is required for bulk attendance."); return; }
+    const selectedPlayers = players.filter(p => cwBulkAttendancePlayers.includes(String(p.id)) && p.active !== false);
+    if (!selectedPlayers.length) { setBulkAttendanceError("No active roster players are selected."); return; }
+    const pending = [], skipped = [];
+    selectedPlayers.forEach(p => hasCWAttendanceForDate(p.id, occurrence.key) ? skipped.push(p) : pending.push(p));
+    if (!pending.length) { setBulkAttendanceError(`All ${skipped.length} selected player${skipped.length === 1 ? "" : "s"} already attended CW for ${occurrence.key}. Nothing new was recorded.`); return; }
+    setBulkAttendanceSaving(true); setBulkAttendanceError("");
+    try {
+      for (let start = 0; start < pending.length; start += 400) {
+        const chunk = pending.slice(start, start + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(p => {
+          const ref = doc(collection(db, "cwAttendance"));
+          const salary = getDefaultCwSalary(p);
+          batch.set(ref, {
+            playerId: String(p.id), ign: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role),
+            dateKey: occurrence.key, scheduledTime: occurrence.time, scheduledTimezone: baseTz, scheduledAt: occurrence.at,
+            attended: true, salaryGold: salary, itemCostGold: 0, receivedItem: "", notes: "", manualOverride: false,
+            adminComment: clean(bulkAttendanceComment), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null,
+            updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null,
+          });
+          if (salary > 0) {
+            const treasuryRef = doc(collection(db, "treasuryEntries"));
+            batch.set(treasuryRef, {
+              type: "cw-salary", ledgerType: "salary", direction: "out", amount: -Math.abs(salary), playerId: String(p.id),
+              playerName: clean(p.ign), dateKey: occurrence.key, description: `CW salary — ${p.ign}`, item: "",
+              sourceAttendanceId: String(ref.id), sourceModule: "cw-attendance", transactionAt: occurrence.at,
+              createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null,
+              updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null,
+            });
+          }
+          batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        });
+        await batch.commit();
+      }
+      await audit({
+        category: "ATTENDANCE", module: "cw-attendance", title: "CW ATTENDANCE RECORDED",
+        message: `${pending.length} players were marked attended for ${occurrence.key}.`, entityType: "cw-attendance-bulk",
+        relatedModules: ["cw-attendance", "cw-treasury"],
+        details: [
+          `New records: ${pending.length}`, `Already attended / skipped: ${skipped.length}`,
+          ...pending.map(p => `${p.ign} • ${p.className || p.class} • ${p.role || "—"} • Salary ₲ ${money(getDefaultCwSalary(p))}`),
+          `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`, `Admin comment: ${clean(bulkAttendanceComment)}`,
+          `Recorded by: ${actor(user)}`,
+        ],
+      });
+      setBulkAttendanceModal(false);
+      setMessage(`${pending.length} CW attendance record${pending.length === 1 ? "" : "s"} saved. ${skipped.length ? `${skipped.length} already attended and skipped.` : ""}`.trim());
+    } catch (e) {
+      console.error(e); setBulkAttendanceError(e?.message || "Unable to save bulk CW attendance. Nothing further was saved.");
+    } finally { setBulkAttendanceSaving(false); }
+  }
+  function openBulkTools(mode) {
+    if (!isAdmin) return;
+    setBulkAttendanceModal(false);
+    setPlayerModal(null);
+    setBulkToolsText("");
+    setBulkToolsDate(todayOccurrence?.key || "");
+    setBulkToolsFrom("");
+    setBulkToolsTo("");
+    setBulkToolsSearch("");
+    setBulkToolsPage(1);
+    setBulkToolsSelected([]);
+    setBulkToolsSalary("");
+    setBulkToolsItemId(cwItems.find(i => i.active !== false)?.id || "");
+    setBulkToolsQuantity("1");
+    setBulkAttendanceEditItemCost("");
+    setBulkAttendanceEditReceivedItem("");
+    setBulkAttendanceEditNotes("");
+    setBulkToolsComment("");
+    setBulkToolsError("");
+    setBulkPlayerEditClass(""); setBulkPlayerEditRole(""); setBulkPlayerEditWeapon("");
+    setBulkToolsModal(mode);
+  }
+
+  const bulkSelectionRows = useMemo(() => {
+    let rows;
+    if (["player-edit", "player-disable", "player-delete", "item-assign"].includes(bulkToolsModal)) {
+      rows = players.map(p => ({ id: String(p.id), type: "player", p, ign: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role), dateKey: "", timeKey: "", sortAt: playerLatestUpdateMs(p), status: p.active === false ? "DISABLED" : "ACTIVE" }));
+    } else if (["item-edit", "item-delete"].includes(bulkToolsModal)) {
+      rows = itemAssignments.map(a => { const p = players.find(x => String(x.id) === String(a.playerId)); return { id: String(a.id), type: "item", assignment: a, p, ign: clean(a.playerName || p?.ign), className: clean(p?.className || p?.class), role: clean(p?.role), itemName: clean(a.itemName), quantity: Math.max(0, Math.floor(num(a.quantity,0))), dateKey: clean(a.dateKey), timeKey: clean(a.scheduledTime || (safeDate(a.scheduledAt) ? formatDateTime(a.scheduledAt, resolvedTimezone) : "")), sortAt: updatedTimeMs(a, "scheduledAt", "createdAt"), status: "ASSIGNED" }; });
+    } else {
+      rows = attendance.map(r => { const p = players.find(x => String(x.id) === String(r.playerId)); return { id: String(r.id), type: "attendance", row: r, p, ign: clean(r.ign || p?.ign), className: clean(r.className || p?.className || p?.class), role: clean(r.role || p?.role), dateKey: clean(r.dateKey), timeKey: clean(r.scheduledTime || (safeDate(r.scheduledAt) ? formatDateTime(r.scheduledAt, resolvedTimezone) : "")), salary: num(r.salaryGold,0), itemCost: num(r.itemCostGold,0), sortAt: updatedTimeMs(r, "scheduledAt", "createdAt"), status: r.attended === false ? "DID NOT ATTEND" : "ATTENDED" }; });
+    }
+    return rows.sort((a, b) => b.sortAt - a.sortAt || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" }));
+  }, [bulkToolsModal, players, attendance, itemAssignments, resolvedTimezone]);
+  const bulkFilteredRows = useMemo(() => { const q=clean(bulkToolsSearch).toLowerCase(); return bulkSelectionRows.filter(x => (!bulkToolsFrom || !x.dateKey || x.dateKey >= bulkToolsFrom) && (!bulkToolsTo || !x.dateKey || x.dateKey <= bulkToolsTo) && (!q || [x.ign,x.className,x.role,x.itemName,x.dateKey,x.timeKey,x.status].some(v=>clean(v).toLowerCase().includes(q)))); }, [bulkSelectionRows, bulkToolsFrom, bulkToolsTo, bulkToolsSearch]);
+  const bulkPageCount = Math.max(1, Math.ceil(bulkFilteredRows.length / 5));
+  const bulkSafePage = Math.min(Math.max(1, bulkToolsPage), bulkPageCount);
+  const bulkVisibleRows = bulkFilteredRows.slice((bulkSafePage-1)*5, bulkSafePage*5);
+  const toggleBulkSelection = (id) => setBulkToolsSelected(current => current.includes(String(id)) ? current.filter(x=>x!==String(id)) : [...current,String(id)]);
+  const toggleBulkPage = () => { const ids=bulkVisibleRows.map(x=>String(x.id)); setBulkToolsSelected(current => ids.every(id=>current.includes(id)) ? current.filter(id=>!ids.includes(id)) : Array.from(new Set([...current,...ids]))); };
+
+  async function saveBulkSalaryChange() {
+    if (!isAdmin) return;
+    const selectedRows = bulkSelectionRows.filter(x => bulkToolsSelected.includes(String(x.id)));
+    const date = clean(bulkToolsDate), salary = num(bulkToolsSalary, 0);
+    if (!selectedRows.length) { setBulkToolsError("Select at least one existing CW attendance record from the table."); return; }
+    if (salary < 0) { setBulkToolsError("Salary cannot be negative."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk salary changes."); return; }
+    const rows = [], errors = [];
+    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({ p:x.p, row:x.row }); });
+    if (errors.length) { setBulkToolsError(errors.slice(0, 20).join(" • ")); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      const batch = writeBatch(db);
+      for (const { p, row } of rows) {
+        batch.update(doc(db, "cwAttendance", row.id), { salaryGold: salary, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, adminComment: clean(bulkToolsComment) });
+        const salaryEntries = treasuryEntries.filter(e => String(e.sourceAttendanceId || "") === String(row.id) && (e.type === "cw-salary" || e.ledgerType === "salary"));
+        const current = salaryEntries[0];
+        if (salary > 0) {
+          const data = { type: "cw-salary", ledgerType: "salary", direction: "out", amount: -Math.abs(salary), playerId: String(p.id), playerName: clean(p.ign), dateKey: clean(row.dateKey) || date, description: `CW salary — ${p.ign}`, item: "", sourceAttendanceId: String(row.id), sourceModule: "cw-attendance", transactionAt: safeDate(row.scheduledAt) || new Date(), updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, adminComment: clean(bulkToolsComment) };
+          if (current) batch.update(doc(db, "treasuryEntries", current.id), data); else batch.set(doc(collection(db, "treasuryEntries")), { ...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null });
+        } else salaryEntries.forEach(e => batch.delete(doc(db, "treasuryEntries", e.id)));
+        batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+      }
+      await batch.commit();
+      await audit({ category: "SALARY", module: "cw-attendance", title: "CW BULK SALARY UPDATED", message: `${rows.length} CW salary record${rows.length === 1 ? "" : "s"} updated from the selected existing records.`, entityType: "cw-salary-bulk", details: rows.map(({ p, row }) => `${p.ign}: ₲ ${money(row.salaryGold)} → ₲ ${money(salary)}`).concat([`CW dates: ${Array.from(new Set(rows.map(({row}) => clean(row.dateKey)).filter(Boolean))).join(", ") || date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
+      setBulkToolsModal(null); setMessage(`${rows.length} CW salary record${rows.length === 1 ? "" : "s"} updated. Treasury synchronized.`);
+    } catch (e) { console.error(e); setBulkToolsError(e?.message || "Unable to update bulk salaries. Nothing was saved."); } finally { setBulkToolsSaving(false); }
+  }
+
+  async function saveBulkItemTool(action = "assign") {
+    if (!isAdmin) return;
+    const selectedRows = bulkSelectionRows.filter(x => bulkToolsSelected.includes(String(x.id)));
+    const date = clean(bulkToolsDate), qty = Math.max(1, Math.floor(num(bulkToolsQuantity, 0))), item = cwItems.find(i => String(i.id) === String(bulkToolsItemId));
+    if (!selectedRows.length && action !== "assign") { setBulkToolsError("Select existing item assignments from the table."); return; }
+    if (!selectedRows.length && action === "assign") { setBulkToolsError("Select at least one roster player from the table."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk item changes."); return; }
+    let rows = [], errors = [];
+    selectedRows.forEach(x => { const p=x.p || x.player; if (!p) errors.push(`${x.ign || "Record"}: NOT FOUND`); else if (p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push(p); });
+    if (action === "assign" && (!item || item.active === false)) errors.push("Select an active inventory item.");
+    const targetOccurrence = occurrences.find(o => clean(o.key) === date) || null;
+    if (action === "assign" && !targetOccurrence) errors.push("Select a scheduled CW occurrence. An arbitrary date cannot create an item assignment.");
+    if (errors.length) { setBulkToolsError(errors.slice(0, 20).join(" • ")); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      const batch = writeBatch(db);
+      let skippedAssignments = [];
+      if (action === "assign") {
+        // Idempotent bulk assignment: the same player + item + CW date is
+        // treated as already assigned. Never create a second assignment or
+        // a second inventory transaction for the same logical distribution.
+        const existingAssignments = itemAssignments.filter(a =>
+          clean(a.dateKey) === date &&
+          String(a.itemId || "") === String(item.id) &&
+          rows.some(p => String(p.id) === String(a.playerId))
+        );
+        const existingKeys = new Set(existingAssignments.map(a => `${String(a.playerId)}|${String(a.itemId)}|${clean(a.dateKey)}`));
+        const newRows = rows.filter(p => !existingKeys.has(`${String(p.id)}|${String(item.id)}|${date}`));
+        skippedAssignments = rows.filter(p => existingKeys.has(`${String(p.id)}|${String(item.id)}|${date}`));
+        if (!newRows.length) throw new Error(`All ${rows.length} selected player${rows.length === 1 ? "" : "s"} already have this item assigned for ${date}. Nothing new was created.`);
+        const stock = stockForItem(item.id);
+        const totalQty = qty * newRows.length;
+        if (stock.available < totalQty) throw new Error(`${item.name}: only ${stock.available} in stock; ${totalQty} requested.`);
+        rows = newRows;
+        rows.forEach(p => {
+          const assignmentRef = doc(collection(db, "cwItemAssignments")), invRef = doc(collection(db, "cwInventoryTransactions"));
+          const totalCost = num(item.unitCost) * qty;
+          batch.set(assignmentRef, { playerId: String(p.id), playerName: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role), itemId: String(item.id), itemName: clean(item.name), unitCost: num(item.unitCost), quantity: qty, totalCost, dateKey: date, scheduledAt: targetOccurrence?.at || buildOccurrence(date, schedule.time, baseTz), scheduledTime: targetOccurrence?.time || schedule.time, scheduledTimezone: baseTz, notes: "", adminComment: clean(bulkToolsComment), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, inventoryTransactionId: invRef.id });
+          batch.set(invRef, { type: "assignment", direction: "out", itemId: String(item.id), itemName: clean(item.name), quantity: qty, unitCost: num(item.unitCost), totalCost, playerId: String(p.id), playerName: clean(p.ign), sourceAssignmentId: assignmentRef.id, source: "player-distribution", dateKey: date, scheduledAt: targetOccurrence?.at || buildOccurrence(date, schedule.time, baseTz), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null });
+          batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        });
+      } else {
+        for (const p of rows) {
+          const matches = selectedRows.filter(x => x.type === "item" && x.p && String(x.p.id) === String(p.id)).map(x => x.assignment).filter(Boolean);
+          if (!matches.length) { errors.push(`${p.ign}: NO SELECTED ITEM ASSIGNMENT`); continue; }
+          for (const a of matches) {
+            if (action === "delete") {
+              if (a.inventoryTransactionId) batch.delete(doc(db, "cwInventoryTransactions", a.inventoryTransactionId));
+              batch.delete(doc(db, "cwItemAssignments", a.id));
+            } else {
+              const stock = stockForItem(a.itemId), oldQty = Math.max(0, Math.floor(num(a.quantity, 0))), availableForEdit = stock.available + oldQty;
+              if (availableForEdit < qty) throw new Error(`${a.itemName} for ${p.ign}: only ${availableForEdit} available for this edit.`);
+              const totalCost = num(a.unitCost) * qty;
+              batch.update(doc(db, "cwItemAssignments", a.id), { quantity: qty, totalCost, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, adminComment: clean(bulkToolsComment) });
+              if (a.inventoryTransactionId) batch.update(doc(db, "cwInventoryTransactions", a.inventoryTransactionId), { quantity: qty, totalCost, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+            }
+          }
+        }
+        if (errors.length) throw new Error(errors.slice(0, 20).join(" • "));
+      }
+      await batch.commit();
+      await audit({ category: "ITEM", module: "cw-item", title: `CW BULK ITEM ${action.toUpperCase()}`, message: `${rows.length} selected player${rows.length === 1 ? "" : "s"} had a bulk item ${action}.`, entityType: "cw-item-bulk", details: [`Date: ${date}`, `Item: ${item?.name || "Matched existing assignments"}`, `Quantity: ${qty}`, `Action: ${action.toUpperCase()}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`] });
+      setBulkToolsModal(null); setMessage(`Bulk item ${action} completed for ${rows.length} player${rows.length === 1 ? "" : "s"}.${skippedAssignments.length ? ` ${skippedAssignments.length} duplicate assignment${skippedAssignments.length === 1 ? "" : "s"} skipped.` : ""}`);
+    } catch (e) { console.error(e); setBulkToolsError(e?.message || `Unable to bulk ${action} items. Nothing was saved.`); } finally { setBulkToolsSaving(false); }
+  }
+
+  async function saveBulkAttendanceEdit() {
+    if (!isAdmin) return;
+    const selectedRows = bulkSelectionRows.filter(x => bulkToolsSelected.includes(String(x.id)));
+    const date = clean(bulkToolsDate);
+    const salary = bulkToolsSalary === "" ? null : num(bulkToolsSalary, 0);
+    const itemCost = bulkAttendanceEditItemCost === "" ? null : num(bulkAttendanceEditItemCost, 0);
+    if (!selectedRows.length) { setBulkToolsError("Select at least one existing CW attendance record from the table."); return; }
+    if ((salary !== null && salary < 0) || (itemCost !== null && itemCost < 0)) { setBulkToolsError("Salary and item cost cannot be negative."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk attendance edits."); return; }
+    const rows = [], errors = [];
+    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({p:x.p,row:x.row}); });
+    if (errors.length) { setBulkToolsError(errors.slice(0, 30).join(" • ")); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      const batch = writeBatch(db);
+      rows.forEach(({p,row}) => {
+        batch.update(doc(db, "cwAttendance", row.id), {
+          ...(salary !== null ? { salaryGold: salary } : {}),
+          ...(itemCost !== null ? { itemCostGold: itemCost } : {}),
+          ...(bulkAttendanceEditReceivedItem !== "" ? { receivedItem: clean(bulkAttendanceEditReceivedItem) } : {}),
+          ...(bulkAttendanceEditNotes !== "" ? { notes: clean(bulkAttendanceEditNotes) } : {}),
+          adminComment: clean(bulkToolsComment),
+          updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null
+        });
+        const prior = treasuryEntries.filter(e => String(e.sourceAttendanceId || "") === String(row.id));
+        const upsert = (type, amount, description, item) => {
+          const old = prior.find(e => e.ledgerType === type);
+          const data = { type: type === "salary" ? "cw-salary" : "item-purchase", ledgerType: type, direction: "out", amount: -Math.abs(amount), playerId: String(p.id), playerName: clean(p.ign), dateKey: clean(row.dateKey) || date, description, item: clean(item), sourceAttendanceId: String(row.id), sourceModule: "cw-attendance", transactionAt: safeDate(row.scheduledAt) || new Date(), updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, adminComment: clean(bulkToolsComment) };
+          if (amount > 0) {
+            if (old) batch.update(doc(db, "treasuryEntries", old.id), data);
+            else batch.set(doc(collection(db, "treasuryEntries")), {...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null});
+          } else if (old) batch.delete(doc(db, "treasuryEntries", old.id));
+        };
+        const effectiveSalary = salary === null ? num(row.salaryGold, 0) : salary;
+        const effectiveItemCost = itemCost === null ? num(row.itemCostGold, 0) : itemCost;
+        const effectiveItem = bulkAttendanceEditReceivedItem === "" ? clean(row.receivedItem) : clean(bulkAttendanceEditReceivedItem);
+        upsert("salary", effectiveSalary, `CW salary — ${p.ign}`, "");
+        upsert("item", effectiveItemCost, `CW item handed out — ${p.ign}`, effectiveItem);
+        batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+      });
+      await batch.commit();
+      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: "CW BULK ATTENDANCE UPDATED", message: `${rows.length} selected CW attendance record${rows.length===1?"":"s"} were corrected.`, entityType: "cw-attendance-bulk-management", relatedModules: ["cw-attendance","cw-treasury","cw-item"], details: rows.map(({p,row}) => `${p.ign}: salary ₲ ${money(row.salaryGold)} → ₲ ${money(salary === null ? row.salaryGold : salary)} • item cost ₲ ${money(row.itemCostGold)} → ₲ ${money(itemCost === null ? row.itemCostGold : itemCost)}`).concat([`Date: ${date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
+      setBulkToolsModal(null); setMessage(`${rows.length} CW attendance record${rows.length===1?"":"s"} updated and Treasury synchronized.`);
+    } catch(e) { console.error(e); setBulkToolsError(e?.message || "Unable to bulk edit attendance. Nothing was saved."); } finally { setBulkToolsSaving(false); }
+  }
+
+  async function saveBulkAttendanceTool(action = "delete") {
+    if (!isAdmin) return;
+    const selectedRows = bulkSelectionRows.filter(x => bulkToolsSelected.includes(String(x.id)));
+    const date = clean(bulkToolsDate);
+    if (!selectedRows.length) { setBulkToolsError("Select existing CW attendance records from the table."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk attendance changes."); return; }
+    const rows = [], errors = [];
+    selectedRows.forEach(x => { if (!x.row) errors.push(`${x.ign || "Record"}: NO ATTENDANCE RECORD SELECTED`); else rows.push(x.row); });
+    if (errors.length) { setBulkToolsError(errors.slice(0, 20).join(" • ")); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      const batch = writeBatch(db);
+      for (const row of rows) {
+        const prior = treasuryEntries.filter(e => String(e.sourceAttendanceId || "") === String(row.id));
+        const targets = action === "redo" ? prior.filter(e => e.type === "cw-salary" || e.ledgerType === "salary") : prior;
+        if (action === "delete" || action === "redo") {
+          targets.forEach(e => { const amount = Math.abs(num(e.amount)); if (amount) batch.set(doc(collection(db, "treasuryEntries")), { type: e.ledgerType === "item" ? "item-purchase-reversal" : "cw-salary-reversal", ledgerType: e.ledgerType || "salary", direction: "in", amount, playerId: row.playerId || null, playerName: row.ign || "", dateKey: clean(row.dateKey) || date, description: `Bulk reversal — ${row.ign || "player"}`, sourceAttendanceId: String(row.id), sourceModule: "cw-attendance", transactionAt: safeDate(row.scheduledAt) || new Date(), createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null, adminComment: clean(bulkToolsComment) }); });
+          batch.delete(doc(db, "cwAttendance", row.id));
+          if (row.playerId) batch.update(doc(db, "cwPlayers", row.playerId), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        }
+      }
+      await batch.commit();
+      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: `CW BULK ATTENDANCE ${action === "redo" ? "UNMARKED / REDO" : "DELETED"}`, message: `${rows.length} selected CW attendance record${rows.length === 1 ? "" : "s"} were ${action === "redo" ? "unmarked for redo" : "deleted"}.`, entityType: "cw-attendance-bulk-management", details: [`Action: ${action.toUpperCase()}`, `CW dates: ${Array.from(new Set(rows.map(r => clean(r.dateKey)).filter(Boolean))).join(", ") || date}`, `Players: ${rows.map(r => r.ign).join(", ")}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`] });
+      setBulkToolsModal(null); setMessage(`${rows.length} CW attendance record${rows.length === 1 ? "" : "s"} ${action === "redo" ? "unmarked and ready to redo" : "deleted"}.`);
+    } catch (e) { console.error(e); setBulkToolsError(e?.message || `Unable to bulk ${action} attendance. Nothing was saved.`); } finally { setBulkToolsSaving(false); }
+  }
+
+  async function saveBulkPlayerTool(action = "disable") {
+    if (!isAdmin) return;
+    const selectedRows = bulkSelectionRows.filter(x => bulkToolsSelected.includes(String(x.id))); if (!selectedRows.length) { setBulkToolsError("Select players from the table."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk player changes."); return; }
+    if (action === "edit" && !clean(bulkPlayerEditClass) && !clean(bulkPlayerEditRole) && !clean(bulkPlayerEditWeapon)) { setBulkToolsError("Choose at least one player field to change."); return; }
+    const rows = selectedRows.map(x => x.p).filter(Boolean), errors = [];
+    if (errors.length) { setBulkToolsError(errors.slice(0, 20).join(" • ")); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      const batch = writeBatch(db);
+      rows.forEach(p => {
+        if (action === "delete") batch.delete(doc(db, "cwPlayers", p.id));
+        else if (action === "edit") batch.update(doc(db, "cwPlayers", p.id), { ...(clean(bulkPlayerEditClass) ? { className: clean(bulkPlayerEditClass), class: clean(bulkPlayerEditClass) } : {}), ...(clean(bulkPlayerEditRole) ? { role: clean(bulkPlayerEditRole) } : {}), ...(bulkPlayerEditWeapon !== "" ? { weapon: clean(bulkPlayerEditWeapon) } : {}), updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        else batch.update(doc(db, "cwPlayers", p.id), { active: false, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+      });
+      await batch.commit();
+      await audit({ category: "PLAYER", module: "cw-roster", title: `CW PLAYERS BULK ${action.toUpperCase()}`, message: `${rows.length} CW player${rows.length === 1 ? "" : "s"} were ${action === "delete" ? "deleted" : action === "edit" ? "updated" : "disabled"}.`, entityType: "cw-player-bulk-management", details: [`Action: ${action.toUpperCase()}`, `Players: ${rows.map(p => p.ign).join(", ")}`, action === "edit" ? `Class: ${clean(bulkPlayerEditClass) || "KEEP"} • Role: ${clean(bulkPlayerEditRole) || "KEEP"} • Preferred Weapon: ${bulkPlayerEditWeapon === "" ? "KEEP" : clean(bulkPlayerEditWeapon)}` : "", `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`].filter(Boolean) });
+      setBulkToolsModal(null); setMessage(`${rows.length} CW player${rows.length === 1 ? "" : "s"} ${action === "delete" ? "deleted" : action === "edit" ? "updated" : "disabled"}. Historical records remain preserved.`);
+    } catch (e) { console.error(e); setBulkToolsError(e?.message || `Unable to bulk ${action} players.`); } finally { setBulkToolsSaving(false); }
+  }
+
+  function openAddPlayer() { setBulkPlayerGroups([{ id: Date.now(), igns: "", className: classes[0] || "Swordman", role: roles[0] || DEFAULT_ROLES[0], weapon: "" }]); setBulkPlayerSaving(false); setPlayerForm({ ign: "", className: classes[0] || "Swordman", role: roles[0] || DEFAULT_ROLES[0] }); setPlayerModal({ mode: "add" }) }
+  function openEditPlayer(p) { setPlayerForm({ ign: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role) || roles[0], weapon: clean(p.weapon) }); setPlayerModal({ mode: "edit", player: p }) }
   async function savePlayer() {
     if (!isAdmin) return;
     const ign = clean(playerForm.ign);
@@ -543,14 +1097,14 @@ export default function CWPage({ user, isAdmin }) {
     if (playerModal.mode === "edit") {
       const p = playerModal.player;
       requireAdminComment("EDIT CW PLAYER", "An admin comment is required and will be written to the guild audit log.", async (comment) => {
-        await updateDoc(doc(db, "cwPlayers", p.id), { ign, className: playerForm.className, role: playerForm.role, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
-        await audit({ category: "PLAYER", title: "CW PLAYER UPDATED", message: `${ign} player profile was updated by ${actor(user)}.`, entityType: "cw-player", entityId: p.id, playerId: p.id, playerName: ign, changes: [{ field: "IGN", from: clean(p.ign), to: ign }, { field: "Class", from: clean(p.className || p.class), to: playerForm.className }, { field: "Role", from: clean(p.role), to: playerForm.role }], details: [`Admin comment: ${comment}`] });
+        await updateDoc(doc(db, "cwPlayers", p.id), { ign, className: playerForm.className, role: playerForm.role, weapon: clean(playerForm.weapon), updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
+        await audit({ category: "PLAYER", title: "CW PLAYER UPDATED", message: `${ign} player profile was updated by ${actor(user)}.`, entityType: "cw-player", entityId: p.id, playerId: p.id, playerName: ign, changes: [{ field: "IGN", from: clean(p.ign), to: ign }, { field: "Class", from: clean(p.className || p.class), to: playerForm.className }, { field: "Role", from: clean(p.role), to: playerForm.role }, { field: "Preferred Weapon", from: clean(p.weapon), to: clean(playerForm.weapon) }], details: [`Admin comment: ${comment}`] });
         setPlayerModal(null); setMessage("Player updated.");
       });
       return;
     }
     setSaving(true);
-    try { const ref = await addDoc(collection(db, "cwPlayers"), { ign, className: playerForm.className, role: playerForm.role, active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null }); await audit({ category: "PLAYER", title: "CW PLAYER ADDED", message: `${ign} was added to the Clan War roster.`, entityType: "cw-player", entityId: ref.id, playerId: ref.id, playerName: ign, details: [`Class: ${playerForm.className}`, `Role: ${playerForm.role}`] }); setPlayerModal(null); setMessage("Player saved."); } catch (e) { setMessage(e?.message || "Unable to save player.") } finally { setSaving(false) }
+    try { const ref = await addDoc(collection(db, "cwPlayers"), { ign, className: playerForm.className, role: playerForm.role, weapon: clean(playerForm.weapon), active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null }); await audit({ category: "PLAYER", title: "CW PLAYER ADDED", message: `${ign} was added to the Clan War roster.`, entityType: "cw-player", entityId: ref.id, playerId: ref.id, playerName: ign, details: [`Class: ${playerForm.className}`, `Role: ${playerForm.role}`, `Preferred Weapon: ${clean(playerForm.weapon) || "—"}`] }); setPlayerModal(null); setMessage("Player saved."); } catch (e) { setMessage(e?.message || "Unable to save player.") } finally { setSaving(false) }
   }
   function requestTogglePlayer(p) {
     if (!isAdmin) return;
@@ -1076,17 +1630,153 @@ export default function CWPage({ user, isAdmin }) {
     });
   }
 
+  function getDefaultCwSalary(player) {
+    const className = clean(player?.className || player?.class);
+    const role = clean(player?.role);
+    const roleProfiles = Array.isArray(salarySettings.byClassRole) ? salarySettings.byClassRole : [];
+    const exactProfile = roleProfiles.find(x => clean(x.className) === className && clean(x.role).toLowerCase() === role.toLowerCase());
+    const allRoleProfile = roleProfiles.find(x => clean(x.className) === className && clean(x.role).toLowerCase() === "all roles");
+    return num(exactProfile ? exactProfile.salaryGold : allRoleProfile ? allRoleProfile.salaryGold : salarySettings.byClass?.[className], 0);
+  }
+
+  async function markAttendanceAndOpenDaily(p, occ) {
+    if (!isAdmin || !p || !occ) return;
+    if (clean(occ.key) !== todayKey) { setMessage("CW clock-in is only available for today. Select TODAY to mark attendance."); return; }
+
+    const existing = attendance.find(r => String(r.playerId) === String(p.id) && clean(r.dateKey) === occ.key);
+    if (existing) {
+      setAttendanceModal({ player: p, occurrence: occ, existing, mode: "daily" });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const salary = getDefaultCwSalary(p);
+      const createdNow = new Date();
+      const payload = {
+        playerId: String(p.id),
+        ign: clean(p.ign),
+        className: clean(p.className || p.class),
+        role: clean(p.role),
+        dateKey: occ.key,
+        scheduledTime: occ.time,
+        scheduledTimezone: baseTz,
+        scheduledAt: occ.at,
+        attended: true,
+        salaryGold: salary,
+        itemCostGold: 0,
+        receivedItem: "",
+        notes: "",
+        manualOverride: false,
+        adminComment: "",
+        createdAt: createdNow,
+        createdBy: actor(user),
+        createdByUid: user?.uid || null,
+        updatedAt: createdNow,
+        updatedBy: actor(user),
+        updatedByUid: user?.uid || null
+      };
+
+      // Attendance and salary are one workflow. The attendance record is created first
+      // because the Treasury salary entry must point back to its sourceAttendanceId.
+      // If the salary write fails, immediately remove the attendance record so the
+      // roster can never show ATTENDED while the salary was not actually recorded.
+      const ref = await addDoc(collection(db, "cwAttendance"), payload);
+      const row = { id: ref.id, ...payload };
+
+      try {
+        if (salary > 0) {
+          await addDoc(collection(db, "treasuryEntries"), {
+            type: "cw-salary",
+            ledgerType: "salary",
+            direction: "out",
+            amount: -Math.abs(salary),
+            playerId: String(p.id),
+            playerName: clean(p.ign),
+            dateKey: occ.key,
+            description: `CW salary — ${p.ign}`,
+            item: "",
+            sourceAttendanceId: String(ref.id),
+            sourceModule: "cw-attendance",
+            transactionAt: occ.at,
+            createdAt: serverTimestamp(),
+            createdBy: actor(user),
+            createdByUid: user?.uid || null,
+            updatedAt: serverTimestamp(),
+            updatedBy: actor(user),
+            updatedByUid: user?.uid || null
+          });
+        }
+      } catch (salaryError) {
+        // Never leave a paid/attended-looking record when Treasury could not save.
+        await deleteDoc(doc(db, "cwAttendance", ref.id)).catch(() => { });
+        throw salaryError;
+      }
+
+      setAttendance(prev => [...prev, row]);
+
+      await updateDoc(doc(db, "cwPlayers", p.id), {
+        updatedAt: serverTimestamp(),
+        updatedBy: actor(user),
+        updatedByUid: user?.uid || null
+      });
+
+      await audit({
+        category: "ATTENDANCE",
+        module: "cw-attendance",
+        title: "CW ATTENDANCE RECORDED",
+        message: `${p.ign} was marked attended for ${occ.key}. Salary was automatically recorded.`,
+        entityType: "cw-attendance",
+        entityId: ref.id,
+        playerId: p.id,
+        playerName: p.ign,
+        recipientPlayerId: p.id,
+        recipientPlayerName: p.ign,
+        relatedModules: ["cw-attendance", "cw-treasury", "cw-item"],
+        details: [
+          `Attendance record: ${ref.id}`,
+          `Recipient / player: ${p.ign} (${p.id})`,
+          `CW date: ${formatDate(occ.at, resolvedTimezone)}`,
+          `Class: ${p.className || p.class}`,
+          `Role: ${p.role || "—"}`,
+          `Automatic CW salary: ₲ ${money(salary)}`,
+          `Treasury salary connection: ${ref.id} → treasuryEntries.sourceAttendanceId`,
+          `Recorded by: ${actor(user)}`
+        ],
+        changes: [
+          { field: "Attendance", from: "NOT ATTENDED", to: "ATTENDED" },
+          { field: "Salary", from: "₲ 0", to: `₲ ${money(salary)}` }
+        ]
+      });
+
+      setAttendanceModal({ player: p, occurrence: occ, existing: row, mode: "daily" });
+      setMessage(`${p.ign} marked ATTENDED. Salary ₲ ${money(salary)} was automatically recorded.`);
+    } catch (e) {
+      console.error(e);
+      setMessage(e?.message || "Unable to mark CW attendance and record salary.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function openAttendance(p, occ = shownOccurrence, mode = "edit") {
     if (!isAdmin || !occ) return;
     const existing = attendance.find(r => String(r.playerId) === String(p.id) && clean(r.dateKey) === occ.key);
     if (!existing && clean(occ.key) !== todayKey) { setMessage("CW clock-in is only available for today. Select TODAY to mark attendance."); return; }
-    const className = clean(p.className || p.class);
-    const role = clean(p.role);
-    const roleProfiles = Array.isArray(salarySettings.byClassRole) ? salarySettings.byClassRole : [];
-    const exactProfile = roleProfiles.find(x => clean(x.className) === className && clean(x.role).toLowerCase() === role.toLowerCase());
-    const allRoleProfile = roleProfiles.find(x => clean(x.className) === className && clean(x.role).toLowerCase() === "all roles");
-    const defaultSalary = exactProfile ? exactProfile.salaryGold : allRoleProfile ? allRoleProfile.salaryGold : salarySettings.byClass?.[className];
-    setAttendanceForm({ salaryGold: existing ? existing.salaryGold : String(num(defaultSalary, 0) || ""), itemCostGold: existing?.itemCostGold || "", receivedItem: existing?.receivedItem || "", notes: existing?.notes || "", adminComment: "" });
+
+    // The roster button is a workflow button: first click marks attendance and
+    // pays the configured salary immediately; later clicks open today's payout view.
+    if (mode === "daily") {
+      if (existing) {
+        setAttendanceModal({ player: p, occurrence: occ, existing, mode: "daily" });
+      } else {
+        markAttendanceAndOpenDaily(p, occ);
+      }
+      return;
+    }
+
+    const defaultSalary = getDefaultCwSalary(p);
+    setAttendanceForm({ salaryGold: existing ? existing.salaryGold : String(defaultSalary || ""), itemCostGold: existing?.itemCostGold || "", receivedItem: existing?.receivedItem || "", notes: existing?.notes || "", adminComment: "" });
     setAttendanceModal({ player: p, occurrence: occ, existing, mode });
   }
   function openAttendanceRecord(row, mode = "edit") {
@@ -1110,10 +1800,117 @@ export default function CWPage({ user, isAdmin }) {
       async function upsert(type, amount, description, item) { const old = prior.find(e => e.ledgerType === type); if (!amount) { if (old) await deleteDoc(doc(db, "treasuryEntries", old.id)); return; } const data = { type: type === "salary" ? "cw-salary" : "item-purchase", ledgerType: type, direction: "out", amount: -Math.abs(amount), playerId: String(player.id), playerName: clean(player.ign), dateKey: occurrence.key, description, item: clean(item), sourceAttendanceId: String(id), sourceModule: "cw-attendance", transactionAt: occurrence.at, updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null }; if (old) await updateDoc(doc(db, "treasuryEntries", old.id), data); else await addDoc(collection(db, "treasuryEntries"), { ...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null }); }
       await upsert("salary", salary, `CW salary — ${player.ign}`, "");
       await upsert("item", itemCost, `CW item handed out — ${player.ign}`, attendanceForm.receivedItem);
-      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: mode === "override" ? "CW ATTENDANCE OVERRIDDEN" : existing ? "CW ATTENDANCE UPDATED" : "CW ATTENDANCE RECORDED", message: `${player.ign} Clan War attendance for ${occurrence.key} was ${mode === "override" ? "overridden" : existing ? "updated" : "recorded"}. Salary recipient: ${player.ign}.`, entityType: "cw-attendance", entityId: id, playerId: player.id, playerName: player.ign, recipientPlayerId: player.id, recipientPlayerName: player.ign, relatedModules: ["cw-attendance", "cw-treasury", "cw-item"], details: [`Attendance record: ${id}`, `Recipient / player: ${player.ign} (${player.id})`, `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`, `Class: ${player.className || player.class}`, `Role: ${player.role}`, `Salary paid to player: ₲ ${money(salary)}`, `Item cost: ₲ ${money(itemCost)}`, `Item received by player: ${clean(attendanceForm.receivedItem) || "Nothing recorded"}`, `Action: ${mode === "override" ? "OVERRIDE" : existing ? "EDIT" : "ADD"}`, `Treasury salary connection: ${id} → treasuryEntries.sourceAttendanceId`, `Admin comment: ${clean(attendanceForm.adminComment) || "None"}`, `Changed by: ${actor(user)}`], changes: existing ? [{ field: "Salary", from: `₲ ${money(existing.salaryGold)}`, to: `₲ ${money(salary)}` }, { field: "Item received", from: clean(existing.receivedItem) || "—", to: clean(attendanceForm.receivedItem) || "—" }, { field: "Item cost", from: `₲ ${money(existing.itemCostGold)}`, to: `₲ ${money(itemCost)}` }, { field: "Role", from: clean(existing.role) || "—", to: clean(player.role) || "—" }] : [{ field: "Salary", from: "₲ 0", to: `₲ ${money(salary)}` }, { field: "Item received", from: "—", to: clean(attendanceForm.receivedItem) || "—" }] });
+      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: mode === "override" ? "CW ATTENDANCE CORRECTED" : existing ? "CW ATTENDANCE UPDATED" : "CW ATTENDANCE RECORDED", message: `${player.ign} Clan War attendance for ${occurrence.key} was ${mode === "override" ? "corrected" : existing ? "updated" : "recorded"}. Salary recipient: ${player.ign}.`, entityType: "cw-attendance", entityId: id, playerId: player.id, playerName: player.ign, recipientPlayerId: player.id, recipientPlayerName: player.ign, relatedModules: ["cw-attendance", "cw-treasury", "cw-item"], details: [`Attendance record: ${id}`, `Recipient / player: ${player.ign} (${player.id})`, `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`, `Class: ${player.className || player.class}`, `Role: ${player.role}`, `Salary paid to player: ₲ ${money(salary)}`, `Item cost: ₲ ${money(itemCost)}`, `Item received by player: ${clean(attendanceForm.receivedItem) || "Nothing recorded"}`, `Action: ${mode === "override" ? "ATTENDANCE CORRECTION" : existing ? "EDIT" : "ADD"}`, `Treasury salary connection: ${id} → treasuryEntries.sourceAttendanceId`, `Admin comment: ${clean(attendanceForm.adminComment) || "None"}`, `Changed by: ${actor(user)}`], changes: existing ? [{ field: "Salary", from: `₲ ${money(existing.salaryGold)}`, to: `₲ ${money(salary)}` }, { field: "Item received", from: clean(existing.receivedItem) || "—", to: clean(attendanceForm.receivedItem) || "—" }, { field: "Item cost", from: `₲ ${money(existing.itemCostGold)}`, to: `₲ ${money(itemCost)}` }, { field: "Role", from: clean(existing.role) || "—", to: clean(player.role) || "—" }] : [{ field: "Salary", from: "₲ 0", to: `₲ ${money(salary)}` }, { field: "Item received", from: "—", to: clean(attendanceForm.receivedItem) || "—" }] });
       if (clean(attendanceForm.receivedItem)) await audit({ category: "ITEM", module: "cw-attendance", title: "CW ITEM HANDED OUT", message: `${attendanceForm.receivedItem} was handed to ${player.ign} during Clan War.`, entityType: "treasury-item", entityId: id, playerId: player.id, playerName: player.ign, details: [`Item: ${attendanceForm.receivedItem}`, `Item cost: ₲ ${money(itemCost)}`, `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`] });
-      setAttendanceModal(null); setMessage(mode === "override" ? "CW attendance overridden and logged." : existing ? "CW attendance updated and logged." : "CW attendance saved.");
+      setAttendanceModal(null); setMessage(mode === "override" ? "CW attendance correction saved and logged." : existing ? "CW attendance updated and logged." : "CW attendance saved.");
     } catch (e) { console.error(e); setMessage(e?.message || "Unable to save attendance.") } finally { setSaving(false) }
+  }
+
+  async function saveSalaryEdit() {
+    if (!isAdmin || !attendanceModal || attendanceModal.mode !== "salary-edit") return;
+    const { player, occurrence, existing } = attendanceModal;
+    if (!existing) { setMessage("No CW attendance record exists for this salary edit."); return; }
+    const adminComment = clean(attendanceForm.adminComment);
+    if (!adminComment) { setMessage("Admin comment is required when editing a CW salary."); return; }
+
+    const oldSalary = num(existing.salaryGold, 0);
+    const newSalary = num(attendanceForm.salaryGold, 0);
+    if (newSalary < 0) { setMessage("Salary cannot be negative."); return; }
+    if (newSalary === oldSalary) { setMessage("No salary change was made."); return; }
+
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "cwAttendance", existing.id), {
+        salaryGold: newSalary,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor(user),
+        updatedByUid: user?.uid || null,
+        adminComment
+      });
+
+      const salaryEntries = treasuryEntries.filter(e =>
+        String(e.sourceAttendanceId || "") === String(existing.id) &&
+        (e.type === "cw-salary" || e.ledgerType === "salary")
+      );
+      const currentEntry = salaryEntries.slice().sort((a, b) =>
+        (safeDate(b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.updatedAt || a.createdAt)?.getTime() || 0)
+      )[0];
+
+      if (newSalary > 0) {
+        const treasuryPayload = {
+          type: "cw-salary",
+          ledgerType: "salary",
+          direction: "out",
+          amount: -Math.abs(newSalary),
+          playerId: String(player.id),
+          playerName: clean(player.ign),
+          dateKey: occurrence.key,
+          description: `CW salary — ${player.ign}`,
+          item: "",
+          sourceAttendanceId: String(existing.id),
+          sourceModule: "cw-attendance",
+          transactionAt: occurrence.at,
+          updatedAt: serverTimestamp(),
+          updatedBy: actor(user),
+          updatedByUid: user?.uid || null
+        };
+        if (currentEntry) {
+          await updateDoc(doc(db, "treasuryEntries", currentEntry.id), treasuryPayload);
+        } else {
+          await addDoc(collection(db, "treasuryEntries"), { ...treasuryPayload, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null });
+        }
+      } else {
+        for (const e of salaryEntries) await deleteDoc(doc(db, "treasuryEntries", e.id));
+      }
+
+      await updateDoc(doc(db, "cwPlayers", player.id), {
+        updatedAt: serverTimestamp(),
+        updatedBy: actor(user),
+        updatedByUid: user?.uid || null
+      });
+
+      // Update the local roster immediately so LATEST SALARY changes as soon as
+      // the salary editor succeeds; the Firebase listener remains the source of truth.
+      setAttendance(prev => prev.map(r => String(r.id) === String(existing.id)
+        ? { ...r, salaryGold: newSalary, updatedBy: actor(user), adminComment }
+        : r
+      ));
+
+      await audit({
+        category: "SALARY",
+        module: "cw-attendance",
+        title: "CW SALARY UPDATED",
+        message: `${player.ign}'s CW salary for ${occurrence.key} was changed from ₲ ${money(oldSalary)} to ₲ ${money(newSalary)}.`,
+        entityType: "cw-salary",
+        entityId: existing.id,
+        playerId: player.id,
+        playerName: player.ign,
+        recipientPlayerId: player.id,
+        recipientPlayerName: player.ign,
+        relatedModules: ["cw-attendance", "cw-treasury"],
+        details: [
+          `Attendance record: ${existing.id}`,
+          `Player: ${player.ign} (${player.id})`,
+          `CW date: ${formatDate(occurrence.at, resolvedTimezone)}`,
+          `Class: ${player.className || player.class}`,
+          `Role: ${player.role || "—"}`,
+          `Previous salary: ₲ ${money(oldSalary)}`,
+          `Updated salary: ₲ ${money(newSalary)}`,
+          `Treasury salary connection: ${existing.id} → treasuryEntries.sourceAttendanceId`,
+          `Admin comment: ${adminComment}`,
+          `Changed by: ${actor(user)}`
+        ],
+        changes: [{ field: "CW Salary", from: `₲ ${money(oldSalary)}`, to: `₲ ${money(newSalary)}` }]
+      });
+
+      setAttendanceModal(null);
+      setMessage(`${player.ign}'s CW salary updated from ₲ ${money(oldSalary)} to ₲ ${money(newSalary)}. Treasury, activity, and history were updated.`);
+    } catch (e) {
+      console.error(e);
+      setMessage(e?.message || "Unable to update CW salary.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function requestDeleteAttendance(row) {
@@ -1126,6 +1923,96 @@ export default function CWPage({ user, isAdmin }) {
       await audit({ category: "ATTENDANCE", title: "CW ATTENDANCE DELETED", message: `${row.ign || "Player"} CW attendance was deleted for ${row.dateKey}.`, entityType: "cw-attendance", entityId: row.id, playerId: row.playerId, playerName: row.ign, details: ["Attendance record deleted and Treasury reversal entries created.", `Admin comment: ${comment}`, `Deleted by: ${actor(user)}`] });
       setSelectedAttendance(null); setAttendanceModal(null); setMessage("CW attendance deleted and Treasury reversed.");
     });
+  }
+
+  async function requestRedoAttendance(row) {
+    if (!isAdmin || !row) return;
+    requireAdminComment(
+      "UNMARK CW ATTENDANCE / REDO",
+      `Unmark ${row.ign || "this player"}'s CW attendance for ${row.dateKey}? The salary that was given will be reversed and the player can be marked again.`,
+      async (comment) => {
+        setSaving(true);
+        try {
+          const prior = treasuryEntries.filter(e => String(e.sourceAttendanceId || "") === String(row.id));
+          const salaryEntries = prior.filter(e => e.type === "cw-salary" || e.ledgerType === "salary");
+
+          // REDO only reverses the automatic salary. Item assignments are separate
+          // inventory records and must not be silently removed when attendance is
+          // unmarked; they remain available to edit/delete from Today's Items.
+          for (const e of salaryEntries) {
+            const amount = Math.abs(num(e.amount));
+            if (!amount) continue;
+            await addDoc(collection(db, "treasuryEntries"), {
+              type: "cw-salary-reversal",
+              ledgerType: "salary",
+              direction: "in",
+              amount,
+              playerId: row.playerId || null,
+              playerName: row.ign || "",
+              dateKey: row.dateKey || "",
+              description: `CW salary reversal — ${row.ign || "player"}`,
+              item: "",
+              sourceAttendanceId: String(row.id),
+              sourceModule: "cw-attendance",
+              transactionAt: safeDate(row.scheduledAt) || new Date(),
+              createdAt: serverTimestamp(),
+              createdBy: actor(user),
+              createdByUid: user?.uid || null,
+              updatedAt: serverTimestamp(),
+              updatedBy: actor(user),
+              updatedByUid: user?.uid || null
+            });
+          }
+
+          await deleteDoc(doc(db, "cwAttendance", row.id));
+          if (row.playerId) {
+            await updateDoc(doc(db, "cwPlayers", row.playerId), {
+              updatedAt: serverTimestamp(),
+              updatedBy: actor(user),
+              updatedByUid: user?.uid || null
+            });
+          }
+
+          await audit({
+            category: "ATTENDANCE",
+            module: "cw-attendance",
+            title: "CW ATTENDANCE UNMARKED / READY TO REDO",
+            message: `${row.ign || "Player"} was unmarked for CW ${row.dateKey}. Attendance was removed and the salary that was given was reversed.`,
+            entityType: "cw-attendance",
+            entityId: row.id,
+            playerId: row.playerId,
+            playerName: row.ign,
+            recipientPlayerId: row.playerId,
+            recipientPlayerName: row.ign,
+            relatedModules: ["cw-attendance", "cw-treasury", "cw-item"],
+            details: [
+              `Attendance record removed: ${row.id}`,
+              `Player: ${row.ign || "—"}`,
+              `CW date: ${row.dateKey || "—"}`,
+              `Salary that was given: ₲ ${money(row.salaryGold)}`,
+              `Linked salary entries reversed: ${salaryEntries.length}`,
+              `Existing item assignments were preserved for separate item management.`,
+              `Admin comment: ${comment}`,
+              `Action: UNMARK / REDO`,
+              `Changed by: ${actor(user)}`
+            ],
+            changes: [
+              { field: "Attendance", from: "ATTENDED", to: "NOT ATTENDED / READY TO REDO" },
+              { field: "Salary", from: `₲ ${money(row.salaryGold)} GIVEN`, to: "₲ 0 / REVERSED" }
+            ]
+          });
+
+          setAttendance(prev => prev.filter(x => String(x.id) !== String(row.id)));
+          setAttendanceModal(null);
+          setMessage(`${row.ign || "Player"} was unmarked. Attendance and salary were reversed. You can mark CW again.`);
+        } catch (e) {
+          console.error(e);
+          setMessage(e?.message || "Unable to unmark CW attendance.");
+        } finally {
+          setSaving(false);
+        }
+      }
+    );
   }
 
   // Treasury source of truth: every signed ledger entry contributes to the balance.
@@ -1492,6 +2379,15 @@ export default function CWPage({ user, isAdmin }) {
   function statsFor(p) {
     const rows = attendance.filter(r => String(r.playerId) === String(p.id));
     const assigned = itemAssignments.filter(r => String(r.playerId) === String(p.id));
+    const salaryRows = rows
+      .filter(r => num(r.salaryGold) > 0)
+      .slice()
+      .sort((a, b) => {
+        const ad = safeDate(a.scheduledAt || a.dateKey || a.updatedAt || a.createdAt)?.getTime() || 0;
+        const bd = safeDate(b.scheduledAt || b.dateKey || b.updatedAt || b.createdAt)?.getTime() || 0;
+        if (bd !== ad) return bd - ad;
+        return (safeDate(b.updatedAt || b.createdAt)?.getTime() || 0) - (safeDate(a.updatedAt || a.createdAt)?.getTime() || 0);
+      });
     const uniqueDayKeys = new Set();
     rows.forEach(r => {
       const d = safeDate(r.scheduledAt || r.dateKey || r.updatedAt || r.createdAt);
@@ -1517,6 +2413,7 @@ export default function CWPage({ user, isAdmin }) {
     return {
       days: uniqueDayKeys.size,
       salary: rows.reduce((sum, r) => sum + num(r.salaryGold), 0),
+      latestSalary: num(salaryRows[0]?.salaryGold, 0),
       items: legacyCount + assignedCount,
       lastUpdated: updateEvents[0]?.at || null,
       lastBy: updateEvents[0]?.by || "System",
@@ -1683,7 +2580,9 @@ export default function CWPage({ user, isAdmin }) {
           </div>
           <div className="cw-header-actions">
             {isAdmin && <button className="cw-btn" onClick={openSalaryEditor}>SALARY BY CLASS</button>}
+            {isAdmin && <button className="cw-btn cw-btn-bulk-tools" onClick={() => { setBulkToolsText(""); setBulkToolsDate(todayOccurrence?.key || ""); setBulkToolsSalary(""); setBulkToolsItemId(cwItems.find(i => i.active !== false)?.id || ""); setBulkToolsQuantity("1"); setBulkToolsComment(""); setBulkToolsError(""); setBulkToolsModal("menu"); }}>⚙ BULK TOOLS</button>}
             {isAdmin && <button className="cw-btn cw-btn-primary" onClick={openAddPlayer}>＋ ADD NEW PLAYER</button>}
+            {isAdmin && <button className="cw-btn cw-btn-bulk-attendance" disabled={!todayOccurrence} onClick={openBulkAttendance}>☷ BULK ATTENDANCE</button>}
           </div>
         </div>
         <div className="cw-filter-row">
@@ -1693,23 +2592,40 @@ export default function CWPage({ user, isAdmin }) {
         </div>
         <div className="cw-table-scroll">
           <table className="cw-table cw-player-table">
-            <thead><tr><th>PLAYER</th><th>CLASS</th><th>ROLE</th><th>CW DAYS</th><th>LATEST SALARY</th><th>LIFETIME SALARY</th><th>ITEMS</th><th>LAST ITEM</th><th>LAST UPDATED / BY</th><th>ACTIONS</th></tr></thead>
+            <thead><tr><th>PLAYER</th><th>CLASS</th><th>ROLE</th><th>CW DAYS</th><th>LATEST SALARY</th><th>LIFETIME SALARY</th><th>ITEMS</th><th>LAST ITEM</th><th>LAST UPDATED / LIVE STATUS</th><th>ACTIONS</th></tr></thead>
             <tbody>
               {visiblePlayers.map(p => {
                 const s = statsFor(p);
                 const attended = attendance.some(r => String(r.playerId) === String(p.id) && clean(r.dateKey) === todayKey);
                 return <tr key={p.id}>
                   <td><strong>{p.ign}</strong><small className={p.active === false ? "cw-player-disabled" : "cw-player-online"}>{p.active === false ? "DISABLED" : "ACTIVE"}</small></td>
-                  <td><span className="cw-class"><ClassEmblem name={p.className || p.class} small />{p.className || p.class}</span></td>
+                  <td><span className="cw-class"><ClassEmblem name={p.className || p.class} small />{p.className || p.class}</span><small className="cw-player-weapon">⚔ {p.weapon || "No preferred weapon"}</small></td>
                   <td><span className="cw-role">{p.role || "—"}</span></td>
                   <td>{s.days}</td>
                   <td className="cw-gold">₲ {money(s.latestSalary)}</td>
                   <td className="cw-gold">₲ {money(s.salary)}</td>
                   <td>{s.items}</td>
                   <td title={s.lastItem}>{s.lastItem}</td>
-                  <td>{formatDateTime(s.lastUpdated, resolvedTimezone)}<small>{s.lastBy}</small></td>
+                  <td className="cw-updated-status-cell">
+                    <span className="cw-updated-main">{formatDateTime(s.lastUpdated, resolvedTimezone)}</span>
+                    <small>{s.lastBy}</small>
+                    {(() => {
+                      const live = cwLiveStatusByPlayer[String(p.id)];
+                      if (!live) return null;
+                      return <span className={`cw-live-attendance-status is-${live.state}`}>
+                        <b>{live.state === "attended" ? "✓" : live.state === "missed" ? "✕" : "◷"}</b>
+                        <strong>{live.label}</strong>
+                        {live.occurrence && <small>{formatDateTime(live.occurrence.at, resolvedTimezone)}</small>}
+                      </span>;
+                    })()}
+                  </td>
                   <td className="cw-player-actions">
-                    {isAdmin && <button className={`cw-btn cw-btn-small ${attended ? "cw-btn-recorded" : ""}`} disabled={!todayOccurrence || p.active === false} onClick={() => openAttendance(p, todayOccurrence)}>{p.active === false ? "DISABLED" : attended ? `✓ ATTENDED • ${formatDateTime(todayOccurrence.at, resolvedTimezone)}` : todayOccurrence ? `MARK CW • ${formatDateTime(todayOccurrence.at, resolvedTimezone)}` : "NO CW TODAY"}</button>}
+                    {isAdmin && <button className={`cw-btn cw-btn-small ${attended ? "cw-btn-recorded" : ""}`} disabled={!todayOccurrence || p.active === false} onClick={() => openAttendance(p, todayOccurrence, "daily")}>{p.active === false ? "DISABLED" : attended ? `✓ ATTENDED • ${formatDateTime(todayOccurrence.at, resolvedTimezone)}` : todayOccurrence ? `MARK CW • ${formatDateTime(todayOccurrence.at, resolvedTimezone)}` : "NO CW TODAY"}</button>}
+                    {(() => {
+                      const live = cwLiveStatusByPlayer[String(p.id)];
+                      if (!live) return null;
+                      return <span className={`cw-action-live-status is-${live.state}`}>{live.state === "attended" ? "✓" : live.state === "missed" ? "✕" : "◷"} {live.label}</span>;
+                    })()}
                     <button className="cw-btn cw-btn-small" onClick={() => { setPlayerHistoryTab("all"); setPlayerHistorySearch(""); setPlayerHistoryPage(1); setSelectedPlayer(p) }}>HISTORY</button>
                     {isAdmin && <button className="cw-btn cw-btn-small cw-btn-item" onClick={() => openItemAssignment(p)}>＋ ITEM</button>}
                     {isAdmin && <button className="cw-btn cw-btn-small" onClick={() => openEditPlayer(p)}>EDIT PROFILE</button>}
@@ -1794,24 +2710,168 @@ export default function CWPage({ user, isAdmin }) {
 
 
 
-    {playerModal && <Modal title={playerModal.mode === "edit" ? `EDIT PLAYER • ${playerModal.player?.ign || ""}` : "ADD NEW PLAYER"} onClose={() => setPlayerModal(null)}>
-      <div className="cw-player-form-head">
-        <div className="cw-kicker">CW ROSTER PROFILE</div>
-        <p>{playerModal.mode === "edit" ? "Update the player's IGN, class or Clan War role. Profile changes are recorded in the Guild Notice Board." : "Register a new player for Clan War attendance, salary and item tracking."}</p>
-      </div>
-      <div className="cw-form-grid cw-player-form-grid">
-        <label>PLAYER IGN<input autoFocus value={playerForm.ign} onChange={e => setPlayerForm({ ...playerForm, ign: e.target.value })} placeholder="Enter in-game name" onKeyDown={e => { if (e.key === "Enter") savePlayer() }} /></label>
-        <label>CLASS<select value={playerForm.className} onChange={e => setPlayerForm({ ...playerForm, className: e.target.value })}>{classes.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-        <label>ROLE<select value={playerForm.role} onChange={e => setPlayerForm({ ...playerForm, role: e.target.value })}>{roles.map(r => <option key={r} value={r}>{r}</option>)}</select></label>
-      </div>
-      <div className="cw-helper"><b>Player profile:</b> class and role determine the default salary and roster display. Attendance history is never deleted when a player profile is removed.</div>
-      <div className="cw-modal-actions">
-        <button className="cw-btn" onClick={() => setPlayerModal(null)}>CANCEL</button>
-        <button className="cw-btn cw-btn-primary" disabled={saving || !isAdmin} onClick={savePlayer}>{saving ? "SAVING..." : playerModal.mode === "edit" ? "SAVE PLAYER CHANGES" : "ADD PLAYER"}</button>
-      </div>
+    {bulkToolsModal && isAdmin && <Modal title="CW BULK TOOLS" wide onClose={() => setBulkToolsModal(null)}>
+      {bulkToolsModal === "menu" ? <>
+        <div className="cw-bulk-tools-hero"><div><span className="cw-kicker">CLAN WAR • ADMIN TOOLS</span><h3>Bulk Corrections & Distribution</h3><p>Use the same validated tools for large corrections. Every action requires an admin comment and preserves the existing audit/history model.</p></div></div>
+        <div className="cw-bulk-tools-menu">
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("salary")}><b>₲</b><span><strong>BULK EDIT SALARY</strong><small>Correct salary for multiple players on one CW date and synchronize Treasury.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("item-assign")}><b>＋</b><span><strong>BULK ASSIGN ITEM</strong><small>Give the same inventory item and quantity to multiple players on a selected date.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("item-edit")}><b>✎</b><span><strong>BULK EDIT ITEM</strong><small>Correct quantity for existing item assignments on a selected date.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("item-delete")}><b>⌫</b><span><strong>BULK DELETE ITEMS</strong><small>Remove mistaken item assignments and restore their inventory transactions.</small></span></button>
+          <button className="cw-bulk-tool-card cw-bulk-add-attendance-card" onClick={openBulkAttendance}><b>＋</b><span><strong>BULK ADD ATTENDANCE</strong><small>Mark multiple existing CW roster players attended for today's scheduled CW and create the linked salary/Treasury records.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("attendance-edit")}><b>✎</b><span><strong>BULK EDIT ATTENDANCE</strong><small>Correct salary, item cost, item received and notes for multiple CW records.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("attendance-redo")}><b>↻</b><span><strong>BULK REDO ATTENDANCE</strong><small>Unmark selected CW attendance and reverse only the salary actually paid.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("attendance-delete")}><b>×</b><span><strong>BULK DELETE ATTENDANCE</strong><small>Delete selected attendance and reverse linked Treasury records.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("player-edit")}><b>✎</b><span><strong>BULK EDIT PLAYERS</strong><small>Change class, role and preferred weapon for multiple existing roster players.</small></span></button>
+          <button className="cw-bulk-tool-card" onClick={() => openBulkTools("player-disable")}><b>⊘</b><span><strong>BULK DISABLE PLAYERS</strong><small>Disable multiple roster players while preserving their history.</small></span></button>
+          <button className="cw-bulk-tool-card is-danger" onClick={() => openBulkTools("player-delete")}><b>⌫</b><span><strong>BULK DELETE PLAYERS</strong><small>Remove multiple roster profiles. Attendance/history collections are preserved.</small></span></button>
+        </div>
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setBulkToolsModal(null)}>CLOSE</button></div>
+      </> : <>
+        <div className="cw-bulk-head"><div><div className="cw-kicker">CLAN WAR • BULK CORRECTION</div><h3>{bulkToolsModal === "salary" ? "Bulk Edit Salary" : bulkToolsModal === "item-assign" ? "Bulk Assign Item" : bulkToolsModal === "item-edit" ? "Bulk Edit Item Assignment" : bulkToolsModal === "item-delete" ? "Bulk Delete Item Assignments" : bulkToolsModal === "attendance-edit" ? "Bulk Edit Attendance" : bulkToolsModal === "attendance-redo" ? "Bulk Redo Attendance" : bulkToolsModal === "attendance-delete" ? "Bulk Delete Attendance" : bulkToolsModal === "player-edit" ? "Bulk Edit Players" : bulkToolsModal === "player-disable" ? "Bulk Disable Players" : "Bulk Delete Players"}</h3><p>Paste one or many IGNs. Every IGN must match the existing roster. Nothing is partially saved when validation fails.</p></div></div>
+        <div className="cw-bulk-tools-selection">
+          <div className="cw-bulk-selection-toolbar"><div><strong>SELECT EXISTING RECORDS</strong><small>Edits, deletes and redo actions target only the saved record IDs shown below. A date with no record cannot create one.</small></div><b>{bulkToolsSelected.length} SELECTED</b></div>
+          <div className="cw-bulk-filter-grid">
+            <label>SEARCH <input value={bulkToolsSearch} onChange={e=>{setBulkToolsSearch(e.target.value);setBulkToolsPage(1)}} placeholder="IGN, class, role, item, date..." /></label>
+            <label>FROM <input type="date" value={bulkToolsFrom} onChange={e=>{setBulkToolsFrom(e.target.value);setBulkToolsPage(1)}} /></label>
+            <label>TO <input type="date" value={bulkToolsTo} onChange={e=>{setBulkToolsTo(e.target.value);setBulkToolsPage(1)}} /></label>
+            <div className="cw-bulk-selection-actions"><button type="button" onClick={toggleBulkPage}>{bulkVisibleRows.length && bulkVisibleRows.every(x=>bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button><button type="button" onClick={()=>setBulkToolsSelected([])}>CLEAR</button></div>
+          </div>
+          <div className="cw-bulk-selection-table-wrap"><table className="cw-bulk-selection-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / ROLE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>
+          {bulkVisibleRows.map(x=><tr key={x.id} className={bulkToolsSelected.includes(String(x.id))?"is-selected":""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={()=>toggleBulkSelection(x.id)} /></td><td><strong>{x.ign}</strong></td><td><span>{x.className||"—"}</span><small>{x.role||"—"}</small></td><td>{x.type==="item" ? <><strong>{x.itemName}</strong><small>Qty {x.quantity}</small></> : x.type==="attendance" ? <><strong>CW ATTENDANCE</strong><small>Salary ₲ {money(x.salary)}</small></> : <strong>PLAYER PROFILE</strong>}</td><td>{x.dateKey ? <><strong>{x.dateKey}</strong><small>{x.timeKey||"—"}</small></> : "—"}</td><td>{x.type==="item" ? `₲ ${money(x.assignment?.totalCost)}` : x.type==="attendance" ? `₲ ${money(x.salary)}` : "—"}</td><td><span className={`cw-bulk-selection-status ${x.status==="DISABLED"?"is-danger":""}`}>{x.status}</span></td></tr>)}
+          {!bulkVisibleRows.length&&<tr><td colSpan="7" className="cw-bulk-selection-empty">No existing records match the current filters.</td></tr>}</tbody></table></div>
+          <div className="cw-bulk-selection-footer"><span>PAGE {bulkSafePage} OF {bulkPageCount} • 5 PER PAGE • {bulkFilteredRows.length} MATCHES</span><div><button type="button" disabled={bulkSafePage<=1} onClick={()=>setBulkToolsPage(p=>Math.max(1,p-1))}>‹</button><button type="button" disabled={bulkSafePage>=bulkPageCount} onClick={()=>setBulkToolsPage(p=>Math.min(bulkPageCount,p+1))}>›</button></div></div>
+        </div>
+        <div className="cw-bulk-tools-form">
+          {bulkToolsModal === "item-assign" && <label className="cw-span-2">CW OCCURRENCE DATE <select value={bulkToolsDate} onChange={e=>setBulkToolsDate(e.target.value)}><option value="">SELECT A SCHEDULED CW DATE...</option>{occurrences.filter(o=>o?.key).slice().sort((a,b)=>String(b.key).localeCompare(String(a.key))).map(o=><option key={`${o.key}-${o.time}`} value={o.key}>{o.key} • {o.time} • {baseTz}</option>)}</select><small>Only a scheduled CW occurrence can be used. Arbitrary dates are not accepted.</small></label>}
+          {bulkToolsModal === "salary" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e=>setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="0" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e=>setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label>ITEM COST <input inputMode="decimal" value={bulkAttendanceEditItemCost} onChange={e=>setBulkAttendanceEditItemCost(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">ITEM RECEIVED<textarea value={bulkAttendanceEditReceivedItem} onChange={e=>setBulkAttendanceEditReceivedItem(e.target.value)} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">NOTES<textarea value={bulkAttendanceEditNotes} onChange={e=>setBulkAttendanceEditNotes(e.target.value)} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "item-assign" && <label>ITEM <select value={bulkToolsItemId} onChange={e=>setBulkToolsItemId(e.target.value)}><option value="">SELECT ITEM...</option>{cwItems.map(i=><option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)}{i.active===false?" • DISABLED":""}</option>)}</select></label>}
+          {bulkToolsModal === "item-edit" && <label>NEW QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e=>setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g,""))} /></label>}
+          {bulkToolsModal === "item-assign" && <label>QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e=>setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g,""))} /></label>}
+          {bulkToolsModal === "player-edit" && <><label>CLASS / NEW CLASS<TypeSelect id="cw-bulk-edit-class" className="cw-input" value={bulkPlayerEditClass} onChange={setBulkPlayerEditClass} options={classes} placeholder="Type or select • blank keeps current" /></label><label>ROLE / NEW ROLE<TypeSelect id="cw-bulk-edit-role" className="cw-input" value={bulkPlayerEditRole} onChange={setBulkPlayerEditRole} options={roles} placeholder="Type or select • blank keeps current" /></label><label className="cw-span-2">PREFERRED WEAPON<TypeSelect id="cw-bulk-edit-weapon" className="cw-input" value={bulkPlayerEditWeapon} onChange={setBulkPlayerEditWeapon} options={Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean)))} placeholder="Type or select • blank keeps current" /></label></>}
+          {bulkToolsModal === "player-delete" && <label>DELETE PIN *<input inputMode="numeric" value={bulkToolsText} onChange={e=>setBulkToolsText(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="5-digit PIN" /></label>}
+          <label className="cw-span-2">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e=>setBulkToolsComment(e.target.value)} placeholder="Required. Explain exactly why these existing records are being changed." /></label>
+        </div>
+        {bulkToolsError && <div className="cw-bulk-error">{bulkToolsError}</div>}
+        <div className="cw-helper"><b>VALIDATION:</b> unknown or disabled players are rejected. Existing attendance/item records are checked before changes. Treasury-linked changes remain auditable.</div>
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setBulkToolsModal("menu")}>BACK</button><button className="cw-btn cw-btn-primary" disabled={bulkToolsSaving} onClick={() => bulkToolsModal === "salary" ? saveBulkSalaryChange() : bulkToolsModal === "attendance-edit" ? saveBulkAttendanceEdit() : bulkToolsModal === "item-assign" ? saveBulkItemTool("assign") : bulkToolsModal === "item-edit" ? saveBulkItemTool("edit") : bulkToolsModal === "item-delete" ? saveBulkItemTool("delete") : bulkToolsModal === "attendance-redo" ? saveBulkAttendanceTool("redo") : bulkToolsModal === "attendance-delete" ? saveBulkAttendanceTool("delete") : bulkToolsModal === "player-edit" ? saveBulkPlayerTool("edit") : bulkToolsModal === "player-disable" ? saveBulkPlayerTool("disable") : saveBulkPlayerTool("delete")}>{bulkToolsSaving ? "PROCESSING..." : "SAVE BULK CHANGE"}</button></div>
+      </>}
     </Modal>}
 
-    {attendanceModal && <Modal title={`${attendanceModal.mode === "override" ? "OVERRIDE" : "EDIT CW ATTENDANCE"} • ${attendanceModal.player.ign}`} wide onClose={() => setAttendanceModal(null)}><div className="cw-attendance-summary"><strong>{formatDateTime(attendanceModal.occurrence.at, resolvedTimezone)}</strong><span>{attendanceModal.player.className || attendanceModal.player.class} • {attendanceModal.player.role} • Base: {attendanceModal.occurrence.time} {baseTz}</span></div><div className="cw-form-grid"><label>CW CLASS SALARY<input inputMode="decimal" value={attendanceForm.salaryGold} onChange={e => setAttendanceForm({ ...attendanceForm, salaryGold: formatMoneyInput(e.target.value) })} placeholder="0" /><small className="cw-field-help">Default comes from {attendanceModal.player.className || attendanceModal.player.class} salary. Admin can adjust this record.</small></label><label>ITEM COST / GOLD HANDED OUT<input inputMode="decimal" value={attendanceForm.itemCostGold} onChange={e => setAttendanceForm({ ...attendanceForm, itemCostGold: formatMoneyInput(e.target.value) })} placeholder="0" /></label><label className="cw-span-2">WHAT DID THEY RECEIVE?<textarea value={attendanceForm.receivedItem} onChange={e => setAttendanceForm({ ...attendanceForm, receivedItem: e.target.value })} placeholder="Example: PUM BOX • Crazytime Box • Guild consumables" /></label><label className="cw-span-2">NOTES<textarea value={attendanceForm.notes} onChange={e => setAttendanceForm({ ...attendanceForm, notes: e.target.value })} placeholder="Example: Weekly Clan War salary and item distribution." /></label>{attendanceModal.existing && <label className="cw-span-2">ADMIN COMMENT *<textarea value={attendanceForm.adminComment} onChange={e => setAttendanceForm({ ...attendanceForm, adminComment: e.target.value })} placeholder={attendanceModal.mode === "override" ? "Required. Explain what is being overridden and why..." : "Required. Explain why this attendance record is being edited..."} /></label>}</div><div className="cw-helper"><b>How to record:</b> put the salary paid for this CW in the salary field. If an item was handed out, enter its name and its gold cost. Treasury automatically receives the matching minus entries so the Guild Gold Vault stays connected.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAttendanceModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={saveAttendance}>{saving ? "SAVING..." : attendanceModal.mode === "override" ? "SAVE OVERRIDE" : attendanceModal.existing ? "SAVE EDIT" : "SAVE CW ATTENDANCE"}</button></div></Modal>}
+    {bulkAttendanceModal && isAdmin && (
+      <div className="cw-bulk-attendance-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setBulkAttendanceModal(false); }}>
+        <div className="cw-bulk-attendance-modal" role="dialog" aria-modal="true" aria-labelledby="cw-bulk-attendance-title">
+          <div className="cw-bulk-attendance-header">
+            <div><div className="cw-kicker">CLAN WAR • BULK ATTENDANCE</div><h2 id="cw-bulk-attendance-title">Bulk Add Attendance</h2><p>Select a saved scheduled CW date and multiple existing roster players. Already-attended players remain selectable, are clearly shown, and are safely skipped so salary, Treasury, attendance, history and audit records are never duplicated.</p></div>
+            <button type="button" className="cw-bulk-attendance-close" onClick={() => setBulkAttendanceModal(false)}>×</button>
+          </div>
+          <div className="cw-bulk-attendance-body">
+            <section className="cw-bulk-card">
+              <div className="cw-bulk-card-head"><div><span>1 • SCHEDULED DATE</span><small>Only saved CW schedule dates can be used.</small></div><b>{cwBulkAttendanceDateOptions.length} DATES</b></div>
+              <select value={cwBulkAttendanceDate} onChange={e => { setCwBulkAttendanceDate(e.target.value); setCwBulkAttendancePage(1); }}>
+                {cwBulkAttendanceDateOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              {cwBulkSelectedOccurrence && <div className="cw-bulk-occurrence-card"><strong>CLAN WAR</strong><span>{cwBulkSelectedOccurrence.time} • {baseTz}</span><small>{formatDate(cwBulkSelectedOccurrence.at, resolvedTimezone)} • ✓ SCHEDULED</small></div>}
+            </section>
+            <section className="cw-bulk-card">
+              <div className="cw-bulk-card-head"><div><span>2 • PLAYERS</span><small>Already attended players are selectable. Saving them again never creates duplicate salary, Treasury, attendance, history or logs.</small></div><b>{cwBulkAttendancePlayers.length} SELECTED</b></div>
+              <div className="cw-bulk-player-toolbar cw-bulk-player-toolbar-cw">
+                <input value={cwBulkAttendanceSearch} onChange={e => { setCwBulkAttendanceSearch(e.target.value); setCwBulkAttendancePage(1); }} placeholder="Search IGN, class, role, preferred weapon..." />
+                <select value={cwBulkAttendanceClassFilter} onChange={e => { setCwBulkAttendanceClassFilter(e.target.value); setCwBulkAttendancePage(1); }}><option value="all">ALL CLASSES</option>{Array.from(new Set(players.filter(p => p.active !== false).map(p => clean(p.className || p.class)).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}</select>
+                <select value={cwBulkAttendanceStatusFilter} onChange={e => { setCwBulkAttendanceStatusFilter(e.target.value); setCwBulkAttendancePage(1); }}><option value="all">ALL ATTENDANCE</option><option value="not-attended">NOT ATTENDED</option><option value="attended">ALREADY ATTENDED</option></select>
+                <button type="button" onClick={toggleCwBulkAttendancePage}>{cwBulkAttendancePageRows.length && cwBulkAttendancePageRows.every(p => cwBulkAttendancePlayers.includes(String(p.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button><button type="button" onClick={() => setCwBulkAttendancePlayers([])}>CLEAR</button>
+              </div>
+              <div className="cw-bulk-player-table-wrap"><table className="cw-bulk-player-table cw-bulk-player-table-cw"><thead><tr><th></th><th>PLAYER</th><th>CLASS / ROLE</th><th>CW {cwBulkAttendanceDate || "—"}</th></tr></thead><tbody>
+                {cwBulkAttendancePageRows.map(p => { const attended = hasCWAttendanceForDate(p.id, cwBulkAttendanceDate); const selected = cwBulkAttendancePlayers.includes(String(p.id)); return <tr key={p.id} className={`${selected ? "is-selected " : ""}${attended ? "is-attended-row" : ""}`}><td><input type="checkbox" checked={selected} onChange={() => toggleCwBulkAttendancePlayer(p.id)} aria-label={`Select ${p.ign}`} /></td><td><strong>{p.ign}</strong><small>{clean(p.weapon) || "Preferred weapon —"}</small></td><td><strong>{clean(p.className || p.class) || "—"}</strong><small>{clean(p.role) || "—"}</small></td><td><span className={`cw-bulk-cw-status ${attended ? "is-attended" : "is-ready"}`}>{attended ? "✓ ATTENDED" : "READY"}</span></td></tr>; })}
+                {!cwBulkAttendancePageRows.length && <tr><td colSpan="4" className="cw-bulk-empty">No active players match the current filters.</td></tr>}
+              </tbody></table></div>
+              <div className="cw-bulk-pagination"><span>PAGE {cwBulkAttendanceSafePage} OF {cwBulkAttendancePageCount} • 5 PER PAGE • {cwBulkAttendanceVisiblePlayers.length} PLAYERS</span><div><button type="button" disabled={cwBulkAttendanceSafePage <= 1} onClick={() => setCwBulkAttendancePage(v => Math.max(1, v - 1))}>‹</button><button type="button" disabled={cwBulkAttendanceSafePage >= cwBulkAttendancePageCount} onClick={() => setCwBulkAttendancePage(v => Math.min(cwBulkAttendancePageCount, v + 1))}>›</button></div></div>
+            </section>
+            <div className="cw-bulk-attendance-summary"><div><strong>{cwBulkAttendancePlayers.length}</strong><span>PLAYERS SELECTED</span></div><div><strong>{cwBulkAttendanceDate ? cwBulkAttendancePlayers.filter(id => hasCWAttendanceForDate(id, cwBulkAttendanceDate)).length : 0}</strong><span>ALREADY ATTENDED</span></div><div><strong>{cwBulkAttendanceDate ? cwBulkAttendancePlayers.filter(id => !hasCWAttendanceForDate(id, cwBulkAttendanceDate)).length : 0}</strong><span>NEW ATTENDANCE</span></div><div><strong>₲ {money(cwBulkAttendanceDate ? cwBulkAttendancePlayers.reduce((sum, id) => { const p = players.find(x => String(x.id) === String(id)); return sum + (p && !hasCWAttendanceForDate(id, cwBulkAttendanceDate) ? getDefaultCwSalary(p) : 0); }, 0) : 0)}</strong><span>NEW SALARY TOTAL</span></div></div>
+            <label className="cw-bulk-attendance-comment"><span>ADMIN COMMENT *</span><textarea value={bulkAttendanceComment} onChange={e => { setBulkAttendanceComment(e.target.value); setBulkAttendanceError(""); }} placeholder="Required. Explain why this bulk attendance is being recorded." /></label>
+            {bulkAttendanceError && <div className="cw-bulk-error">{bulkAttendanceError}</div>}
+          </div>
+          <div className="cw-bulk-attendance-footer"><button type="button" className="cw-btn" onClick={() => setBulkAttendanceModal(false)}>CANCEL</button><button type="button" className="cw-btn cw-btn-primary" disabled={bulkAttendanceSaving || !cwBulkAttendancePlayers.length || !cwBulkSelectedOccurrence} onClick={saveBulkAttendance}>{bulkAttendanceSaving ? "SAVING..." : "✓ SAVE BULK ATTENDANCE"}</button></div>
+        </div>
+      </div>
+    )}
+
+    {playerModal && <Modal title={playerModal.mode === "edit" ? `EDIT PLAYER • ${playerModal.player?.ign || ""}` : "ADD NEW PLAYER"} wide={playerModal.mode === "add"} onClose={() => setPlayerModal(null)}>
+      {playerModal.mode === "add" ? <>
+        <div className="cw-player-form-head"><div className="cw-kicker">CW ROSTER • UNIFIED ADD</div><h3>Add New Player</h3><p>Enter one IGN or paste many IGNs. One player uses the same workflow as before; multiple lines create players in bulk. Add another group when class or role changes.</p></div>
+        <datalist id="cw-unified-class-options">{classes.map(c => <option key={c} value={c} />)}</datalist>
+        <datalist id="cw-unified-role-options">{roles.map(r => <option key={r} value={r} />)}</datalist><datalist id="cw-unified-weapon-options">{Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean))).map(w => <option key={w} value={w} />)}</datalist>
+        {bulkPlayerGroups.map((g, i) => <section className="cw-bulk-player-group cw-unified-player-group" key={g.id}>
+          <div className="cw-bulk-group-title"><strong>GROUP {i + 1}</strong>{bulkPlayerGroups.length > 1 && <button className="cw-btn cw-btn-small" onClick={() => setBulkPlayerGroups(gs => gs.filter(x => x.id !== g.id))}>REMOVE GROUP</button>}</div>
+          <label>PLAYER IGN / IN-GAME NAME <span>ONE PER LINE</span><textarea value={g.igns} onChange={e => setBulkPlayerGroups(gs => gs.map(x => x.id === g.id ? { ...x, igns: e.target.value } : x))} placeholder={'Player 1\nPlayer 2\nPlayer 3\nPlayer 4'} /></label>
+          <div className="cw-bulk-group-fields cw-bulk-group-fields-3"><label>CLASS / NEW CLASS<TypeSelect id={`cw-bulk-group-class-extra-${g.id}`} className="cw-input" value={g.className} onChange={(value) => setBulkPlayerGroups(gs => gs.map(x => x.id === g.id ? { ...x, className: value } : x))} options={classes} placeholder="Type or select class" /></label><label>ROLE / NEW ROLE<TypeSelect id={`cw-bulk-group-role-extra-${g.id}`} className="cw-input" value={g.role} onChange={(value) => setBulkPlayerGroups(gs => gs.map(x => x.id === g.id ? { ...x, role: value } : x))} options={roles} placeholder="Type or select role" /></label><label>PREFERRED WEAPON<TypeSelect id={`cw-bulk-group-weapon-${g.id}`} className="cw-input" value={g.weapon || ""} onChange={(value) => setBulkPlayerGroups(gs => gs.map(x => x.id === g.id ? { ...x, weapon: value } : x))} options={Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean)))} placeholder="Type or select preferred weapon" /></label></div>
+          <small>{cwBulkLines(g.igns).length} player{cwBulkLines(g.igns).length === 1 ? "" : "s"} in this group</small>
+          <div className="cw-bulk-player-validation">{cwBulkLines(g.igns).map(ign => { const exists = players.find(p => clean(p.ign).toLowerCase() === ign.toLowerCase()); return <div key={ign.toLowerCase()} className={exists ? "is-existing" : "is-new"}><span>{exists ? "⚠" : "✓"}</span><strong>{ign}</strong><small>{exists ? `ALREADY EXISTS • ${exists.active === false ? "DISABLED" : "ACTIVE"}` : "NEW PLAYER"}</small></div>; })}</div>
+        </section>)}
+        <button className="cw-btn cw-bulk-add-group" onClick={() => setBulkPlayerGroups(gs => [...gs, { id: Date.now() + gs.length, igns: "", className: classes[0] || "Swordman", role: roles[0] || DEFAULT_ROLES[0], weapon: "" }])}>＋ ADD ANOTHER GROUP</button>
+        {message && <div className="cw-bulk-error">{message}</div>}
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setPlayerModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={bulkPlayerSaving || !bulkPlayerGroups.some(g => cwBulkLines(g.igns).length)} onClick={saveBulkPlayers}>{bulkPlayerSaving ? "SAVING..." : "＋ SAVE PLAYER(S)"}</button></div>
+      </> : <>
+        <div className="cw-player-form-head"><div className="cw-kicker">CW ROSTER PROFILE</div><p>Update the player's IGN, class or Clan War role. Profile changes are recorded in the Guild Notice Board.</p></div>
+        <div className="cw-form-grid cw-player-form-grid">
+          <label>PLAYER IGN<input autoFocus value={playerForm.ign} onChange={e => setPlayerForm({ ...playerForm, ign: e.target.value })} placeholder="Enter in-game name" onKeyDown={e => { if (e.key === "Enter") savePlayer() }} /></label>
+          <label>CLASS / NEW CLASS<TypeSelect id="cw-player-class" className="cw-input" value={playerForm.className} onChange={(value) => setPlayerForm({ ...playerForm, className: value })} options={classes} placeholder="Type or select class" /></label>
+          <label>ROLE / NEW ROLE<TypeSelect id="cw-player-role" className="cw-input" value={playerForm.role} onChange={(value) => setPlayerForm({ ...playerForm, role: value })} options={roles} placeholder="Type or select role" /></label>
+          <label>PREFERRED WEAPON<TypeSelect id="cw-player-weapon" className="cw-input" value={playerForm.weapon || ""} onChange={(value) => setPlayerForm({ ...playerForm, weapon: value })} options={Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean)))} placeholder="Type or select preferred weapon" /></label>
+        </div>
+        <div className="cw-helper"><b>Player profile:</b> class and role determine the default salary and roster display. Attendance history is never deleted when a player profile is removed.</div>
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setPlayerModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving || !isAdmin} onClick={savePlayer}>{saving ? "SAVING..." : "SAVE PLAYER CHANGES"}</button></div>
+      </>}
+    </Modal>}
+
+    {attendanceModal && attendanceModal.mode === "daily" ? (() => {
+      const player = attendanceModal.player;
+      const occ = attendanceModal.occurrence;
+      const row = attendance.find(r => String(r.id) === String(attendanceModal.existing?.id)) || attendanceModal.existing;
+      const todaysItems = itemAssignments
+        .filter(r => String(r.playerId) === String(player.id) && clean(r.dateKey) === clean(occ.key))
+        .sort((a, b) => (safeDate(b.scheduledAt || b.createdAt)?.getTime() || 0) - (safeDate(a.scheduledAt || a.createdAt)?.getTime() || 0));
+      const legacyItem = clean(row?.receivedItem) && !todaysItems.length ? [{ id: `legacy-${row.id}`, itemName: row.receivedItem, quantity: 1, totalCost: num(row.itemCostGold), __legacy: true }] : [];
+      const displayItems = [...todaysItems, ...legacyItem];
+      return <Modal title={`TODAY'S CW PAYOUT • ${player.ign}`} wide onClose={() => setAttendanceModal(null)}>
+        <div className="cw-daily-hero">
+          <div><span className="cw-kicker">CLAN WAR ATTENDANCE</span><h3>{player.ign}</h3><p>{player.className || player.class} • {player.role || "No role"}</p></div>
+          <div className="cw-daily-attended"><b>✓ ATTENDED</b><span>{formatDateTime(occ.at, resolvedTimezone)}</span></div>
+        </div>
+        <div className="cw-daily-grid">
+          <section className="cw-daily-card cw-daily-salary"><div className="cw-daily-card-head"><div><span className="cw-kicker">SALARY</span><h3>Today's CW Salary</h3></div><span className="cw-daily-status">PAID</span></div><strong className="cw-daily-money">₲ {money(row?.salaryGold)}</strong><small>{player.className || player.class} • {player.role || "All Roles"}</small><button className="cw-btn cw-btn-small cw-btn-salary-edit" onClick={() => openAttendance(player, occ, "salary-edit")}>EDIT SALARY</button></section>
+          <section className="cw-daily-card cw-daily-items"><div className="cw-daily-card-head"><div><span className="cw-kicker">ITEM DISTRIBUTION</span><h3>Today's Items</h3></div><span className="cw-daily-count">{displayItems.reduce((n, x) => n + Math.max(0, Math.floor(num(x.quantity, 1))), 0)} PCS</span></div>
+            {displayItems.length ? <div className="cw-daily-item-list">{displayItems.map(item => <div className="cw-daily-item" key={item.id}><div><strong>{item.itemName || item.receivedItem || "Item"}</strong><small>{Math.max(1, Math.floor(num(item.quantity, 1)))} pcs • ₲ {money(item.totalCost ?? item.itemCostGold)}</small></div>{item.__legacy ? <span className="cw-daily-legacy">LEGACY</span> : <div className="cw-daily-item-actions"><button className="cw-btn cw-btn-small" onClick={() => { setAttendanceModal(null); openItemAssignment(player, item); }}>EDIT</button><button className="cw-btn cw-btn-danger cw-btn-small" onClick={() => requestDeleteItemAssignment(item)}>DELETE</button></div>}</div>)}</div> : <div className="cw-daily-empty">No items assigned today.</div>}
+            <button className="cw-btn cw-btn-primary" onClick={() => { setAttendanceModal(null); openItemAssignment(player); }}>＋ ADD ITEM</button>
+          </section>
+        </div>
+        <div className="cw-daily-summary"><div><small>ATTENDANCE</small><strong>✓ RECORDED</strong></div><div><small>SALARY</small><strong>₲ {money(row?.salaryGold)}</strong></div><div><small>ITEM TYPES</small><strong>{displayItems.length}</strong></div><div><small>TODAY</small><strong>{formatDate(occ.at, resolvedTimezone)}</strong></div></div>
+        <div className="cw-helper"><b>Today's payout record.</b> Attendance was already recorded. Salary is connected to Treasury. Use <b>ADD ITEM</b> to distribute inventory, or edit/delete today's existing entries without creating another attendance record.</div>
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAttendanceModal(null)}>CLOSE</button><button className="cw-btn cw-btn-danger cw-btn-redo" disabled={saving} onClick={() => requestRedoAttendance(row)}>{saving ? "PROCESSING..." : "↻ UNMARK & REDO ATTENDANCE"}</button><button className="cw-btn cw-btn-danger" disabled={saving} onClick={() => requestDeleteAttendance(row)}>DELETE ATTENDANCE</button></div>
+      </Modal>;
+    })() : attendanceModal?.mode === "salary-edit" ? (() => {
+      const { player, occurrence, existing } = attendanceModal;
+      const oldSalary = num(existing?.salaryGold, 0);
+      const newSalary = num(attendanceForm.salaryGold, 0);
+      return <Modal title={`EDIT CW SALARY • ${player.ign}`} wide onClose={() => setAttendanceModal(null)}>
+        <div className="cw-salary-edit-hero">
+          <div><span className="cw-kicker">CLAN WAR PAYROLL</span><h3>{player.ign}</h3><p>{player.className || player.class} • {player.role || "No role"}</p></div>
+          <div className="cw-salary-edit-date"><span>CW DATE</span><strong>{formatDateTime(occurrence.at, resolvedTimezone)}</strong></div>
+        </div>
+        <div className="cw-salary-edit-grid">
+          <section className="cw-salary-edit-card cw-salary-current"><span className="cw-kicker">CURRENT PAYOUT</span><strong>₲ {money(oldSalary)}</strong><small>Salary currently recorded for this CW attendance.</small></section>
+          <section className="cw-salary-edit-card cw-salary-new"><span className="cw-kicker">NEW SALARY</span><label><input autoFocus inputMode="decimal" value={attendanceForm.salaryGold} onChange={e => setAttendanceForm({ ...attendanceForm, salaryGold: formatMoneyInput(e.target.value) })} placeholder="0" /><em>GOLD</em></label><small>{newSalary === oldSalary ? "Enter a different amount to save a change." : `Treasury impact: ${newSalary > oldSalary ? "additional" : "reduced"} ₲ ${money(Math.abs(newSalary - oldSalary))}`}</small></section>
+        </div>
+        <div className="cw-salary-edit-change"><div><small>CHANGE</small><strong className={newSalary >= oldSalary ? "cw-salary-up" : "cw-salary-down"}>{newSalary === oldSalary ? "NO CHANGE" : `${newSalary > oldSalary ? "+" : "−"} ₲ ${money(Math.abs(newSalary - oldSalary))}`}</strong></div><div><small>PLAYER</small><strong>{player.ign}</strong></div><div><small>CLASS / ROLE</small><strong>{player.className || player.class} • {player.role || "—"}</strong></div></div>
+        <label className="cw-salary-edit-comment"><span>ADMIN COMMENT *</span><textarea value={attendanceForm.adminComment} onChange={e => setAttendanceForm({ ...attendanceForm, adminComment: e.target.value })} placeholder="Required. Explain why this salary is being changed..." /></label>
+        <div className="cw-helper"><b>SALARY ONLY.</b> This editor changes only the CW salary. Attendance, inventory items, player profile, and other CW records are not modified. The linked Treasury salary entry, Activity &amp; Notifications, and player history are updated together.</div>
+        <div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAttendanceModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving || newSalary === oldSalary || !clean(attendanceForm.adminComment)} onClick={saveSalaryEdit}>{saving ? "UPDATING..." : "SAVE SALARY CHANGE"}</button></div>
+      </Modal>;
+    })() : attendanceModal && <Modal title={`${attendanceModal.mode === "override" ? "ATTENDANCE CORRECTION" : "EDIT CW ATTENDANCE"} • ${attendanceModal.player.ign}`} wide onClose={() => setAttendanceModal(null)}><div className="cw-attendance-summary"><strong>{formatDateTime(attendanceModal.occurrence.at, resolvedTimezone)}</strong><span>{attendanceModal.player.className || attendanceModal.player.class} • {attendanceModal.player.role} • Base: {attendanceModal.occurrence.time} {baseTz}</span></div><div className="cw-form-grid"><label>CW CLASS SALARY<input inputMode="decimal" value={attendanceForm.salaryGold} onChange={e => setAttendanceForm({ ...attendanceForm, salaryGold: formatMoneyInput(e.target.value) })} placeholder="0" /><small className="cw-field-help">Default comes from {attendanceModal.player.className || attendanceModal.player.class} salary. Admin can adjust this record.</small></label><label>ITEM COST / GOLD HANDED OUT<input inputMode="decimal" value={attendanceForm.itemCostGold} onChange={e => setAttendanceForm({ ...attendanceForm, itemCostGold: formatMoneyInput(e.target.value) })} placeholder="0" /></label><label className="cw-span-2">WHAT DID THEY RECEIVE?<textarea value={attendanceForm.receivedItem} onChange={e => setAttendanceForm({ ...attendanceForm, receivedItem: e.target.value })} placeholder="Example: PUM BOX • Crazytime Box • Guild consumables" /></label><label className="cw-span-2">NOTES<textarea value={attendanceForm.notes} onChange={e => setAttendanceForm({ ...attendanceForm, notes: e.target.value })} placeholder="Example: Weekly Clan War salary and item distribution." /></label>{attendanceModal.existing && <label className="cw-span-2">ADMIN COMMENT *<textarea value={attendanceForm.adminComment} onChange={e => setAttendanceForm({ ...attendanceForm, adminComment: e.target.value })} placeholder={attendanceModal.mode === "override" ? "Required. Explain why this attendance is being corrected (for example: forgot to add attendance)." : "Required. Explain why this attendance record is being edited..."} /></label>}</div><div className="cw-helper"><b>How to record:</b> put the salary paid for this CW in the salary field. If an item was handed out, enter its name and its gold cost. Treasury automatically receives the matching minus entries so the Guild Gold Vault stays connected.</div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setAttendanceModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={saveAttendance}>{saving ? "SAVING..." : attendanceModal.mode === "override" ? "SAVE CORRECTION" : "SAVE EDIT"}</button></div></Modal>}
 
     {itemModal?.mode === "inventory" && <Modal title="GUILD INVENTORY" wide onClose={() => setItemModal(null)}>
       <div className="cw-section-head"><div><div className="cw-kicker">LIVE GUILD STOCK</div><h2>Guild Inventory</h2><p>Current stock by category, item, cost and quantity. This view updates from the live inventory ledger.</p></div><button className="cw-btn" onClick={() => { setCatalogPage(1); setItemModal({ mode: "catalog" }); }}>MANAGE ITEMS</button></div>
@@ -1938,6 +2998,45 @@ export default function CWPage({ user, isAdmin }) {
         <div><span className="cw-kicker">CLAN WAR INVENTORY</span><h3>{itemAssignmentModal.assignment ? "Edit Item Distribution" : "Assign Item to Player"}</h3><p>Choose a player, select live Vault stock, set the quantity, and record the exact Clan War date & time.</p></div>
         <div className="cw-assignment-live"><small>RECORDED TIME</small><strong>{formatDateTime(zonedDateTimeInputToUtc(itemAssignmentForm.assignmentDateTime, resolvedTimezone) || now, resolvedTimezone)}</strong><span>{resolvedTimezone}</span></div>
       </div>
+      {(() => {
+        const assignmentPlayer = players.find(p => String(p.id) === String(itemAssignmentForm.playerId)) || itemAssignmentModal.player;
+        const todayCwAttendance = assignmentPlayer ? attendance.find(r => String(r.playerId) === String(assignmentPlayer.id) && clean(r.dateKey) === clean(todayKey) && r.attended !== false) : null;
+        const latestCwAttendance = assignmentPlayer ? attendance
+          .filter(r => String(r.playerId) === String(assignmentPlayer.id) && r.attended !== false)
+          .sort((a, b) => updatedTimeMs(b, "scheduledAt", "createdAt") - updatedTimeMs(a, "scheduledAt", "createdAt"))[0] : null;
+        const todayBhAttendance = assignmentPlayer ? bhAttendance.find(r => String(r.playerId) === String(assignmentPlayer.id) && clean(r.dateKey) === clean(todayKey) && r.attended !== false) : null;
+        const latestBhAttendance = assignmentPlayer ? bhAttendance
+          .filter(r => String(r.playerId) === String(assignmentPlayer.id) && r.attended !== false)
+          .sort((a, b) => updatedTimeMs(b, "spawnAt", "createdAt") - updatedTimeMs(a, "spawnAt", "createdAt"))[0] : null;
+        const cwAttendedToday = Boolean(todayCwAttendance);
+        const bhAttendedToday = Boolean(todayBhAttendance);
+        return <div className={`cw-item-player-today-status ${cwAttendedToday ? "is-attended" : "is-not-attended"} ${bhAttendedToday ? "bh-is-attended" : "bh-is-not-attended"}`}>
+          <div className="cw-item-player-status-header">
+            <div className="cw-item-player-status-main">
+              <span className="cw-kicker">PLAYER ATTENDANCE STATUS</span>
+              <strong>{assignmentPlayer ? assignmentPlayer.ign : "SELECT A PLAYER"}</strong>
+              <small>{assignmentPlayer ? `${assignmentPlayer.className || assignmentPlayer.class} • ${assignmentPlayer.role || "No role"}` : "Choose a player to see today's CW and BH attendance status before assigning an item."}</small>
+            </div>
+            {assignmentPlayer && <div className="cw-item-player-last-attendance">
+              <span>LAST ATTENDANCE</span>
+              <b>{latestCwAttendance ? `CW • ${formatDateTime(latestCwAttendance.scheduledAt || latestCwAttendance.createdAt, resolvedTimezone)}` : "CW • NONE"}</b>
+              <b>{latestBhAttendance ? `BH • ${formatDateTime(latestBhAttendance.spawnAt || latestBhAttendance.createdAt, resolvedTimezone)}` : "BH • NONE"}</b>
+            </div>}
+          </div>
+          <div className="cw-item-attendance-status-grid">
+            <div className={`cw-item-attendance-status-card ${cwAttendedToday ? "is-attended" : "is-not-attended"}`}>
+              <span className="cw-kicker">TODAY'S CW ATTENDANCE</span>
+              <b>{assignmentPlayer ? (cwAttendedToday ? "✓ ATTENDED TODAY" : "NOT ATTENDED TODAY") : "NO PLAYER SELECTED"}</b>
+              {assignmentPlayer && <small>{cwAttendedToday ? `CW attendance recorded • ${formatDateTime(todayCwAttendance.scheduledAt || todayCwAttendance.createdAt, resolvedTimezone)}` : "No CW attendance record for today"}</small>}
+            </div>
+            <div className={`cw-item-attendance-status-card ${bhAttendedToday ? "is-attended" : "is-not-attended"} bh-status`}>
+              <span className="cw-kicker">TODAY'S BH ATTENDANCE</span>
+              <b>{assignmentPlayer ? (bhAttendedToday ? "✓ ATTENDED TODAY" : "NOT ATTENDED TODAY") : "NO PLAYER SELECTED"}</b>
+              {assignmentPlayer && <small>{bhAttendedToday ? `BH attendance recorded • ${formatDateTime(todayBhAttendance.spawnAt || todayBhAttendance.createdAt, resolvedTimezone)}${todayBhAttendance.bossName || todayBhAttendance.boss ? ` • ${clean(todayBhAttendance.bossName || todayBhAttendance.boss)}` : ""}` : "No BH attendance record for today"}</small>}
+            </div>
+          </div>
+        </div>;
+      })()}
       <div className="cw-form-grid cw-assignment-top-grid">
         {!itemAssignmentModal.player && <label>PLAYER<select value={itemAssignmentForm.playerId} onChange={e => setItemAssignmentForm({ ...itemAssignmentForm, playerId: e.target.value })}><option value="">SELECT PLAYER...</option>{activePlayers.map(p => <option key={p.id} value={p.id}>{p.ign} • {p.className || p.class} • {p.role || "No role"}</option>)}</select></label>}
         <label>CLAN WAR DATE & TIME<input type="datetime-local" value={itemAssignmentForm.assignmentDateTime || dateTimeInputValue(now, resolvedTimezone)} onChange={e => { const value = e.target.value; const utc = zonedDateTimeInputToUtc(value, resolvedTimezone); const parts = utc ? partsInZone(utc, baseTz) : null; setItemAssignmentForm({ ...itemAssignmentForm, assignmentDateTime: value, occurrenceKey: parts ? `${parts.year}-${parts.month}-${parts.day}` : itemAssignmentForm.occurrenceKey }); }} /><small className="cw-field-help">Defaults to the current time. Change it to the exact Clan War date/time you are recording. Display follows {resolvedTimezone}.</small></label>
@@ -1945,18 +3044,20 @@ export default function CWPage({ user, isAdmin }) {
       <section className="cw-assignment-stock-panel">
         <div className="cw-assignment-stock-head"><div><span className="cw-kicker">INVENTORY VAULT</span><h3>Select item from available stock</h3><p>Only stock with available units can be assigned.</p></div><div className="cw-assignment-stock-count"><strong>{assignmentInventoryRows.length}</strong><span>available item types</span></div></div>
         <div className="cw-assignment-stock-tools"><label className="cw-assignment-search"><span>SEARCH STOCK</span><input value={assignmentInventorySearch} onChange={e => { setAssignmentInventorySearch(e.target.value); setAssignmentInventoryPage(1); }} placeholder="Search item name or category..." /></label><label><span>TYPE</span><select value={assignmentInventoryCategory} onChange={e => { setAssignmentInventoryCategory(e.target.value); setAssignmentInventoryPage(1); }}>{assignmentInventoryCategories.map(c => <option key={c} value={c}>{c === "ALL" ? "ALL TYPES" : c}</option>)}</select></label></div>
-        <div className="cw-assignment-stock-table-wrap"><table className="cw-assignment-stock-table"><thead><tr><th>SELECT</th><th>ITEM</th><th>TYPE</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>UNIT COST</th><th>QTY TO ASSIGN</th><th>STATUS</th></tr></thead><tbody>{assignmentInventoryPageRows.map(({ item, st, category, status }) => { const selected = assignmentSelections.some(r => String(r.itemId) === String(item.id)); const selectedRow = assignmentSelections.find(r => String(r.itemId) === String(item.id)); return <tr key={item.id} className={selected ? "selected" : ""} onClick={() => !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) })}><td><button type="button" className={`cw-stock-select ${selected ? "selected" : ""}`} onClick={e => { e.stopPropagation(); !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) }); }}>{selected ? "✓" : "SELECT"}</button></td><td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td><td>{category}</td><td>{money(st.received)}</td><td>{money(st.distributed)}</td><td><strong>{money(st.available)}</strong></td><td>₲ {money(item.unitCost)}</td><td>{selected ? <input
-  className="cw-assignment-row-qty"
-  type="text"
-  inputMode="numeric"
-  pattern="[0-9]*"
-  value={selectedRow?.quantity ?? ""}
-  aria-label={`Quantity to assign for ${item.name}`}
-  onMouseDown={e => e.stopPropagation()}
-  onClick={e => e.stopPropagation()}
-  onFocus={e => e.stopPropagation()}
-  onChange={e => setAssignmentItemQuantity(item.id, e.target.value)}
-/> : <span className="cw-assignment-unselected">—</span>}</td><td><span className={`cw-stock-status ${status === "OUT" ? "out" : status === "LOW" ? "low" : "in"}`}>{status}</span></td></tr> })}{!assignmentInventoryPageRows.length && <tr><td colSpan="9" className="cw-assignment-empty">No available stock matches your search/type.</td></tr>}</tbody></table></div>
+        <div className="cw-assignment-stock-table-wrap"><table className="cw-assignment-stock-table"><thead><tr><th>SELECT</th><th>ITEM</th><th>TYPE</th><th>RECEIVED</th><th>DISTRIBUTED</th><th>AVAILABLE</th><th>UNIT COST</th><th>QTY TO ASSIGN</th><th>STATUS</th></tr></thead><tbody>{assignmentInventoryPageRows.map(({ item, st, category, status }) => {
+          const selected = assignmentSelections.some(r => String(r.itemId) === String(item.id)); const selectedRow = assignmentSelections.find(r => String(r.itemId) === String(item.id)); return <tr key={item.id} className={selected ? "selected" : ""} onClick={() => !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) })}><td><button type="button" className={`cw-stock-select ${selected ? "selected" : ""}`} onClick={e => { e.stopPropagation(); !itemAssignmentModal.assignment && !itemAssignmentModal.treasuryEntry ? toggleAssignmentItem(item.id) : setItemAssignmentForm({ ...itemAssignmentForm, itemId: String(item.id) }); }}>{selected ? "✓" : "SELECT"}</button></td><td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td><td>{category}</td><td>{money(st.received)}</td><td>{money(st.distributed)}</td><td><strong>{money(st.available)}</strong></td><td>₲ {money(item.unitCost)}</td><td>{selected ? <input
+            className="cw-assignment-row-qty"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={selectedRow?.quantity ?? ""}
+            aria-label={`Quantity to assign for ${item.name}`}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+            onFocus={e => e.stopPropagation()}
+            onChange={e => setAssignmentItemQuantity(item.id, e.target.value)}
+          /> : <span className="cw-assignment-unselected">—</span>}</td><td><span className={`cw-stock-status ${status === "OUT" ? "out" : status === "LOW" ? "low" : "in"}`}>{status}</span></td></tr>
+        })}{!assignmentInventoryPageRows.length && <tr><td colSpan="9" className="cw-assignment-empty">No available stock matches your search/type.</td></tr>}</tbody></table></div>
         <div className="cw-assignment-stock-pagination"><span>Showing {assignmentInventoryRows.length ? ((assignmentInventoryPageSafe - 1) * PAGE_SIZE + 1) : 0}–{Math.min(assignmentInventoryPageSafe * PAGE_SIZE, assignmentInventoryRows.length)} of {assignmentInventoryRows.length}</span><div><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe <= 1} onClick={() => setAssignmentInventoryPage(p => Math.max(1, p - 1))}>‹</button><strong>{assignmentInventoryPageSafe} / {assignmentInventoryPageCount}</strong><button className="cw-btn cw-btn-small" disabled={assignmentInventoryPageSafe >= assignmentInventoryPageCount} onClick={() => setAssignmentInventoryPage(p => Math.min(assignmentInventoryPageCount, p + 1))}>›</button></div></div>
       </section>
       <div className="cw-form-grid cw-assignment-bottom-grid">
@@ -2048,7 +3149,7 @@ export default function CWPage({ user, isAdmin }) {
       })()}
     </Modal>}
 
-    {selectedAttendance && <Modal title="CW ATTENDANCE DETAILS" wide onClose={() => setSelectedAttendance(null)}><div className="cw-detail-grid"><div><small>PLAYER</small><strong>{selectedAttendance.ign}</strong></div><div><small>CLASS</small><strong><ClassEmblem name={selectedAttendance.className} small />{selectedAttendance.className}</strong></div><div><small>ROLE</small><strong>{selectedAttendance.role}</strong></div><div><small>CW DATE & TIME</small><strong>{formatDateTime(selectedAttendance.scheduledAt || selectedAttendance.dateKey, resolvedTimezone)}</strong></div><div><small>SALARY PAID</small><strong className="cw-gold">₲ {money(selectedAttendance.salaryGold)}</strong></div><div><small>ITEM COST</small><strong className="cw-gold">₲ {money(selectedAttendance.itemCostGold)}</strong></div><div><small>ITEM RECEIVED</small><strong>{selectedAttendance.receivedItem || "—"}</strong></div><div><small>RECORDED BY</small><strong>{selectedAttendance.updatedBy || selectedAttendance.createdBy || "System"}</strong></div><div><small>LAST UPDATED</small><strong>{formatDateTime(selectedAttendance.updatedAt || selectedAttendance.createdAt, resolvedTimezone)}</strong></div></div><div className="cw-detail-block"><small>NOTES</small><p>{selectedAttendance.notes || "No additional notes."}</p></div>{isAdmin && <div className="cw-modal-actions"><button className="cw-btn" onClick={() => { const row = selectedAttendance; setSelectedAttendance(null); openAttendanceRecord(row, "edit") }}>EDIT</button><button className="cw-btn cw-btn-primary" onClick={() => { const row = selectedAttendance; setSelectedAttendance(null); openAttendanceRecord(row, "override") }}>OVERRIDE</button><button className="cw-btn cw-btn-danger" onClick={() => requestDeleteAttendance(selectedAttendance)}>DELETE RECORD</button></div>}</Modal>}
+    {selectedAttendance && <Modal title="CW ATTENDANCE DETAILS" wide onClose={() => setSelectedAttendance(null)}><div className="cw-detail-grid"><div><small>PLAYER</small><strong>{selectedAttendance.ign}</strong></div><div><small>CLASS</small><strong><ClassEmblem name={selectedAttendance.className} small />{selectedAttendance.className}</strong></div><div><small>ROLE</small><strong>{selectedAttendance.role}</strong></div><div><small>CW DATE & TIME</small><strong>{formatDateTime(selectedAttendance.scheduledAt || selectedAttendance.dateKey, resolvedTimezone)}</strong></div><div><small>SALARY PAID</small><strong className="cw-gold">₲ {money(selectedAttendance.salaryGold)}</strong></div><div><small>ITEM COST</small><strong className="cw-gold">₲ {money(selectedAttendance.itemCostGold)}</strong></div><div><small>ITEM RECEIVED</small><strong>{selectedAttendance.receivedItem || "—"}</strong></div><div><small>RECORDED BY</small><strong>{selectedAttendance.updatedBy || selectedAttendance.createdBy || "System"}</strong></div><div><small>LAST UPDATED</small><strong>{formatDateTime(selectedAttendance.updatedAt || selectedAttendance.createdAt, resolvedTimezone)}</strong></div></div><div className="cw-detail-block"><small>NOTES</small><p>{selectedAttendance.notes || "No additional notes."}</p></div>{isAdmin && <div className="cw-modal-actions"><button className="cw-btn" onClick={() => { const row = selectedAttendance; setSelectedAttendance(null); openAttendanceRecord(row, "edit") }}>EDIT</button><button className="cw-btn cw-btn-primary" onClick={() => { const row = selectedAttendance; setSelectedAttendance(null); openAttendanceRecord(row, "override") }}>CORRECTION</button><button className="cw-btn cw-btn-danger" onClick={() => requestDeleteAttendance(selectedAttendance)}>DELETE RECORD</button></div>}</Modal>}
 
     {(treasuryModal === "income" || treasuryModal === "expense") && <Modal title={treasuryModal === "income" ? "ADD GOLD RECEIVED" : "ADD GUILD EXPENSE"} wide onClose={() => setTreasuryModal(null)}><div className="cw-form-grid"><label>TYPE<input value={treasuryModal === "income" ? "RECEIVED FROM CW WAR (+)" : "GUILD EXPENSE (-)"} readOnly /></label><label>AMOUNT (GOLD)<input inputMode="decimal" value={treasuryForm.amount} onChange={e => setTreasuryForm({ ...treasuryForm, amount: formatMoneyInput(e.target.value) })} placeholder="0" /></label><label>DATE & TIME ADDED<input value={formatDateTime(now, resolvedTimezone)} readOnly /><small className="cw-field-help">Recorded automatically when this entry is saved. The same timestamp is converted by the global display timezone.</small></label><label className="cw-span-2">DESCRIPTION<input value={treasuryForm.description} onChange={e => setTreasuryForm({ ...treasuryForm, description: e.target.value })} placeholder="Example: CW War winnings / Guild expense" /></label><label className="cw-span-2">ITEM / WHAT WAS PURCHASED<textarea value={treasuryForm.item} onChange={e => setTreasuryForm({ ...treasuryForm, item: e.target.value })} placeholder="Optional: PUM BOX • Crazytime Box • Guild supplies" /></label><label className="cw-span-2">ADMIN COMMENT<textarea value={treasuryForm.adminComment} onChange={e => setTreasuryForm({ ...treasuryForm, adminComment: e.target.value })} placeholder="Explain what this money was for..." /></label></div><div className="cw-modal-actions"><button className="cw-btn" onClick={() => setTreasuryModal(null)}>CANCEL</button><button className="cw-btn cw-btn-primary" disabled={saving} onClick={saveTreasuryEntry}>{saving ? "SAVING..." : "SAVE TREASURY ENTRY"}</button></div></Modal>}
 

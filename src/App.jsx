@@ -102,7 +102,8 @@ export default function App() {
       unsubscribeAdmin = onSnapshot(
         doc(db, "adminUsers", currentUser.uid),
         (snap) => {
-          const activeRecord = snap.exists() && snap.data()?.active === true;
+          const data = snap.exists() ? snap.data() : {};
+          const activeRecord = data.active === true || data.status === "active";
           const allowed = currentUser.uid === ADMIN_UID || activeRecord;
           setAdminAccess(allowed);
           if (allowed && checkBackupReminder(snap.data())) setBackupPromptOpen(true);
@@ -234,8 +235,10 @@ export default function App() {
         // The newly-created Auth identity can claim only the request it created.
         await setDoc(doc(db, "adminUsers", createdCredential.user.uid), {
           uid: createdCredential.user.uid,
-          email: emailValue,
+          email: createdCredential.user.email || emailValue,
           displayName: name,
+          role: "admin",
+          status: "active",
           active: true,
           registrationRequestId: requestRef.id,
           createdAt: serverTimestamp(),

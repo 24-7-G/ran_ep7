@@ -14,12 +14,9 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
-import { onAuthStateChanged } from "firebase/auth";
-
 import { auth, db } from "../lib/firebase";
 
 import {
-  ADMIN_UID,
   PRIMARY_TIMEZONE,
   TIMEZONES,
   GUILD_CLASSES,
@@ -1850,7 +1847,7 @@ function AttendancePlayerFilter({
    MAIN COMPONENT
 ========================================================= */
 
-export default function BHPage() {
+export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
   const [
     currentUser,
     setCurrentUser,
@@ -2269,24 +2266,14 @@ export default function BHPage() {
   ========================================================= */
 
   useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (user) => {
-          setCurrentUser(
-            user || null
-          );
-
-          setIsAdmin(
-            !!user &&
-            user.uid ===
-            ADMIN_UID
-          );
-        }
-      );
-
-    return unsubscribe;
-  }, []);
+    // App.jsx is the single source of truth for administrator authorization.
+    // BH previously performed its own bootstrap-UID-only check, which caused
+    // newly registered administrators to see VIEW ONLY even while the header
+    // correctly showed ADMIN. Keep the local state for existing BH logic, but
+    // mirror the authoritative App-level user/admin state.
+    setCurrentUser(appUser || null);
+    setIsAdmin(Boolean(appUser && appIsAdmin));
+  }, [appUser, appIsAdmin]);
 
   /* =========================================================
      CLOCK

@@ -16,6 +16,7 @@ import extremeIcon from "../icons/extreme.svg";
 import brawlerIcon from "../icons/brawler.svg";
 import cwWarIcon from "../icons/cw-war.svg";
 import guildWarArtwork from "../bosses/guild-war.png";
+import ranVIcon from "../assets/ran-v-icon.png";
 import "./CWPage.css";
 
 const CW_DAYS = [
@@ -1523,6 +1524,11 @@ export default function CWPage({ user, isAdmin }) {
   }
 
   return <div className="cw-page">
+    <section className="cw-page-banner" aria-label="Clan War banner">
+      <img src={guildWarArtwork} alt="RAN Online EP7 Classic — Phoenix and Mystical Peaks Clan War" />
+      <div className="cw-page-banner-overlay" aria-hidden="true" />
+      <div className="cw-page-banner-badge">CLAN WAR</div>
+    </section>
     <section className="cw-hero">
       <div>
         <div className="cw-kicker">RAN ONLINE EP7 CLASSIC • CLAN WAR</div>
@@ -1660,7 +1666,7 @@ export default function CWPage({ user, isAdmin }) {
         </div>
         <div className="cw-occurrence-grid">{windowOccurrences.map(occ => {
           const attended = attendance.filter(r => clean(r.dateKey) === occ.key).length; return <button key={`${occ.key}-${occ.time}`} className={`cw-occurrence-card ${occ.key === todayKey ? "today" : ""}`} onClick={() => selectOccurrence(occ)}>
-            <div className="cw-war-art"><img className="cw-war-artwork" src={guildWarArtwork} alt="Guild War — Sacred Gate, Phoenix, Mystical Peaks" /><span className="cw-war-logo"><img src={cwWarIcon} alt="Clan War" /></span><span className="cw-war-badge">CLAN WAR</span><div className="cw-war-lines" /></div>
+            <div className="cw-war-art"><img className="cw-war-artwork" src={guildWarArtwork} alt="Guild War — Sacred Gate, Phoenix, Mystical Peaks" /><span className="cw-war-logo"><img src={ranVIcon} alt="RAN V" /></span><span className="cw-war-badge">CLAN WAR</span><div className="cw-war-lines" /></div>
             <div className="cw-occ-body"><div className="cw-occ-date">{formatDate(occ.at, resolvedTimezone)}</div><strong>{formatTime(occ.at, resolvedTimezone)}</strong><span>{occ.key === todayKey ? "TODAY" : new Intl.DateTimeFormat("en-US", { timeZone: resolvedTimezone, weekday: "long" }).format(occ.at)}</span><div className="cw-occ-foot"><b>{attended} ATTENDED</b><em>{countdownLabel(occ.at, now)}</em></div></div>
           </button>
         })}</div>

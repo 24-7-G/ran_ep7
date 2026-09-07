@@ -9263,3 +9263,57 @@
   .cw-catalog-table { min-width: 1180px !important; }
   .cw-modal-wide { width: calc(100vw - 12px) !important; max-width: calc(100vw - 12px) !important; }
 }
+
+
+/* CLEAN 35 — occurrence center emblem uses the approved V favicon only.
+   Remove the old shield/cw-war icon treatment so it cannot overlap the V. */
+.cw-occurrence-card .cw-war-logo {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 8 !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+}
+.cw-occurrence-card .cw-war-logo::before,
+.cw-occurrence-card .cw-war-logo::after {
+  content: none !important;
+  display: none !important;
+}
+.cw-occurrence-card .cw-war-logo img {
+  display: block !important;
+  width: 46px !important;
+  height: 46px !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,.45) !important;
+}
+@media (max-width: 760px) {
+  .cw-occurrence-card .cw-war-logo,
+  .cw-occurrence-card .cw-war-logo img {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+}

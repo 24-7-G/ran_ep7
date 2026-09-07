@@ -150,6 +150,8 @@ export default function AdminPage({ user, isAdmin }) {
       uid: user.uid,
       email: user.email || "",
       displayName: user.displayName || user.email || "Administrator",
+      role: "admin",
+      status: "active",
       active: true,
       lastSeenAt: serverTimestamp(),
     }, { merge: true }).catch(() => {});
@@ -270,6 +272,8 @@ export default function AdminPage({ user, isAdmin }) {
         uid: user.uid,
         email: email || user.email || "",
         displayName: name || email || "Administrator",
+        role: "admin",
+        status: "active",
         backupReminderDays: profile.backupReminderDays,
         active: true,
         updatedAt: serverTimestamp(),
@@ -381,6 +385,8 @@ export default function AdminPage({ user, isAdmin }) {
     try {
       await updateDoc(doc(db, "adminUsers", admin.id), {
         active,
+        role: "admin",
+        status: active ? "active" : "disabled",
         updatedAt: serverTimestamp(),
         updatedByUid: user.uid,
         updatedBy: actorName(user),

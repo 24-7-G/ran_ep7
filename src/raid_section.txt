@@ -1,0 +1,646 @@
+          }
+        >
+          {day.slice(0, 3)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
+export default function RaidPage({ user, isAdmin }) {
+  const [
+    raids,
+    setRaids,
+  ] = useState(() =>
+    deduplicateRaids(
+      DEFAULT_RAIDS || []
+    )
+  );
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const { resolvedTimezone } = useGlobalDisplayTimezone();
+
+  const [
+    now,
+    setNow,
+  ] = useState(
+    new Date()
+  );
+
+  const [
+    upcomingFilter,
+    setUpcomingFilter,
+  ] = useState(
+    "active"
+  );
+
+  const [
+    bossFilter,
+    setBossFilter,
+  ] = useState(
+    "all"
+  );
+
+  const [
+    upcomingDays,
+    setUpcomingDays,
+  ] = useState(3);
+
+  const [
+    editingRaid,
+    setEditingRaid,
+  ] = useState(null);
+
+  const [
+    saving,
+    setSaving,
+  ] = useState(false);
+
+  const [
+    saveError,
+    setSaveError,
+  ] = useState("");
+
+  /* =======================================================
+     LIVE CLOCK
+  ======================================================= */
+
+  useEffect(() => {
+    const timer =
+      setInterval(() => {
+        setNow(
+          new Date()
+        );
+      }, 1000);
+
+    return () =>
+      clearInterval(timer);
+  }, []);
+
+  /* =======================================================
+     LOAD FIREBASE — LIVE MASTER SCHEDULE
+  ======================================================= */
+
+  useEffect(() => {
+    if (!firebaseConfigured || !db) {
+      setRaids(deduplicateRaids(DEFAULT_RAIDS || []));
+      setLoading(false);
+      return undefined;
+    }
+
+    setLoading(true);
+
+    const unsubscribe = onSnapshot(
+      collection(db, "raids"),
+      (snapshot) => {
+        const firebaseRaids = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+
+        setRaids(
+          deduplicateRaids([
+            ...(DEFAULT_RAIDS || []),
+            ...firebaseRaids,
+          ])
+        );
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Failed listening to raid schedules:", error);
+        setRaids(deduplicateRaids(DEFAULT_RAIDS || []));
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  /* =======================================================
+     NEXT RAID
+  ======================================================= */
+
+  const nextRaids =
+    useMemo(() => {
+      return raids
+        .filter(
+          (raid) =>
+            raid.active === true
+        )
+        .map(
+          (raid) => {
+            try {
+              return {
+                raid,
+
+                next:
+                  getNextRaid(
+                    raid,
+                    now
+                  ),
+              };
+            } catch (error) {
+              console.error(
+                `Failed calculating ${raid.name}:`,
+                error
+              );
+
+              return {
+                raid,
+                next: null,
+              };
+            }
+          }
+        )
+        .filter(
+          (item) =>
+            item.next instanceof
+            Date &&
+            !Number.isNaN(
+              item.next.getTime()
+            )
+        )
+        .sort(
+          (a, b) =>
+            a.next.getTime() -
+            b.next.getTime()
+        );
+    }, [
+      raids,
+      now,
+    ]);
+
+  /* =======================================================
+     UPCOMING
+  ======================================================= */
+
+  const upcomingOccurrences =
+    useMemo(
+      () =>
+        generateUpcomingOccurrences(
+          raids,
+          now,
+          upcomingFilter,
+          bossFilter,
+          upcomingDays
+        ),
+      [
+        raids,
+        now,
+        upcomingFilter,
+        bossFilter,
+        upcomingDays,
+      ]
+    );
+
+  /* =======================================================
+     OPEN EDITOR
+  ======================================================= */
+
+  function openEditor(raid) {
+    setSaveError("");
+
+    setEditingRaid(
+      getInitialEditValues(
+        raid
+      )
+    );
+  }
+
+  /* =======================================================
+     CLOSE EDITOR
+  ======================================================= */
+
+  function closeEditor() {
+    if (saving) {
+      return;
+    }
+
+    setEditingRaid(null);
+    setSaveError("");
+  }
+
+  /* =======================================================
+     SAVE RAID
+  ======================================================= */
+
+  async function saveRaid() {
+    if (!isAdmin) {
+      setSaveError("Administrator access is required to change raid schedules.");
+      return;
+    }
+
+    if (
+      !editingRaid ||
+      saving
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setSaveError("");
+
+    // Keep the audit actor local to this save operation.
+    // This avoids any dependency on a missing/stale module-level helper.
+    const auditActor =
+      user?.displayName ||
+      user?.email ||
+      user?.username ||
+      user?.uid ||
+      "System";
+
+    try {
+      const normalized =
+        normalizeRaid(
+          editingRaid
+        );
+
+      const id =
+        canonicalRaidId(
+          normalized
+        );
+
+      if (!id) {
+        throw new Error(
+          "Raid ID is missing."
+        );
+      }
+
+      const hour =
+        Number(
+          normalized.hour
+        );
+
+      const minute =
+        Number(
+          normalized.minute
+        );
+
+      if (
+        !Number.isInteger(hour) ||
+        hour < 0 ||
+        hour > 23
+      ) {
+        throw new Error(
+          "Spawn hour must be between 0 and 23."
+        );
+      }
+
+      if (
+        !Number.isInteger(
+          minute
+        ) ||
+        minute < 0 ||
+        minute > 59
+      ) {
+        throw new Error(
+          "Spawn minute must be between 0 and 59."
+        );
+      }
+
+      normalized.hour =
+        hour;
+
+      normalized.minute =
+        minute;
+
+      /* -----------------------------------------------
+         WEEKLY VALIDATION
+      ------------------------------------------------ */
+
+      if (
+        normalized.scheduleType ===
+        "weekly"
+      ) {
+        if (
+          !Array.isArray(
+            normalized.days
+          ) ||
+          normalized.days.length ===
+          0
+        ) {
+          throw new Error(
+            "Select at least one day for a weekly schedule."
+          );
+        }
+      }
+
+      /* -----------------------------------------------
+         INTERVAL VALIDATION
+      ------------------------------------------------ */
+
+      if (
+        normalized.scheduleType ===
+        "interval"
+      ) {
+        const interval =
+          Number(
+            normalized.intervalHours
+          );
+
+        if (
+          !Number.isFinite(
+            interval
+          ) ||
+          interval <= 0
+        ) {
+          throw new Error(
+            "Interval hours must be greater than 0."
+          );
+        }
+
+        if (
+          interval > 720
+        ) {
+          throw new Error(
+            "Interval cannot exceed 720 hours."
+          );
+        }
+
+        normalized.intervalHours =
+          interval;
+
+        normalized.anchorDate =
+          normalized.anchorDate ||
+          localDateString(
+            normalized.timezone ||
+            PRIMARY_TIMEZONE
+          );
+
+        normalized.anchorHour =
+          Number.isFinite(
+            Number(
+              normalized.anchorHour
+            )
+          )
+            ? Number(
+              normalized.anchorHour
+            )
+            : hour;
+
+        normalized.anchorMinute =
+          Number.isFinite(
+            Number(
+              normalized.anchorMinute
+            )
+          )
+            ? Number(
+              normalized.anchorMinute
+            )
+            : minute;
+
+        normalized.anchorHour =
+          Math.min(
+            23,
+            Math.max(
+              0,
+              Math.floor(
+                normalized.anchorHour
+              )
+            )
+          );
+
+        normalized.anchorMinute =
+          Math.min(
+            59,
+            Math.max(
+              0,
+              Math.floor(
+                normalized.anchorMinute
+              )
+            )
+          );
+      }
+
+      /* -----------------------------------------------
+         DAILY / WEEKLY
+      ------------------------------------------------ */
+
+      if (
+        normalized.scheduleType !==
+        "interval"
+      ) {
+        normalized.intervalHours =
+          null;
+
+        normalized.anchorDate =
+          null;
+
+        normalized.anchorHour =
+          hour;
+
+        normalized.anchorMinute =
+          minute;
+      }
+
+      const previousRaid = raids.find(
+        (raid) => canonicalRaidId(raid) === id
+      ) || null;
+
+      const finalRaid = {
+        ...normalized,
+
+        id,
+
+        name:
+          normalized.name,
+
+        type:
+          normalized.type,
+
+        scheduleType:
+          normalized.scheduleType,
+
+        days:
+          normalized.scheduleType ===
+            "weekly"
+            ? [
+              ...normalized.days,
+            ]
+            : [],
+
+        hour,
+
+        minute,
+
+        intervalHours:
+          normalized.scheduleType ===
+            "interval"
+            ? Number(
+              normalized.intervalHours
+            )
+            : null,
+
+        anchorDate:
+          normalized.scheduleType ===
+            "interval"
+            ? normalized.anchorDate
+            : null,
+
+        anchorHour:
+          Number(
+            normalized.anchorHour
+          ),
+
+        anchorMinute:
+          Number(
+            normalized.anchorMinute
+          ),
+
+        timezone:
+          normalized.timezone ||
+          PRIMARY_TIMEZONE,
+
+        active:
+          normalized.active ===
+          true,
+      };
+
+      /*
+       * Save to the shared master schedule. BH Attendance reads
+       * the same "raids" collection, so future occurrences update
+       * immediately without a second schedule to maintain.
+       */
+      if (
+        firebaseConfigured &&
+        db
+      ) {
+        await setDoc(
+          doc(db, "raids", id),
+          {
+            ...finalRaid,
+            updatedAt: serverTimestamp(),
+            updatedBy: auditActor,
+            updatedByUid: user?.uid || null,
+          },
+          { merge: true }
+        );
+
+        const oldDays = Array.isArray(previousRaid?.days)
+          ? previousRaid.days
+          : [];
+        const newDays = Array.isArray(finalRaid.days)
+          ? finalRaid.days
+          : [];
+
+        const oldDayNames = oldDays.map((day) => String(day).slice(0, 3)).join(", ") || "None";
+        const newDayNames = newDays.map((day) => String(day).slice(0, 3)).join(", ") || "None";
+        const oldTime = previousRaid
+          ? `${String(previousRaid.hour).padStart(2, "0")}:${String(previousRaid.minute).padStart(2, "0")}`
+          : "NEW";
+        const newTime = `${String(finalRaid.hour).padStart(2, "0")}:${String(finalRaid.minute).padStart(2, "0")}`;
+
+        const oldTimezone = previousRaid?.timezone || PRIMARY_TIMEZONE;
+      const newTimezone = finalRaid.timezone || PRIMARY_TIMEZONE;
+      const oldInterval = previousRaid?.intervalHours == null ? "" : String(previousRaid.intervalHours);
+      const newInterval = finalRaid.intervalHours == null ? "" : String(finalRaid.intervalHours);
+      const oldAnchor = previousRaid
+        ? `${previousRaid.anchorDate || ""} ${String(previousRaid.anchorHour ?? "").padStart(2, "0")}:${String(previousRaid.anchorMinute ?? "").padStart(2, "0")}`.trim()
+        : "";
+      const newAnchor = `${finalRaid.anchorDate || ""} ${String(finalRaid.anchorHour ?? "").padStart(2, "0")}:${String(finalRaid.anchorMinute ?? "").padStart(2, "0")}`.trim();
+
+      const changed =
+        !previousRaid ||
+        oldDayNames !== newDayNames ||
+        oldTime !== newTime ||
+        oldTimezone !== newTimezone ||
+        oldInterval !== newInterval ||
+        oldAnchor !== newAnchor ||
+        (previousRaid.scheduleType || "") !== finalRaid.scheduleType ||
+        (previousRaid.active !== false) !== finalRaid.active;
+
+        if (changed) {
+          await addDoc(collection(db, "guildNotices"), buildAuditPayload({
+            scope: "boss-hunt",
+            module: "raid-schedule",
+            category: "SCHEDULE",
+            title: `${finalRaid.name} SCHEDULE UPDATED`,
+            message: `${finalRaid.name} schedule changed from ${oldTime} to ${newTime}. BH Attendance will use the updated shared schedule for future occurrences.`,
+            type: "info",
+            active: true,
+            createdBy: auditActor,
+            createdByUid: user?.uid || null,
+            updatedBy: auditActor,
+            updatedByUid: user?.uid || null,
+            entityType: "raid-schedule",
+            entityId: id,
+            scheduleId: id,
+            bossId: canonicalRaidId(finalRaid),
+            bossName: finalRaid.name,
+            relatedModules: ["raid-schedule", "bh-schedule", "bh-attendance"],
+            details: [
+              `Schedule: ${finalRaid.name} (${id})`,
+              `Days: ${oldDayNames} → ${newDayNames}`,
+              `Time: ${oldTime} → ${newTime}`,
+              `Timezone: ${previousRaid?.timezone || finalRaid.timezone} → ${finalRaid.timezone}`,
+              `Schedule type: ${previousRaid?.scheduleType || "NEW"} → ${finalRaid.scheduleType}`,
+              `Interval: ${oldInterval || "—"} → ${newInterval || "—"}`,
+              `Anchor: ${oldAnchor || "—"} → ${newAnchor || "—"}`,
+              `Active: ${previousRaid?.active === false ? "No" : "Yes"} → ${finalRaid.active ? "Yes" : "No"}`,
+              "Connection: Raid Schedule → BH Actual Schedule → BH Attendance future occurrences.",
+              `Changed by: ${auditActor}`
+            ],
+            changes: [
+              { field: "Days", from: oldDayNames, to: newDayNames },
+              { field: "Time", from: oldTime, to: newTime },
+              { field: "Timezone", from: previousRaid?.timezone || finalRaid.timezone, to: finalRaid.timezone },
+              { field: "Schedule type", from: previousRaid?.scheduleType || "NEW", to: finalRaid.scheduleType },
+              { field: "Interval", from: oldInterval || "—", to: newInterval || "—" },
+              { field: "Anchor", from: oldAnchor || "—", to: newAnchor || "—" },
+              { field: "Active", from: previousRaid?.active === false ? "No" : "Yes", to: finalRaid.active ? "Yes" : "No" }
+            ]
+          }, { actor: auditActor, uid: user?.uid, scope: "boss-hunt" }));
+        }
+      } else {
+        setRaids((current) =>
+          deduplicateRaids([
+            ...current.filter((raid) => canonicalRaidId(raid) !== id),
+            finalRaid,
+          ])
+        );
+      }
+
+      /*
+       * Close only after successful save.
+       */
+      setEditingRaid(null);
+      setSaveError("");
+    } catch (error) {
+      console.error(
+        "Failed saving raid:",
+        error
+      );
+
+      setSaveError(
+        error?.message ||
+        "Failed to save raid schedule."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
+
+  return (
+    <div className="raid-page">
+
+      {/* =================================================
+          HEADER
+      ================================================= */}
+
+      <div className="raid-page-header">
+
+        <div>
+
+          <div className="raid-page-kicker">

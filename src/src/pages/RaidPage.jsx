@@ -1022,11 +1022,6 @@ export default function RaidPage({ user, isAdmin }) {
   ======================================================= */
 
   async function saveRaid() {
-    if (!isAdmin) {
-      setSaveError("Administrator access is required to change raid schedules.");
-      return;
-    }
-
     if (
       !editingRaid ||
       saving
@@ -1662,23 +1657,17 @@ export default function RaidPage({ user, isAdmin }) {
                       in Firebase
                     </div>
 
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        className="raid-edit-button"
-                        onClick={() =>
-                          openEditor(
-                            raid
-                          )
-                        }
-                      >
-                        EDIT SCHEDULE
-                      </button>
-                    ) : (
-                      <span className="raid-view-only-badge">
-                        VIEW ONLY
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      className="raid-edit-button"
+                      onClick={() =>
+                        openEditor(
+                          raid
+                        )
+                      }
+                    >
+                      EDIT SCHEDULE
+                    </button>
 
                   </div>
 

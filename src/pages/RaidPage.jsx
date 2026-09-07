@@ -800,7 +800,7 @@ function DaySelector({
    PAGE
 ========================================================= */
 
-export default function RaidPage({ user, isAdmin }) {
+export default function RaidPage({ user }) {
   const [
     raids,
     setRaids,
@@ -1022,11 +1022,6 @@ export default function RaidPage({ user, isAdmin }) {
   ======================================================= */
 
   async function saveRaid() {
-    if (!isAdmin) {
-      setSaveError("Administrator access is required to change raid schedules.");
-      return;
-    }
-
     if (
       !editingRaid ||
       saving
@@ -1347,7 +1342,13 @@ export default function RaidPage({ user, isAdmin }) {
         (previousRaid.active !== false) !== finalRaid.active;
 
         if (changed) {
-          await addDoc(collection(db, "guildNotices"), buildAuditPayload({
+          /*
+           * Schedule changes must not be rolled back visually just because
+           * the optional audit notice is denied by Firestore. The schedule
+           * write above is the authoritative operation.
+           */
+          try {
+            await addDoc(collection(db, "guildNotices"), buildAuditPayload({
             scope: "boss-hunt",
             module: "raid-schedule",
             category: "SCHEDULE",
@@ -1386,7 +1387,10 @@ export default function RaidPage({ user, isAdmin }) {
               { field: "Anchor", from: oldAnchor || "—", to: newAnchor || "—" },
               { field: "Active", from: previousRaid?.active === false ? "No" : "Yes", to: finalRaid.active ? "Yes" : "No" }
             ]
-          }, { actor: auditActor, uid: user?.uid, scope: "boss-hunt" }));
+            }, { actor: auditActor, uid: user?.uid, scope: "boss-hunt" }));
+          } catch (auditError) {
+            console.warn("Raid schedule saved, but audit notice could not be written:", auditError);
+          }
         }
       } else {
         setRaids((current) =>
@@ -1662,23 +1666,17 @@ export default function RaidPage({ user, isAdmin }) {
                       in Firebase
                     </div>
 
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        className="raid-edit-button"
-                        onClick={() =>
-                          openEditor(
-                            raid
-                          )
-                        }
-                      >
-                        EDIT SCHEDULE
-                      </button>
-                    ) : (
-                      <span className="raid-view-only-badge">
-                        VIEW ONLY
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      className="raid-edit-button"
+                      onClick={() =>
+                        openEditor(
+                          raid
+                        )
+                      }
+                    >
+                      EDIT SCHEDULE
+                    </button>
 
                   </div>
 

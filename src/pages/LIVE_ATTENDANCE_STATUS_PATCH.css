@@ -1,0 +1,22 @@
+/* =========================================================
+   LIVE ATTENDANCE STATUS — BH + CW
+   Additive only. No existing table/action rules are removed.
+   Import this file after BHPage.css / CWPage.css.
+========================================================= */
+.cw-updated-status-cell,.bh-live-status-cell{vertical-align:middle!important;min-width:150px}
+.cw-updated-main{display:block}
+.cw-updated-status-cell>small{display:block;margin-top:2px}
+.cw-live-attendance-status,.bh-live-attendance-status{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:2px!important;margin-top:7px;padding:5px 7px;border:1px solid rgba(56,190,220,.28);border-radius:5px;background:rgba(3,19,29,.72);line-height:1.1;white-space:nowrap;max-width:100%;box-sizing:border-box}
+.cw-live-attendance-status b,.bh-live-attendance-status b{font-size:9px;font-weight:950}
+.cw-live-attendance-status strong,.bh-live-attendance-status strong{font-size:8px;font-weight:950;letter-spacing:.06em}
+.cw-live-attendance-status small,.bh-live-attendance-status small{font-size:7px;font-weight:750;color:#5f91a7;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cw-live-attendance-status.is-attended,.bh-live-attendance-status.is-attended{color:#42e6a0;border-color:rgba(66,230,160,.38);background:rgba(22,112,75,.13)}
+.cw-live-attendance-status.is-missed,.bh-live-attendance-status.is-missed{color:#ff7777;border-color:rgba(255,75,75,.42);background:rgba(130,28,36,.13)}
+.cw-live-attendance-status.is-upcoming,.bh-live-attendance-status.is-upcoming{color:#67cfff;border-color:rgba(61,190,255,.34);background:rgba(17,76,111,.14)}
+.cw-live-attendance-status.is-none,.bh-live-attendance-status.is-none{color:#8299a5;border-color:rgba(100,130,145,.25)}
+.cw-action-live-status,.bh-action-live-status{display:inline-flex;align-items:center;justify-content:center;margin:3px 0 0;padding:4px 6px;border-radius:4px;font-size:7px;font-weight:900;letter-spacing:.05em;white-space:nowrap;border:1px solid rgba(80,120,140,.28);background:rgba(3,17,26,.65)}
+.cw-action-live-status.is-attended,.bh-action-live-status.is-attended{color:#45e6a0;border-color:rgba(69,230,160,.35)}
+.cw-action-live-status.is-missed,.bh-action-live-status.is-missed{color:#ff7777;border-color:rgba(255,80,80,.38)}
+.cw-action-live-status.is-upcoming,.bh-action-live-status.is-upcoming{color:#65cfff;border-color:rgba(65,190,255,.34)}
+.cw-action-live-status.is-none,.bh-action-live-status.is-none{color:#8299a5}
+@media(max-width:900px){.cw-updated-status-cell,.bh-live-status-cell{min-width:125px}.cw-live-attendance-status,.bh-live-attendance-status{padding:4px 5px}.cw-live-attendance-status strong,.bh-live-attendance-status strong{font-size:7px}}

@@ -344,11 +344,12 @@
         flex-direction: column
     }
 }
+
 /* =========================================================
    GLOBAL RESPONSIVE FOUNDATION — RAID FINAL OVERRIDES
    ========================================================= */
 .raid-page,
-.raid-page > *,
+.raid-page>*,
 .raid-page .raid-card,
 .raid-page .raid-panel,
 .raid-page .raid-section {
@@ -405,5 +406,313 @@
 
 
 /* V2: read-only schedule state */
-.raid-view-only-badge{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 14px;border:1px solid rgba(126,177,199,.28);border-radius:10px;color:#8fa9b7;background:rgba(255,255,255,.035);font-size:11px;font-weight:800;letter-spacing:.08em}
-@media (max-width:640px){.raid-card-footer{flex-wrap:wrap;gap:10px}.raid-view-only-badge,.raid-edit-button{width:100%}}
+.raid-view-only-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(126, 177, 199, .28);
+    border-radius: 10px;
+    color: #8fa9b7;
+    background: rgba(255, 255, 255, .035);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em
+}
+
+@media (max-width:640px) {
+    .raid-card-footer {
+        flex-wrap: wrap;
+        gap: 10px
+    }
+
+    .raid-view-only-badge,
+    .raid-edit-button {
+        width: 100%
+    }
+}
+
+
+/* =========================================================
+   RAN EP7 — V58 ALL-PAGES RESPONSIVE PATCH
+   CSS ONLY. Existing selectors/features are intentionally preserved.
+   Goals: prevent live-status/action overlap, preserve desktop density,
+   and make tables/modals/filters usable at tablet/mobile widths.
+   ========================================================= */
+
+/* Global safety inside each page stylesheet */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* Never let long labels/values force the page wider than the viewport. */
+.cw-page,
+.bh-page,
+.raid-page,
+.ticket-page,
+.admin-page,
+.cw-page *,
+.bh-page *,
+.raid-page *,
+.ticket-page *,
+.admin-page * {
+    min-width: 0;
+}
+
+/* ---------- CW ---------- */
+.cw-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+}
+
+.cw-player-table {
+    width: 100%;
+    min-width: 1180px;
+    table-layout: auto;
+}
+
+.cw-updated-status-cell {
+    min-width: 210px;
+    vertical-align: middle;
+}
+
+.cw-updated-main,
+.cw-updated-status-cell>small {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.cw-live-attendance-status,
+.cw-action-live-status {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.cw-live-attendance-status {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 7px;
+    line-height: 1.15;
+}
+
+.cw-live-attendance-status small {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.cw-player-actions {
+    min-width: 330px;
+    vertical-align: middle;
+}
+
+.cw-player-actions .cw-btn {
+    margin: 2px;
+    white-space: nowrap;
+}
+
+.cw-action-live-status {
+    display: inline-flex;
+    align-items: center;
+    margin: 2px;
+    white-space: nowrap;
+}
+
+/* CW filters stay in one clean row when possible and stack when needed. */
+.cw-filter-row {
+    width: 100%;
+    max-width: 100%;
+}
+
+.cw-filter-row input,
+.cw-filter-row select {
+    max-width: 100%;
+}
+
+/* ---------- BH ---------- */
+.bh-table-scroll,
+.bh-player-table-scroll,
+.bh-roster-table-scroll,
+.bh-history-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+}
+
+.bh-player-table,
+.bh-roster-table {
+    min-width: 1280px;
+}
+
+.bh-live-status,
+.bh-live-attendance-status,
+.bh-action-live-status {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.bh-live-attendance-status,
+.bh-action-live-status {
+    margin-top: 6px;
+}
+
+/* ---------- Raid Schedule ---------- */
+.raid-page {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+.raid-page img,
+.raid-page video,
+.raid-page iframe,
+.raid-page table {
+    max-width: 100%;
+}
+
+.raid-page table {
+    display: table;
+}
+
+/* ---------- Tickets ---------- */
+.ticket-page {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+.ticket-page img,
+.ticket-page video,
+.ticket-page iframe {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ---------- Admin ---------- */
+.admin-page {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+.admin-page img,
+.admin-page video,
+.admin-page iframe {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ---------- Shared modal safety ---------- */
+.cw-modal,
+.bh-modal,
+.raid-modal,
+.ticket-modal,
+.admin-modal,
+[class*="cw-modal"],
+[class*="bh-modal"],
+[class*="raid-modal"],
+[class*="ticket-modal"],
+[class*="admin-modal"] {
+    max-width: 100vw;
+}
+
+@media (max-width: 1100px) {
+    .cw-filter-row {
+        grid-template-columns: 1fr !important;
+    }
+
+    .cw-player-actions {
+        min-width: 300px;
+    }
+}
+
+@media (max-width: 800px) {
+    .cw-player-actions {
+        min-width: 285px;
+    }
+
+    .cw-player-actions .cw-btn {
+        max-width: 100%;
+    }
+
+    /* Do not squeeze large roster tables; allow intentional horizontal scroll. */
+    .cw-table-scroll,
+    .bh-table-scroll,
+    .bh-player-table-scroll,
+    .bh-roster-table-scroll,
+    .bh-history-table-scroll {
+        overflow-x: auto !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .cw-player-actions {
+        min-width: 270px;
+    }
+
+    .cw-player-actions .cw-btn {
+        white-space: normal;
+        line-height: 1.15;
+    }
+
+    /* Full-screen-ish modals on phones without changing their desktop design. */
+    .cw-modal,
+    .bh-modal,
+    .raid-modal,
+    .ticket-modal,
+    .admin-modal,
+    [class*="cw-modal"],
+    [class*="bh-modal"],
+    [class*="raid-modal"],
+    [class*="ticket-modal"],
+    [class*="admin-modal"] {
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+    }
+
+    .raid-page,
+    .ticket-page,
+    .admin-page {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+}
+
+@media (max-width: 420px) {
+
+    .cw-player-table,
+    .bh-player-table,
+    .bh-roster-table {
+        min-width: 1100px;
+    }
+}
+/* Responsive repair — Raid cards/schedule controls. */
+.raid-page { min-width:0; overflow-x:hidden; }
+.raid-page .raid-grid,.raid-page .raid-cards,.raid-page .raid-actions,.raid-page .raid-toolbar { min-width:0; }
+.raid-page .raid-grid,.raid-page .raid-cards { grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); }
+.raid-page .raid-actions,.raid-page .raid-toolbar { display:flex; flex-wrap:wrap; gap:8px; }
+.raid-page button { max-width:100%; }
+@media (max-width:620px){.raid-page .raid-actions button,.raid-page .raid-toolbar button{flex:1 1 130px}}
+
+/* V60 responsive repair — Raid only */
+.raid-page,.raid-page *{box-sizing:border-box}.raid-page .table-wrap,.raid-page .table-scroll,.raid-page .raid-table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.raid-page table{min-width:760px}.raid-page .raid-actions,.raid-page .actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.raid-page button{max-width:100%;white-space:normal}
+@media(max-width:700px){.raid-page .modal,.raid-page .raid-modal{width:calc(100vw - 16px)!important;max-width:none!important}.raid-page .raid-actions,.raid-page .actions{display:grid;grid-template-columns:1fr 1fr}.raid-page .raid-actions button,.raid-page .actions button{width:100%}}
+
+/* =========================================================
+   RAN EP7 — RAID RECORD / SCHEDULE TABLE POLISH
+========================================================= */
+.raid-page .raid-upcoming-table,.raid-page table{border-collapse:separate !important;border-spacing:0 !important;border:1px solid rgba(0,184,235,.30) !important;border-radius:9px !important;overflow:hidden !important;background:rgba(2,18,28,.94) !important;}
+.raid-page .raid-upcoming-table thead th,.raid-page table thead th{background:linear-gradient(180deg,#0a2b3d,#062333) !important;color:#75ddff !important;border-bottom:1px solid rgba(0,201,255,.34) !important;font-weight:900 !important;}
+.raid-page .raid-upcoming-table tbody tr:nth-child(even) td,.raid-page table tbody tr:nth-child(even) td{background:rgba(6,29,42,.72) !important;}
+.raid-page .raid-upcoming-table tbody tr:hover td,.raid-page table tbody tr:hover td{background:rgba(0,152,208,.12) !important;}
+

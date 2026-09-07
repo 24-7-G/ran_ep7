@@ -11,15 +11,13 @@ import {
   serverTimestamp,
   runTransaction,
   setDoc,
+  writeBatch,
   updateDoc,
 } from "firebase/firestore";
-
-import { onAuthStateChanged } from "firebase/auth";
 
 import { auth, db } from "../lib/firebase";
 
 import {
-  ADMIN_UID,
   PRIMARY_TIMEZONE,
   TIMEZONES,
   GUILD_CLASSES,
@@ -35,6 +33,7 @@ import {
 } from "../lib/time";
 
 import "./BHPage.css";
+import "./LIVE_ATTENDANCE_STATUS_PATCH.css";
 import { useGlobalDisplayTimezone } from "../lib/displayTimezone";
 import { buildAuditPayload } from "../lib/guildAudit";
 
@@ -97,6 +96,151 @@ const CLASS_OPTIONS =
         "Extreme",
         "Brawler",
       ];
+
+
+
+/* =========================================================
+   TYPE + SELECT COMBOBOX
+   - Existing values are suggestions, not hard restrictions.
+   - Users may type a brand-new value and keep it.
+========================================================= */
+function TypeSelect({
+  value,
+  onChange,
+  options = [],
+  id,
+  placeholder = "Type or select...",
+  className = "",
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const rootRef = useRef(null);
+  const current = String(value ?? "");
+  const normalized = Array.from(new Map(
+    options
+      .map((option) => typeof option === "string" ? { value: option, label: option } : option)
+      .filter((option) => option && String(option.value ?? "").trim())
+      .map((option) => [String(option.value).trim().toLowerCase(), { value: String(option.value).trim(), label: String(option.label ?? option.value).trim() }])
+  ).values());
+  const query = current.toLowerCase().trim();
+  const filtered = normalized.filter((option) => !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query));
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const choose = (option) => {
+    onChange(option.value);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((index) => Math.min(index + 1, filtered.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Enter" && open && activeIndex >= 0 && filtered[activeIndex]) {
+      event.preventDefault();
+      choose(filtered[activeIndex]);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="ran-type-select" style={{ position: "relative", width: "100%" }}>
+      <input
+        id={id}
+        className={className}
+        value={current}
+        disabled={disabled}
+        autoComplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+          setActiveIndex(-1);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      {open && !disabled && (
+        <div
+          className="ran-type-select-menu"
+          role="listbox"
+          style={{
+            position: "absolute",
+            zIndex: 10000,
+            left: 0,
+            right: 0,
+            top: "calc(100% + 4px)",
+            maxHeight: 230,
+            overflowY: "auto",
+            padding: 5,
+            border: "1px solid rgba(0,183,255,.45)",
+            borderRadius: 8,
+            background: "#061923",
+            boxShadow: "0 14px 35px rgba(0,0,0,.55)",
+          }}
+        >
+          {filtered.length ? filtered.map((option, index) => (
+            <button
+              type="button"
+              key={`${option.value}-${index}`}
+              role="option"
+              aria-selected={activeIndex === index}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(option)}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "9px 10px",
+                border: 0,
+                borderRadius: 5,
+                background: activeIndex === index ? "rgba(0,183,255,.16)" : "transparent",
+                color: "#e9f7ff",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              {option.label}
+            </button>
+          )) : (
+            <div style={{ padding: "9px 10px", color: "#7899a8", fontSize: 11 }}>
+              NEW VALUE — press Enter or keep typing
+            </div>
+          )}
+          {current.trim() && !normalized.some((option) => option.value.toLowerCase() === current.trim().toLowerCase()) && (
+            <div style={{ padding: "7px 10px", marginTop: 3, borderTop: "1px solid rgba(74,138,162,.18)", color: "#62e6ff", fontSize: 10, fontWeight: 800 }}>
+              ✓ NEW VALUE: {current.trim()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* =========================================================
    BASIC HELPERS
@@ -1268,12 +1412,12 @@ function NoticeCategoryIcon({ category }) {
     "aria-hidden": "true",
   };
 
-  if (key === "reward") return <svg {...common}><path d="M4 8h16v12H4z"/><path d="M3 8h18V5H3z"/><path d="M12 5v15"/><path d="M12 5c-3 0-4.5-1.1-4.5-2.5A2 2 0 0 1 9.4.8c1.7 0 2.8 2 2.6 4.2Z"/><path d="M12 5c3 0 4.5-1.1 4.5-2.5A2 2 0 0 0 14.6.8c-1.7 0-2.8 2-2.6 4.2Z"/></svg>;
-  if (key === "attendance") return <svg {...common}><rect x="3.5" y="4.5" width="17" height="16" rx="2"/><path d="M7 2.5v4M17 2.5v4M3.5 9h17"/><path d="m8 14 2.2 2.2L16.5 10"/></svg>;
-  if (key === "points") return <svg {...common}><ellipse cx="8" cy="7" rx="4.5" ry="2.2"/><path d="M3.5 7v4c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V7"/><path d="M12.5 10.5c.8-.4 1.9-.6 3-.6 2.5 0 4.5 1 4.5 2.2v4c0 1.2-2 2.2-4.5 2.2s-4.5-1-4.5-2.2"/><path d="M3.5 11c0 1.2 2 2.2 4.5 2.2"/></svg>;
-  if (key === "player") return <svg {...common}><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.6-4 3-6 7-6s6.4 2 7 6"/><path d="M4 20h16"/></svg>;
-  if (key === "admin") return <svg {...common}><path d="M12 3 20 6v5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z"/><path d="M9 12h6M12 9v6"/></svg>;
-  return <svg {...common}><circle cx="12" cy="12" r="8.5"/><path d="M12 10v5"/><path d="M12 7.2h.01"/></svg>;
+  if (key === "reward") return <svg {...common}><path d="M4 8h16v12H4z" /><path d="M3 8h18V5H3z" /><path d="M12 5v15" /><path d="M12 5c-3 0-4.5-1.1-4.5-2.5A2 2 0 0 1 9.4.8c1.7 0 2.8 2 2.6 4.2Z" /><path d="M12 5c3 0 4.5-1.1 4.5-2.5A2 2 0 0 0 14.6.8c-1.7 0-2.8 2-2.6 4.2Z" /></svg>;
+  if (key === "attendance") return <svg {...common}><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M7 2.5v4M17 2.5v4M3.5 9h17" /><path d="m8 14 2.2 2.2L16.5 10" /></svg>;
+  if (key === "points") return <svg {...common}><ellipse cx="8" cy="7" rx="4.5" ry="2.2" /><path d="M3.5 7v4c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V7" /><path d="M12.5 10.5c.8-.4 1.9-.6 3-.6 2.5 0 4.5 1 4.5 2.2v4c0 1.2-2 2.2-4.5 2.2s-4.5-1-4.5-2.2" /><path d="M3.5 11c0 1.2 2 2.2 4.5 2.2" /></svg>;
+  if (key === "player") return <svg {...common}><circle cx="12" cy="8" r="3.2" /><path d="M5 20c.6-4 3-6 7-6s6.4 2 7 6" /><path d="M4 20h16" /></svg>;
+  if (key === "admin") return <svg {...common}><path d="M12 3 20 6v5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z" /><path d="M9 12h6M12 9v6" /></svg>;
+  return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 10v5" /><path d="M12 7.2h.01" /></svg>;
 }
 
 function noticeCategoryClass(notice) {
@@ -1769,10 +1913,12 @@ function AttendancePlayerFilter({
           {todayBosses.length ? (
             <div className="bh-picker-v6-boss-grid">
               {todayBosses.map((occurrence) => {
-                const alreadyRecorded = attendanceRows.some(
+                const recordedRowsForOccurrence = attendanceRows.filter(
                   (row) => attendanceMatchesPlayer(row, value) && occurrenceMatchesRow(row, occurrence)
                 );
+                const alreadyRecorded = recordedRowsForOccurrence.length > 0;
                 const checked = selectedScheduledSpawns.includes(occurrence.occurrenceKey);
+                const recordedRow = recordedRowsForOccurrence[0] || null;
                 const image = bossImage(occurrence.bossId);
                 return (
                   <button
@@ -1796,9 +1942,14 @@ function AttendancePlayerFilter({
                       </small>
                       <b>{occurrence.bossName}</b>
                       <strong>+{safeNumber(occurrence.points, 0).toFixed(2)} pts</strong>
+                      {alreadyRecorded && (
+                        <em className="bh-picker-v6-boss-status">ALREADY ATTENDED</em>
+                      )}
+                      {alreadyRecorded && recordedRow && (
+                        <span className="bh-picker-v6-boss-recorded-note">RECORDED — NOT AVAILABLE</span>
+                      )}
                     </span>
-                    <span className="bh-picker-v6-boss-check">{alreadyRecorded ? "✓" : checked ? "✓" : ""}</span>
-                    {alreadyRecorded && <em>RECORDED</em>}
+                    <span className={`bh-picker-v6-boss-check ${alreadyRecorded ? "recorded" : ""}`}>{alreadyRecorded ? "✓" : checked ? "✓" : ""}</span>
                   </button>
                 );
               })}
@@ -1850,7 +2001,7 @@ function AttendancePlayerFilter({
    MAIN COMPONENT
 ========================================================= */
 
-export default function BHPage() {
+export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
   const [
     currentUser,
     setCurrentUser,
@@ -1950,7 +2101,14 @@ export default function BHPage() {
   /* Exactly three primary navigation views. Activity & Notifications is an independent slide-down audit panel. */
   const switchActiveTab = (nextTab) => {
     if (!["schedule", "players", "rewards"].includes(nextTab)) return;
+
+    // IMPORTANT: Top BH navigation is completely normal for every user.
+    // Guests and regular users are NOT redirected when they click the
+    // Schedule, Players & History, or Rewards navigation tabs.
+    // The guest/regular-user redirect exists ONLY on individual spawn cards
+    // in the Actual Schedule table below.
     setActiveTab(nextTab);
+
     try {
       localStorage.setItem("bh-active-tab", nextTab);
     } catch {
@@ -1959,6 +2117,9 @@ export default function BHPage() {
   };
 
   const toggleNoticePanel = () => {
+    // IMPORTANT: Activity & Notifications navigation is also left alone.
+    // Do not redirect guests/regular users from the top navigation. Any
+    // existing read/write restrictions inside the panel remain independent.
     setNoticePanelOpen((open) => !open);
   };
 
@@ -2042,10 +2203,45 @@ export default function BHPage() {
     setAttendanceSaving,
   ] = useState(false);
 
+  /* Bulk scheduled attendance: multiple EXISTING roster players against
+     multiple EXISTING scheduled spawn occurrences. No arbitrary date can
+     create a new scheduled record. */
+  const [bulkAttendanceOpen, setBulkAttendanceOpen] = useState(false);
+  const [bulkAttendanceDate, setBulkAttendanceDate] = useState("");
+  const [bulkAttendanceSpawns, setBulkAttendanceSpawns] = useState([]);
+  const [bulkAttendancePlayers, setBulkAttendancePlayers] = useState([]);
+  const [bulkAttendanceSearch, setBulkAttendanceSearch] = useState("");
+  const [bulkAttendanceClassFilter, setBulkAttendanceClassFilter] = useState("all");
+  const [bulkAttendanceStatusFilter, setBulkAttendanceStatusFilter] = useState("all");
+  const [bulkAttendancePage, setBulkAttendancePage] = useState(1);
+  const [bulkAttendanceComment, setBulkAttendanceComment] = useState("");
+  const [bulkAttendanceError, setBulkAttendanceError] = useState("");
+  const [bulkAttendanceSaving, setBulkAttendanceSaving] = useState(false);
+
   const [
     addPlayerModalOpen,
     setAddPlayerModalOpen,
   ] = useState(false);
+
+  const [bulkToolsModal, setBulkToolsModal] = useState(null);
+  const [bulkToolsMode, setBulkToolsMode] = useState("menu");
+  const [bulkToolsSelected, setBulkToolsSelected] = useState([]);
+  const [bulkToolsSearch, setBulkToolsSearch] = useState("");
+  const [bulkToolsFrom, setBulkToolsFrom] = useState("");
+  const [bulkToolsTo, setBulkToolsTo] = useState("");
+  const [bulkToolsPage, setBulkToolsPage] = useState(1);
+  const [bulkToolsComment, setBulkToolsComment] = useState("");
+  const [bulkToolsSaving, setBulkToolsSaving] = useState(false);
+  const [bulkToolsError, setBulkToolsError] = useState("");
+  const [bulkToolsPoints, setBulkToolsPoints] = useState("");
+  const [bulkToolsClass, setBulkToolsClass] = useState("");
+  const [bulkToolsWeapon, setBulkToolsWeapon] = useState("");
+  const [bulkToolsStatus, setBulkToolsStatus] = useState("available");
+  const [bulkToolsNotes, setBulkToolsNotes] = useState("");
+  const [bulkToolsPin, setBulkToolsPin] = useState("");
+  const [bulkPlayerGroups, setBulkPlayerGroups] = useState([{ id: 1, igns: "", className: CLASS_OPTIONS[0] || "Swordman", weapon: "" }]);
+  const [bulkPlayerSaving, setBulkPlayerSaving] = useState(false);
+  const [bulkPlayerError, setBulkPlayerError] = useState("");
 
   const [
     attendanceSelectedDate,
@@ -2269,24 +2465,20 @@ export default function BHPage() {
   ========================================================= */
 
   useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (user) => {
-          setCurrentUser(
-            user || null
-          );
+    // App.jsx is the single source of truth for administrator authorization.
+    // BH previously performed its own bootstrap-UID-only check, which caused
+    // newly registered administrators to see VIEW ONLY even while the header
+    // correctly showed ADMIN. Keep the local state for existing BH logic, but
+    // mirror the authoritative App-level user/admin state.
+    setCurrentUser(appUser || null);
+    setIsAdmin(Boolean(appUser && appIsAdmin));
+  }, [appUser, appIsAdmin]);
 
-          setIsAdmin(
-            !!user &&
-            user.uid ===
-            ADMIN_UID
-          );
-        }
-      );
-
-    return unsubscribe;
-  }, []);
+  // IMPORTANT: do not force guests/regular users onto Players & History on
+  // mount or on every auth-state update. They may still view an existing
+  // read-only BH screen. The restriction is action-based: only when they
+  // click a protected BH tab do we redirect that navigation to Players &
+  // History. This keeps normal navigation and back/forward behavior intact.
 
   /* =========================================================
      CLOCK
@@ -3332,6 +3524,46 @@ export default function BHPage() {
       ]
     );
 
+  /* =========================================================
+     LIVE BH ATTENDANCE STATUS — additive only
+
+     The latest scheduled spawn that has already started is the live
+     checkpoint. An exact attendance record means ATTENDED; no record
+     means DID NOT ATTEND. Before the first spawn, status is UPCOMING.
+     This does not modify historical attendance or player totals.
+  ========================================================= */
+  const bhLiveStatusByPlayer = useMemo(() => {
+    const nowDate = new Date(clockTick);
+    const today = scheduleOccurrences
+      .filter((occurrence) => occurrence.dateKey === todayKey && occurrence.active !== false)
+      .sort((a, b) => (safeToDate(a.spawnAt)?.getTime() || 0) - (safeToDate(b.spawnAt)?.getTime() || 0));
+
+    const completed = today.filter((occurrence) => (safeToDate(occurrence.spawnAt)?.getTime() || Infinity) <= nowDate.getTime());
+    const latest = completed[completed.length - 1] || null;
+    const upcoming = today.find((occurrence) => (safeToDate(occurrence.spawnAt)?.getTime() || Infinity) > nowDate.getTime()) || null;
+    const result = {};
+
+    players.forEach((player) => {
+      if (!today.length) {
+        result[String(player.id)] = { state: "none", label: "NO SPAWN TODAY", occurrence: null };
+        return;
+      }
+      if (!latest && upcoming) {
+        result[String(player.id)] = { state: "upcoming", label: "UPCOMING", occurrence: upcoming };
+        return;
+      }
+      const attended = attendanceRows.some((row) =>
+        attendanceMatchesPlayer(row, player.id) && occurrenceMatchesRow(row, latest)
+      );
+      result[String(player.id)] = {
+        state: attended ? "attended" : "missed",
+        label: attended ? "ATTENDED" : "DID NOT ATTEND",
+        occurrence: latest,
+      };
+    });
+    return result;
+  }, [scheduleOccurrences, todayKey, clockTick, players, attendanceRows]);
+
   const filteredScheduleOccurrences =
     useMemo(() => {
       return scheduleOccurrences.filter(
@@ -3686,53 +3918,53 @@ export default function BHPage() {
     useMemo(() => {
       return rewards
         .filter(
-        (reward) => {
-          const search =
-            lower(
-              rewardSearch
-            );
+          (reward) => {
+            const search =
+              lower(
+                rewardSearch
+              );
 
-          if (
-            search &&
-            !lower(
-              reward.name
-            ).includes(search) &&
-            !lower(
-              reward.playerName
-            ).includes(search) &&
-            !lower(
-              reward.bossName
-            ).includes(search)
-          ) {
-            return false;
+            if (
+              search &&
+              !lower(
+                reward.name
+              ).includes(search) &&
+              !lower(
+                reward.playerName
+              ).includes(search) &&
+              !lower(
+                reward.bossName
+              ).includes(search)
+            ) {
+              return false;
+            }
+
+            if (
+              rewardBossFilter !==
+              "all" &&
+              reward.bossId !==
+              rewardBossFilter
+            ) {
+              return false;
+            }
+
+            if (
+              rewardStatusFilter !==
+              "all" &&
+              reward.status !==
+              rewardStatusFilter
+            ) {
+              return false;
+            }
+
+            return true;
           }
-
-          if (
-            rewardBossFilter !==
-            "all" &&
-            reward.bossId !==
-            rewardBossFilter
-          ) {
-            return false;
-          }
-
-          if (
-            rewardStatusFilter !==
-            "all" &&
-            reward.status !==
-            rewardStatusFilter
-          ) {
-            return false;
-          }
-
-          return true;
-        }
-      )
-      .sort((a, b) => {
-        const aTime = safeToDate(a.updatedAt || a.createdAt)?.getTime() || 0;
-        const bTime = safeToDate(b.updatedAt || b.createdAt)?.getTime() || 0;
-        return bTime - aTime;
-      });
+        )
+        .sort((a, b) => {
+          const aTime = safeToDate(a.updatedAt || a.createdAt)?.getTime() || 0;
+          const bTime = safeToDate(b.updatedAt || b.createdAt)?.getTime() || 0;
+          return bTime - aTime;
+        });
     }, [
       rewards,
       rewardSearch,
@@ -4035,6 +4267,188 @@ export default function BHPage() {
         true
       );
     };
+
+  /* =========================================================
+     BULK SCHEDULED ATTENDANCE
+     Multiple players + multiple existing scheduled spawns.
+     Existing player/spawn records are never duplicated.
+  ========================================================= */
+
+  const bulkAttendanceDateOptions = useMemo(() => {
+    return Array.from(new Set(
+      scheduleOccurrences
+        .map(o => o.dateKey)
+        .filter(Boolean)
+    )).sort((a, b) => b.localeCompare(a));
+  }, [scheduleOccurrences]);
+
+  const bulkAttendanceDateOccurrences = useMemo(() => {
+    return scheduleOccurrences
+      .filter(o => o.dateKey === bulkAttendanceDate)
+      .slice()
+      .sort((a, b) => String(a.spawnAt || "").localeCompare(String(b.spawnAt || "")));
+  }, [scheduleOccurrences, bulkAttendanceDate]);
+
+  const bulkAttendanceVisiblePlayers = useMemo(() => {
+    const q = clean(bulkAttendanceSearch).toLowerCase();
+    return players
+      .filter(p => p.active !== false)
+      .filter(p => bulkAttendanceClassFilter === "all" || clean(p.class || p.className) === bulkAttendanceClassFilter)
+      .filter(p => {
+        if (bulkAttendanceStatusFilter === "all") return true;
+        const selectedOccurrences = bulkAttendanceDateOccurrences.filter(o => bulkAttendanceSpawns.includes(o.occurrenceKey));
+        const complete = selectedOccurrences.length > 0 && selectedOccurrences.every(o => attendanceRows.some(row => attendanceMatchesPlayer(row, p.id) && occurrenceMatchesRow(row, o)));
+        const anyAttended = selectedOccurrences.some(o => attendanceRows.some(row => attendanceMatchesPlayer(row, p.id) && occurrenceMatchesRow(row, o)));
+        if (bulkAttendanceStatusFilter === "attended") return complete;
+        if (bulkAttendanceStatusFilter === "not-attended") return !complete;
+        if (bulkAttendanceStatusFilter === "partial") return anyAttended && !complete;
+        return true;
+      })
+      .filter(p => !q || [p.ign, p.class, p.className, p.weapon].some(v => clean(v).toLowerCase().includes(q)))
+      .sort((a, b) => clean(a.ign).localeCompare(clean(b.ign), undefined, { sensitivity: "base", numeric: true }));
+  }, [players, attendanceRows, bulkAttendanceSearch, bulkAttendanceClassFilter, bulkAttendanceStatusFilter, bulkAttendanceDateOccurrences, bulkAttendanceSpawns]);
+
+  const bulkAttendancePageCount = Math.max(1, Math.ceil(bulkAttendanceVisiblePlayers.length / 5));
+  const bulkAttendanceSafePage = Math.min(Math.max(1, bulkAttendancePage), bulkAttendancePageCount);
+  const bulkAttendancePageRows = bulkAttendanceVisiblePlayers.slice((bulkAttendanceSafePage - 1) * 5, bulkAttendanceSafePage * 5);
+
+  const hasBHAttendanceForOccurrence = (playerId, occurrence) => attendanceRows.some(row =>
+    attendanceMatchesPlayer(row, playerId) && occurrenceMatchesRow(row, occurrence)
+  );
+
+  const openBHBulkAttendance = () => {
+    if (!isAdmin) return;
+    // Bulk attendance is a child workflow of Bulk Tools; never leave the
+    // menu backdrop mounted underneath it.
+    setBulkToolsModal(null);
+    setAddPlayerModalOpen(false);
+    const preferredDate = bulkAttendanceDateOptions.includes(todayKey) ? todayKey : (bulkAttendanceDateOptions[0] || todayKey);
+    const occurrences = scheduleOccurrences.filter(o => o.dateKey === preferredDate);
+    setBulkAttendanceDate(preferredDate);
+    setBulkAttendanceSpawns(occurrences.map(o => o.occurrenceKey));
+    setBulkAttendancePlayers([]);
+    setBulkAttendanceSearch("");
+    setBulkAttendanceClassFilter("all");
+    setBulkAttendanceStatusFilter("all");
+    setBulkAttendancePage(1);
+    setBulkAttendanceComment("");
+    setBulkAttendanceError("");
+    setBulkAttendanceSaving(false);
+    setBulkAttendanceOpen(true);
+  };
+
+  const toggleBHBulkPlayer = (playerId) => {
+    const id = String(playerId);
+    setBulkAttendancePlayers(cur => cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]);
+  };
+
+  const toggleBHBulkPlayerPage = () => {
+    const ids = bulkAttendancePageRows.map(p => String(p.id));
+    setBulkAttendancePlayers(cur => ids.length && ids.every(id => cur.includes(id))
+      ? cur.filter(id => !ids.includes(id))
+      : Array.from(new Set([...cur, ...ids]))
+    );
+  };
+
+  const saveBHBulkAttendance = async () => {
+    if (!isAdmin || bulkAttendanceSaving) return;
+    if (!bulkAttendanceSpawns.length) { setBulkAttendanceError("Select at least one scheduled boss spawn."); return; }
+    if (!bulkAttendancePlayers.length) { setBulkAttendanceError("Select at least one player."); return; }
+    if (!clean(bulkAttendanceComment)) { setBulkAttendanceError("Admin comment is required for bulk attendance."); return; }
+
+    const selectedOccurrences = bulkAttendanceDateOccurrences.filter(o => bulkAttendanceSpawns.includes(o.occurrenceKey));
+    const selectedPlayers = players.filter(p => bulkAttendancePlayers.includes(String(p.id)) && p.active !== false);
+    if (!selectedOccurrences.length) { setBulkAttendanceError("The selected scheduled spawns no longer exist. Refresh and select saved spawns again."); return; }
+    if (!selectedPlayers.length) { setBulkAttendanceError("No active roster players are selected."); return; }
+
+    const pending = [];
+    const skipped = [];
+    selectedPlayers.forEach(player => selectedOccurrences.forEach(occurrence => {
+      if (hasBHAttendanceForOccurrence(player.id, occurrence)) skipped.push({ player, occurrence });
+      else pending.push({ player, occurrence });
+    }));
+
+    if (!pending.length) {
+      setBulkAttendanceError("All selected player/boss combinations are already recorded. Nothing new was created.");
+      return;
+    }
+
+    setBulkAttendanceSaving(true);
+    setBulkAttendanceError("");
+    try {
+      for (let start = 0; start < pending.length; start += 400) {
+        const batch = writeBatch(db);
+        pending.slice(start, start + 400).forEach(({ player, occurrence }) => {
+          const ref = doc(collection(db, "bhAttendance"));
+          batch.set(ref, {
+            playerId: String(player.id),
+            playerName: player.ign,
+            bossId: occurrence.bossId,
+            bossName: occurrence.bossName,
+            points: occurrence.points,
+            spawnAt: occurrence.spawnAt,
+            dateKey: occurrence.dateKey,
+            localDate: occurrence.dateKey,
+            timeKey: occurrence.timeKey,
+            localTime: occurrence.timeKey,
+            primaryDateKey: occurrence.primaryDateKey,
+            primaryLocalDate: occurrence.primaryDateKey,
+            primaryTimeKey: occurrence.primaryTimeKey,
+            primaryLocalTime: occurrence.primaryTimeKey,
+            scheduleId: occurrence.scheduleId,
+            occurrenceKey: occurrence.occurrenceKey,
+            status: "recorded",
+            manualOverride: false,
+            comment: clean(bulkAttendanceComment),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            updatedBy: getCurrentUpdaterName(),
+            updatedByUid: currentUser?.uid || null,
+          });
+        });
+        await batch.commit();
+      }
+
+      const bossCounts = new Map();
+      pending.forEach(({ occurrence }) => {
+        const name = occurrence.bossName || bossLabel(occurrence.bossId);
+        bossCounts.set(name, (bossCounts.get(name) || 0) + 1);
+      });
+      const bossSummary = Array.from(bossCounts.entries()).map(([name, count]) => `${name}: ${count}`).join(", " );
+      const playerSummary = Array.from(new Set(pending.map(x => x.player.ign))).slice(0, 20).join(", " );
+
+      await createGuildNotice({
+        title: "Boss Hunt Bulk Attendance Recorded",
+        message: `${pending.length} BH attendance record${pending.length === 1 ? "" : "s"} recorded for ${selectedPlayers.length} selected player${selectedPlayers.length === 1 ? "" : "s"}.`,
+        type: "success",
+        action: "Bulk Attendance Recorded",
+        entityType: "bh-attendance-bulk",
+        status: "recorded",
+        notes: clean(bulkAttendanceComment),
+        details: [
+          `New attendance records: ${pending.length}`,
+          `Already recorded / skipped: ${skipped.length}`,
+          `Scheduled date: ${bulkAttendanceDate}`,
+          `Boss breakdown: ${bossSummary || "None"}`,
+          `Players: ${playerSummary}${new Set(pending.map(x => x.player.ign)).size > 20 ? " …" : ""}`,
+          `Admin comment: ${clean(bulkAttendanceComment)}`,
+          `Recorded by: ${getCurrentUpdaterName()}`,
+        ],
+        relatedModules: ["bh-attendance", "raid-schedule"],
+      });
+
+      setBulkAttendanceOpen(false);
+      setSuccess(`${pending.length} BH attendance record${pending.length === 1 ? "" : "s"} saved. ${skipped.length ? `${skipped.length} already-recorded combination${skipped.length === 1 ? "" : "s"} skipped.` : ""}`.trim());
+      await loadAllData();
+      await reloadGuildNotices();
+      switchActiveTab("players");
+    } catch (err) {
+      console.error(err);
+      setBulkAttendanceError(err?.message || "Could not save bulk BH attendance. Nothing further was saved.");
+    } finally {
+      setBulkAttendanceSaving(false);
+    }
+  };
 
   /* =========================================================
      TOGGLE SCHEDULED SPAWN
@@ -4498,7 +4912,7 @@ export default function BHPage() {
         await createGuildNotice(
           {
             title:
-              "Boss Hunt Points Override",
+              "Boss Hunt Attendance Correction",
 
             message:
               `${player.ign} received ${points.toFixed(
@@ -4514,7 +4928,7 @@ export default function BHPage() {
               )}.`,
 
             type: "warning",
-            action: "Manual Attendance Recorded",
+            action: "Boss Hunt Attendance Corrected",
             entityType: "attendance",
             playerId: player.id,
             playerName: player.ign,
@@ -4529,7 +4943,7 @@ export default function BHPage() {
               `Attendance date: ${formatLongDate(spawnAt, effectiveTimezone)}`,
               `Attendance time: ${timeKeyFromDate(spawnAt, effectiveTimezone)}`,
               `Points awarded: +${points.toFixed(2)}`,
-              `Manual override: Yes`,
+              `Attendance correction: Yes`,
               `Recorded by: ${getCurrentUpdaterName()}`,
               clean(overrideComment) ? `Admin note: ${clean(overrideComment)}` : "",
             ].filter(Boolean),
@@ -4537,7 +4951,7 @@ export default function BHPage() {
         );
 
         setSuccess(
-          "Manual attendance added."
+          "Attendance correction saved."
         );
 
         setAttendanceModalOpen(
@@ -4551,7 +4965,7 @@ export default function BHPage() {
 
         setError(
           err?.message ||
-          "Could not save manual attendance."
+          "Could not save attendance correction."
         );
       } finally {
         setAttendanceSaving(
@@ -4561,126 +4975,109 @@ export default function BHPage() {
     };
 
   /* =========================================================
-     ADD PLAYER
+     UNIFIED ADD PLAYER — ONE OR MANY IGNs
+     A single IGN and a pasted list use the exact same workflow.
   ========================================================= */
+  const openBHAddPlayers = () => {
+    if (!isAdmin) return;
+    setBulkPlayerGroups([{ id: Date.now(), igns: "", className: CLASS_OPTIONS[0] || "Swordman", weapon: "" }]);
+    setBulkPlayerSaving(false);
+    setBulkPlayerError("");
+    setNewPlayerIgn("");
+    setNewPlayerClass(CLASS_OPTIONS[0] || "Swordman");
+    setNewPlayerWeapon("");
+    setError("");
+    setAddPlayerModalOpen(true);
+  };
 
-  const addPlayer =
-    async () => {
-      if (!isAdmin) return;
+  const saveBHPlayers = async () => {
+    if (!isAdmin || bulkPlayerSaving) return;
+    const raw = bulkPlayerGroups.flatMap(g => String(g.igns || "").split(/\r?\n/).map(clean).filter(Boolean));
+    const names = Array.from(new Set(raw));
+    const existing = new Map(players.map(p => [clean(p.ign).toLowerCase(), p]));
+    const seen = new Set();
+    const entries = [];
+    const errors = [];
 
-      const ign =
-        clean(
-          newPlayerIgn
-        );
+    if (!names.length) errors.push("Enter at least one IGN.");
 
-      if (!ign) {
-        setError(
-          "Enter an IGN."
-        );
-        return;
-      }
+    bulkPlayerGroups.forEach((g, index) => {
+      const lines = Array.from(new Set(String(g.igns || "").split(/\r?\n/).map(clean).filter(Boolean)));
+      if (!lines.length) return;
+      if (!clean(g.className)) errors.push(`Group ${index + 1}: class is required.`);
+      lines.forEach(ign => {
+        const key = ign.toLowerCase();
+        if (existing.has(key)) {
+          const p = existing.get(key);
+          errors.push(`${ign} already exists in the BH roster (${p?.active === false ? "DISABLED" : "ACTIVE"}).`);
+        } else if (seen.has(key)) {
+          errors.push(`${ign} is listed more than once.`);
+        } else {
+          seen.add(key);
+          entries.push({ ign, className: clean(g.className), weapon: clean(g.weapon) });
+        }
+      });
+    });
 
-      const duplicate =
-        players.some(
-          (player) =>
-            lower(
-              player.ign
-            ) ===
-            lower(ign)
-        );
+    if (errors.length) {
+      setBulkPlayerError(errors.slice(0, 20).join(" "));
+      return;
+    }
 
-      if (duplicate) {
-        setError(
-          "That IGN already exists."
-        );
-        return;
-      }
-
-      try {
-        await addDoc(
-          collection(
-            db,
-            "players"
-          ),
-          {
-            ign,
-
-            class:
-              clean(
-                newPlayerClass
-              ),
-
-            weapon:
-              clean(
-                newPlayerWeapon
-              ),
-
+    setBulkPlayerSaving(true);
+    setBulkPlayerError("");
+    try {
+      for (let start = 0; start < entries.length; start += 400) {
+        const batch = writeBatch(db);
+        entries.slice(start, start + 400).forEach(entry => {
+          const ref = doc(collection(db, "players"));
+          batch.set(ref, {
+            ign: entry.ign,
+            class: entry.className,
+            className: entry.className,
+            weapon: entry.weapon,
             active: true,
-
-            createdAt:
-              serverTimestamp(),
-
-            updatedAt:
-              serverTimestamp(),
-
-            createdBy:
-              getCurrentUpdaterName(),
-
-            createdByUid:
-              currentUser?.uid ||
-              null,
-          }
-        );
-
-        await createGuildNotice(
-          {
-            title:
-              "Player Added",
-
-            message:
-              `${ign} was added to the guild roster as ${newPlayerClass || "Unspecified class"}${newPlayerWeapon ? ` using ${newPlayerWeapon}` : ""}.`,
-
-            type: "success",
-            action: "Player Added",
-            entityType: "player",
-            playerName: ign,
             status: "active",
-            details: [
-              `Player: ${ign}`,
-              `Class: ${clean(newPlayerClass) || "Unspecified"}`,
-              `Weapon: ${clean(newPlayerWeapon) || "Unspecified"}`,
-              `Roster status: Active`,
-              `Added by: ${getCurrentUpdaterName()}`,
-            ],
-          }
-        );
-
-        setNewPlayerIgn("");
-        setNewPlayerWeapon("");
-
-        setSuccess(
-          `Player ${ign} added.`
-        );
-
-        // A new player is immediately shown in Players & History.
-        setAddPlayerModalOpen(false);
-        setAttendanceModalOpen(false);
-        switchActiveTab("players");
-        setPlayerSearch("");
-        setPlayerClassFilter("all");
-        setPlayerPage(1);
-
-        await loadAllData();
-        await reloadGuildNotices();
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          err?.message ||
-          "Could not add player."
-        );
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdBy: getCurrentUpdaterName(),
+            createdByUid: currentUser?.uid || null,
+          });
+        });
+        await batch.commit();
       }
-    };
+
+      await createGuildNotice({
+        title: "Players Added",
+        message: `${entries.length} player${entries.length === 1 ? "" : "s"} were added to the Boss Hunt roster.`,
+        type: "success",
+        action: "Players Added",
+        entityType: "player-bulk",
+        status: "active",
+        details: entries.map((e, i) => `${i + 1}. ${e.ign} • Class: ${e.className || "Unspecified"} • Preferred Weapon: ${e.weapon || "Unspecified"}`).concat([`Added by: ${getCurrentUpdaterName()}`]),
+      });
+
+      setBulkPlayerGroups([{ id: Date.now(), igns: "", className: CLASS_OPTIONS[0] || "Swordman", weapon: "" }]);
+      setNewPlayerIgn("");
+      setNewPlayerWeapon("");
+      setSuccess(`${entries.length} player${entries.length === 1 ? "" : "s"} added.`);
+      setAddPlayerModalOpen(false);
+      switchActiveTab("players");
+      setPlayerSearch("");
+      setPlayerClassFilter("all");
+      setPlayerPage(1);
+      await loadAllData();
+      await reloadGuildNotices();
+    } catch (err) {
+      console.error(err);
+      setBulkPlayerError(err?.message || "Could not add player(s).");
+    } finally {
+      setBulkPlayerSaving(false);
+    }
+  };
+
+  // Backwards-compatible alias for any existing single-player button handlers.
+  const addPlayer = saveBHPlayers;
 
   /* =========================================================
      EDIT PLAYER
@@ -5739,6 +6136,76 @@ export default function BHPage() {
   };
 
   /* =========================================================
+     BH BULK MANAGEMENT
+     Selection always points to existing Firestore record IDs. FROM/TO are
+     filters only and can never create a record that did not already exist.
+  ========================================================= */
+  const openBHMultiTools = (mode = "menu") => {
+    if (!isAdmin) return;
+    setBulkAttendanceOpen(false);
+    setAddPlayerModalOpen(false);
+    setBulkToolsMode(mode); setBulkToolsSelected([]); setBulkToolsSearch("");
+    setBulkToolsFrom(""); setBulkToolsTo(""); setBulkToolsPage(1);
+    setBulkToolsComment(""); setBulkToolsError(""); setBulkToolsSaving(false);
+    setBulkToolsPoints(""); setBulkToolsClass("");
+    setBulkToolsWeapon(""); setBulkToolsStatus("available"); setBulkToolsNotes(""); setBulkToolsPin("");
+    setBulkToolsModal("open");
+  };
+
+  const bulkBHRows = useMemo(() => {
+    let rows;
+    if (["player-edit","player-disable","player-delete"].includes(bulkToolsMode)) {
+      rows = players.map(p => ({id:String(p.id),kind:"player",player:p,ign:clean(p.ign),className:clean(p.className||p.class),weapon:clean(p.weapon),dateKey:"",timeKey:"",sortAt:safeToDate(p.updatedAt||p.createdAt)?.getTime()||0,recordLabel:"PLAYER PROFILE",value:p.active===false?"DISABLED":"ACTIVE",status:p.active===false?"DISABLED":"ACTIVE"}));
+    } else if (["reward-edit","reward-delete"].includes(bulkToolsMode)) {
+      rows = rewards.map(r => { const at=safeToDate(r.updatedAt)||safeToDate(r.createdAt); return {id:String(r.id),kind:"reward",reward:r,ign:clean(r.playerName)||"UNASSIGNED",className:clean(r.weaponClass),weapon:clean(r.name),dateKey:at?dateKeyFromDate(at,effectiveTimezone):"",timeKey:at?timeKeyFromDate(at,effectiveTimezone):"",sortAt:at?.getTime()||0,recordLabel:`${bossLabel(r.bossId)} • ${clean(r.name)||"REWARD"}`,value:clean(r.status)||"available",status:(clean(r.status)||"available").toUpperCase()}; });
+    } else if (["claim-edit","claim-delete"].includes(bulkToolsMode)) {
+      rows = rewardClaims.filter(c=>lower(c.status)!=="cancelled").map(c=>{ const at=safeToDate(c.claimedAt)||safeToDate(c.updatedAt)||safeToDate(c.createdAt); const reward=rewards.find(r=>String(r.id)===String(c.rewardId||"")); return {id:String(c.id),kind:"claim",claim:c,reward,ign:clean(c.playerName),className:clean(c.weaponClass),weapon:clean(c.rewardName||reward?.name),dateKey:at?dateKeyFromDate(at,effectiveTimezone):"",timeKey:at?timeKeyFromDate(at,effectiveTimezone):"",sortAt:at?.getTime()||0,recordLabel:`${bossLabel(c.bossId||reward?.bossId)} • ${clean(c.rewardName||reward?.name)||"CLAIM"}`,value:`${safeNumber(c.points,0).toFixed(2)} pts`,status:(clean(c.status)||"claimed").toUpperCase()}; });
+    } else {
+      rows = attendanceRows.map(r=>{ const at=safeToDate(r.spawnAt)||safeToDate(r.updatedAt)||safeToDate(r.createdAt); const p=players.find(x=>String(x.id)===String(r.playerId)); return {id:String(r.id),kind:"attendance",row:r,player:p,ign:clean(r.playerName||p?.ign),className:clean(p?.className||p?.class),weapon:clean(r.bossName||bossLabel(r.bossId)),dateKey:attendanceDate(r,effectiveTimezone),timeKey:clean(r.timeKey)||(at?timeKeyFromDate(at,effectiveTimezone):""),sortAt:at?.getTime()||0,recordLabel:`${bossLabel(r.bossId)} • ${r.manualOverride?"CORRECTION":"SCHEDULED"}`,value:`+${safeNumber(r.points,0).toFixed(2)} pts`,status:r.attended===false?"DID NOT ATTEND":"ATTENDED"}; });
+    }
+    return rows.sort((a,b)=>(b.sortAt||0)-(a.sortAt||0)||lower(a.ign).localeCompare(lower(b.ign),undefined,{numeric:true,sensitivity:"base"}));
+  },[bulkToolsMode,players,attendanceRows,rewards,rewardClaims,effectiveTimezone]);
+
+  const filteredBHMultiRows = useMemo(()=>{ const q=lower(bulkToolsSearch); return bulkBHRows.filter(x=>{ if(bulkToolsFrom&&x.dateKey&&x.dateKey<bulkToolsFrom)return false; if(bulkToolsTo&&x.dateKey&&x.dateKey>bulkToolsTo)return false; return !q||[x.ign,x.className,x.weapon,x.dateKey,x.timeKey,x.recordLabel,x.value,x.status].some(v=>lower(v).includes(q)); }); },[bulkBHRows,bulkToolsFrom,bulkToolsTo,bulkToolsSearch]);
+  const bulkBHPageCount=Math.max(1,Math.ceil(filteredBHMultiRows.length/5));
+  const bulkBHSafePage=Math.min(Math.max(1,bulkToolsPage),bulkBHPageCount);
+  const bulkBHVisibleRows=filteredBHMultiRows.slice((bulkBHSafePage-1)*5,bulkBHSafePage*5);
+  const toggleBHMultiSelection=id=>setBulkToolsSelected(cur=>cur.includes(String(id))?cur.filter(x=>x!==String(id)):[...cur,String(id)]);
+  const toggleBHMultiPage=()=>{const ids=bulkBHVisibleRows.map(x=>String(x.id));setBulkToolsSelected(cur=>ids.length&&ids.every(id=>cur.includes(id))?cur.filter(id=>!ids.includes(id)):Array.from(new Set([...cur,...ids])))};
+  const bulkSelectedBHRows=bulkBHRows.filter(x=>bulkToolsSelected.includes(String(x.id)));
+
+  const saveBHMultiChange=async()=>{
+    if(!isAdmin||bulkToolsSaving)return;
+    if(!bulkSelectedBHRows.length){setBulkToolsError("Select one or more EXISTING records from the table.");return;}
+    if(!clean(bulkToolsComment)){setBulkToolsError("Admin comment is required for every bulk modification.");return;}
+    if(bulkToolsMode==="player-delete"&&bulkToolsPin!=="12345"){setBulkToolsError("Incorrect delete PIN.");return;}
+    if(bulkToolsMode==="attendance-edit"&&bulkToolsPoints!==""&&safeNumber(bulkToolsPoints,-1)<0){setBulkToolsError("Attendance points cannot be negative.");return;}
+    if(bulkToolsMode==="player-edit"&&!clean(bulkToolsClass)&&bulkToolsWeapon===""){setBulkToolsError("Choose at least one player field to change.");return;}
+    setBulkToolsSaving(true);setBulkToolsError("");
+    try{
+      for(let start=0;start<bulkSelectedBHRows.length;start+=400){
+        const batch=writeBatch(db); const rows=bulkSelectedBHRows.slice(start,start+400);
+        for(const x of rows){
+          if(bulkToolsMode==="attendance-edit"){ if(!x.row)throw new Error(`${x.ign}: saved attendance record is missing.`); batch.update(doc(db,"bhAttendance",x.row.id),{...(bulkToolsPoints!==""?{points:safeNumber(bulkToolsPoints,0)}:{}),comment:clean(bulkToolsComment),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null}); }
+          else if(bulkToolsMode==="attendance-delete"||bulkToolsMode==="attendance-redo"){if(!x.row)throw new Error(`${x.ign}: saved attendance record is missing.`);batch.delete(doc(db,"bhAttendance",x.row.id));}
+          else if(bulkToolsMode==="player-edit"){const p=x.player;const cls=clean(bulkToolsClass)||clean(p.className||p.class);batch.update(doc(db,"players",p.id),{...(cls?{class:cls,className:cls}:{}),...(bulkToolsWeapon!==""?{weapon:clean(bulkToolsWeapon)}:{}),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
+          else if(bulkToolsMode==="player-disable"){batch.update(doc(db,"players",x.player.id),{active:false,status:"disabled",updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
+          else if(bulkToolsMode==="player-delete"){batch.delete(doc(db,"players",x.player.id));}
+          else if(bulkToolsMode==="reward-edit"){batch.update(doc(db,"bhRewards",x.reward.id),{status:clean(bulkToolsStatus)||clean(x.reward.status)||"available",notes:bulkToolsNotes!==""?clean(bulkToolsNotes):clean(x.reward.notes),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName()});}
+          else if(bulkToolsMode==="reward-delete"){if(rewardClaims.some(c=>String(c.rewardId||"")===String(x.reward.id)))throw new Error(`${x.weapon}: has claim history and cannot be deleted. Disable it instead.`);batch.delete(doc(db,"bhRewards",x.reward.id));}
+          else if(bulkToolsMode==="claim-edit"){batch.update(doc(db,"bhRewardClaims",x.claim.id),{notes:bulkToolsNotes!==""?clean(bulkToolsNotes):clean(x.claim.notes),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
+          else if(bulkToolsMode==="claim-delete"){batch.delete(doc(db,"bhRewardClaims",x.claim.id));if(x.claim.rewardId){const reward=rewards.find(r=>String(r.id)===String(x.claim.rewardId));if(reward)batch.update(doc(db,"bhRewards",reward.id),{status:"available",updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}}
+        }
+        await batch.commit();
+      }
+      const labels={"attendance-edit":"attendance records corrected","attendance-delete":"attendance records deleted","attendance-redo":"attendance records removed for redo","player-edit":"player profiles updated","player-disable":"players disabled","player-delete":"player profiles deleted","reward-edit":"rewards updated","reward-delete":"rewards deleted","claim-edit":"reward claims updated","claim-delete":"reward claims deleted and linked rewards restored"};
+      const title=`BH BULK ${bulkToolsMode.replaceAll("-"," ").toUpperCase()}`;
+      await createGuildNotice({title,message:`${bulkSelectedBHRows.length} existing ${labels[bulkToolsMode]||"records"}.`,type:bulkToolsMode.includes("delete")?"warning":"info",module:"bh-attendance",action:title,entityType:"bh-bulk-management",entityId:bulkSelectedBHRows.map(x=>x.id).join(","),details:[`Records changed: ${bulkSelectedBHRows.length}`,`Exact record IDs: ${bulkSelectedBHRows.map(x=>x.id).join(", ")}`,`Dates targeted: ${Array.from(new Set(bulkSelectedBHRows.map(x=>x.dateKey).filter(Boolean))).join(", ")||"record-specific saved dates only"}`,`Admin comment: ${clean(bulkToolsComment)}`,`Changed by: ${getCurrentUpdaterName()}`]});
+      setBulkToolsModal(null);setSuccess(`${bulkSelectedBHRows.length} existing record${bulkSelectedBHRows.length===1?"":"s"} processed. No new record was created.`);await loadAllData();await reloadGuildNotices();
+    }catch(err){console.error(err);setBulkToolsError(err?.message||"Bulk change failed.");}finally{setBulkToolsSaving(false);}
+  };
+
+  /* =========================================================
      EDIT ATTENDANCE
   ========================================================= */
 
@@ -6064,7 +6531,7 @@ export default function BHPage() {
           timeKey: row.timeKey || formatTime(at, effectiveTimezone),
           bossName: clean(row.bossName) || "Unknown Boss",
           details: row.manualOverride
-            ? (clean(row.comment) || "Manual attendance override")
+            ? (clean(row.comment) || "Attendance correction")
             : "Scheduled spawn attendance",
           points: safeNumber(row.points, 0),
           relatedReward: "—",
@@ -6583,15 +7050,15 @@ export default function BHPage() {
 
       <nav className="bh-tabs bh-primary-nav" aria-label="Boss Hunt sections">
         <button type="button" className={`bh-tab ${activeTab === "schedule" ? "active" : ""}`} onClick={() => switchActiveTab("schedule")} aria-selected={activeTab === "schedule"}>
-          <span className="bh-tab-icon bh-tab-icon-schedule" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M7.5 3.5v4M16.5 3.5v4M3.5 9h17M7 13h3M14 13h3M7 16.5h3"/></svg></span>
+          <span className="bh-tab-icon bh-tab-icon-schedule" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 9h17M7 13h3M14 13h3M7 16.5h3" /></svg></span>
           <span className="bh-tab-copy"><strong>ACTUAL SCHEDULE</strong><small>View boss spawns</small></span>
         </button>
         <button type="button" className={`bh-tab ${activeTab === "players" ? "active" : ""}`} onClick={() => switchActiveTab("players")} aria-selected={activeTab === "players"}>
-          <span className="bh-tab-icon bh-tab-icon-players" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6"/><path d="M15 6.5a3 3 0 0 1 0 5.8M16 14c2.6.3 4.1 2.1 4.5 5.5"/></svg></span>
+          <span className="bh-tab-icon bh-tab-icon-players" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6" /><path d="M15 6.5a3 3 0 0 1 0 5.8M16 14c2.6.3 4.1 2.1 4.5 5.5" /></svg></span>
           <span className="bh-tab-copy"><strong>PLAYERS &amp; HISTORY</strong><small>Roster &amp; attendance</small></span>
         </button>
         <button type="button" className={`bh-tab ${activeTab === "rewards" ? "active" : ""}`} onClick={() => switchActiveTab("rewards")} aria-selected={activeTab === "rewards"}>
-          <span className="bh-tab-icon bh-tab-icon-rewards" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8.5h14v11H5z"/><path d="M4 8.5h16v-3H4zM12 5.5v14M12 5.5c-2.8 0-4-1.1-4-2.6 0-1.1.9-1.9 2-1.9 1.7 0 2.8 2.2 2 4.5zm0 0c2.8 0 4-1.1 4-2.6 0-1.1-.9-1.9-2-1.9-1.7 0-2.8 2.2-2 4.5z"/></svg></span>
+          <span className="bh-tab-icon bh-tab-icon-rewards" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8.5h14v11H5z" /><path d="M4 8.5h16v-3H4zM12 5.5v14M12 5.5c-2.8 0-4-1.1-4-2.6 0-1.1.9-1.9 2-1.9 1.7 0 2.8 2.2 2 4.5zm0 0c2.8 0 4-1.1 4-2.6 0-1.1-.9-1.9-2-1.9-1.7 0-2.8 2.2-2 4.5z" /></svg></span>
           <span className="bh-tab-copy"><strong>REWARDS</strong><small>Claims &amp; inventory</small></span>
         </button>
         <button
@@ -6603,7 +7070,7 @@ export default function BHPage() {
           title={noticePanelOpen ? "Hide Activity & Notifications" : "Show Activity & Notifications"}
         >
           <span className="bh-notice-toggle-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8.5h18C21 16 18 16 18 9Z"/><path d="M10 21h4"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8.5h18C21 16 18 16 18 9Z" /><path d="M10 21h4" /></svg>
           </span>
           <span className="bh-notice-toggle-copy">
             <strong>ACTIVITY &amp; NOTIFICATIONS</strong>
@@ -6613,1077 +7080,1084 @@ export default function BHPage() {
         </button>
       </nav>
 
-              {/* ===================================================
+      {/* ===================================================
                   UNIFIED GUILD BOSS HUNT NOTIFICATIONS
                   One audit feed — no duplicate NEW/OLD tables.
               =================================================== */}
-              <section className={`bh-panel bh-notifications-full bh-notifications-unified bh-notifications-slide ${noticePanelOpen ? "is-open" : "is-closed"}`} id="bh-notifications-panel" aria-hidden={!noticePanelOpen}>
-                  <div className="bh-unified-notice-header">
-                    <div className="bh-unified-notice-title-wrap">
-                      <div className="bh-unified-notice-emblem"><span>♟</span></div>
-                      <div>
-                        <div className="bh-section-kicker">GUILD BOSS HUNT NOTIFICATIONS</div>
-                        <h2>Activity &amp; Notifications</h2>
-                        <p>Track every Boss Hunt activity in one unified audit feed. NEW is based on the current local calendar day.</p>
-                      </div>
-                    </div>
-                    <div className="bh-unified-notice-summary">
-                      <div className="bh-unified-count new"><strong>{newNotices.length}</strong><span>NEW TODAY</span></div>
-                      <div className="bh-unified-count"><strong>{sortedGuildNotices.length}</strong><span>TOTAL</span></div>
-                      <button type="button" className="bh-unified-refresh" onClick={reloadGuildNotices} aria-label="Refresh notifications">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-4L3 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 5v5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 13a8 8 0 0 0 14.8 4L21 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 19v-5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        REFRESH
-                      </button>
-                    </div>
-                  </div>
-        
-                  <div className="bh-unified-notice-filters">
-                    <div className="bh-unified-search">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6" fill="none" stroke="currentColor" strokeWidth="2"/><path d="m16 16 5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                      <input className="bh-input" type="search" placeholder="Search player, action, reward, boss, or admin..." value={noticeSearch} onChange={(e) => { setNoticeSearch(e.target.value); setNoticeAllPage(1); }} />
-                    </div>
-                    <select className="bh-input" value={noticeTypeFilter} onChange={(e) => { setNoticeTypeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification category">
-                      <option value="all">ALL TYPES</option>
-                      <option value="reward">REWARD</option>
-                      <option value="attendance">ATTENDANCE</option>
-                      <option value="points">POINTS</option>
-                      <option value="player">PLAYER</option>
-                      <option value="schedule">SCHEDULE</option>
-                      <option value="admin">ADMIN</option>
-                      <option value="system">SYSTEM</option>
-                    </select>
-                    <select className="bh-input" value={noticeAdminFilter} onChange={(e) => { setNoticeAdminFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification admin">
-                      <option value="all">ALL ADMINS</option>
-                      {noticeAdmins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
-                    </select>
-                    <select className="bh-input" value={noticeTimeFilter} onChange={(e) => { setNoticeTimeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification time">
-                      <option value="all">ALL TIME</option>
-                      <option value="today">TODAY</option>
-                      <option value="7">LAST 7 DAYS</option>
-                      <option value="30">LAST 30 DAYS</option>
-                    </select>
-                    <div className="bh-unified-date-control">
-                      <label>DATE</label>
-                      <div className="bh-unified-date-input">
-                        <input className="bh-input" type="date" aria-label="Choose notification date" value={noticeDateFilter} onChange={(e) => { setNoticeDateFilter(e.target.value); setNoticeAllPage(1); }} />
-                        <span aria-hidden="true">▣</span>
-                      </div>
-                    </div>
-                    <div className="bh-unified-time-control"><label>FROM</label><input className="bh-input" type="time" value={noticeFromTime} onChange={(e) => { setNoticeFromTime(e.target.value); setNoticeAllPage(1); }} /></div>
-                    <div className="bh-unified-time-control"><label>TO</label><input className="bh-input" type="time" value={noticeToTime} onChange={(e) => { setNoticeToTime(e.target.value); setNoticeAllPage(1); }} /></div>
-                    {noticeDateFilter && <button type="button" className="bh-secondary-button bh-unified-clear" onClick={() => { setNoticeDateFilter(""); setNoticeFromTime("11:00"); setNoticeToTime("03:00"); setNoticeAllPage(1); }}>CLEAR DATE</button>}
-                  </div>
-        
-                  <div className="bh-unified-notice-results-head">
-                    <div><strong>{filteredAllNotices.length}</strong> notifications found <span className="bh-results-dot">•</span> <b>{newNotices.length}</b> new today</div>
-                    <div>Showing {filteredAllNotices.length ? `${(safeAllPage - 1) * NOTICE_PAGE_SIZE + 1}–${Math.min(safeAllPage * NOTICE_PAGE_SIZE, filteredAllNotices.length)}` : "0"} of {filteredAllNotices.length}</div>
-                  </div>
-        
-                  <div className="bh-unified-notice-table-wrap">
-                    <table className="bh-unified-notice-table">
-                      <colgroup><col className="c-num"/><col className="c-status"/><col className="c-icon"/><col className="c-category"/><col className="c-message"/><col className="c-time"/><col className="c-by"/><col className="c-open"/></colgroup>
-                      <thead><tr><th>#</th><th>STATUS</th><th>ICON</th><th>CATEGORY</th><th>MESSAGE</th><th>TIME</th><th>BY</th><th aria-label="Open"></th></tr></thead>
-                      <tbody>
-                        {pagedAllNotices.map((notice, index) => {
-                          const category = noticeCategoryKey(notice);
-                          const categoryClass = noticeCategoryClass(notice);
-                          const isNew = noticeDayKey(notice.updatedAt || notice.createdAt || notice.timestamp, effectiveTimezone) === todayKey;
-                          return (
-                            <tr key={notice.id} className={`bh-unified-notice-row category-${categoryClass}`} onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
-                              <td className="notice-number">{(safeAllPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
-                              <td><span className={`bh-unified-status ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
-                              <td><span className={`bh-unified-icon category-${categoryClass}`}><NoticeCategoryIcon category={category} /></span></td>
-                              <td><span className={`bh-unified-category category-${categoryClass}`}>{noticeTypeLabel(notice)}</span></td>
-                              <td><div className="bh-unified-message"><strong>{notice.title || "Guild Activity"}</strong><span>{notice.message || "No additional message recorded."}</span></div></td>
-                              <td className="notice-time">{formatDateTime(notice.updatedAt || notice.createdAt || notice.timestamp, effectiveTimezone)}</td>
-                              <td className="notice-by">{notice.createdBy || "System"}</td>
-                              <td className="notice-open"><span>›</span></td>
-                            </tr>
-                          );
-                        })}
-                        {!pagedAllNotices.length && <tr><td colSpan="8" className="bh-unified-empty">No notifications match your filters.</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-        
-                  <div className="bh-unified-pagination">
-                    <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage(1)} aria-label="First page">«</button>
-                    <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
-                    {Array.from({ length: Math.min(5, allNoticePageCount) }, (_, i) => {
-                      const page = allNoticePageCount <= 5 ? i + 1 : Math.max(1, Math.min(allNoticePageCount - 4, safeAllPage - 2)) + i;
-                      return <button key={page} className={safeAllPage === page ? "active" : ""} onClick={() => setNoticeAllPage(page)}>{page}</button>;
-                    })}
-                    <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage((p) => Math.min(allNoticePageCount, p + 1))} aria-label="Next page">›</button>
-                    <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage(allNoticePageCount)} aria-label="Last page">»</button>
-                  </div>
-                </section>
+      <section className={`bh-panel bh-notifications-full bh-notifications-unified bh-notifications-slide ${noticePanelOpen ? "is-open" : "is-closed"}`} id="bh-notifications-panel" aria-hidden={!noticePanelOpen}>
+        <div className="bh-unified-notice-header">
+          <div className="bh-unified-notice-title-wrap">
+            <div className="bh-unified-notice-emblem"><span>♟</span></div>
+            <div>
+              <div className="bh-section-kicker">GUILD BOSS HUNT NOTIFICATIONS</div>
+              <h2>Activity &amp; Notifications</h2>
+              <p>Track every Boss Hunt activity in one unified audit feed. NEW is based on the current local calendar day.</p>
+            </div>
+          </div>
+          <div className="bh-unified-notice-summary">
+            <div className="bh-unified-count new"><strong>{newNotices.length}</strong><span>NEW TODAY</span></div>
+            <div className="bh-unified-count"><strong>{sortedGuildNotices.length}</strong><span>TOTAL</span></div>
+            <button type="button" className="bh-unified-refresh" onClick={reloadGuildNotices} aria-label="Refresh notifications">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-4L3 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M3 5v5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M4 13a8 8 0 0 0 14.8 4L21 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M21 19v-5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              REFRESH
+            </button>
+          </div>
+        </div>
 
-{activeTab === "schedule" && (
-              /* ===================================================
-                  ACTUAL SCHEDULE
-              =================================================== */
-        
-              <section id="bh-schedule-panel" className="bh-panel bh-schedule-panel">
-                    <div className="bh-panel-header">
+        <div className="bh-unified-notice-filters">
+          <div className="bh-unified-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6" fill="none" stroke="currentColor" strokeWidth="2" /><path d="m16 16 5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+            <input className="bh-input" type="search" placeholder="Search player, action, reward, boss, or admin..." value={noticeSearch} onChange={(e) => { setNoticeSearch(e.target.value); setNoticeAllPage(1); }} />
+          </div>
+          <select className="bh-input" value={noticeTypeFilter} onChange={(e) => { setNoticeTypeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification category">
+            <option value="all">ALL TYPES</option>
+            <option value="reward">REWARD</option>
+            <option value="attendance">ATTENDANCE</option>
+            <option value="points">POINTS</option>
+            <option value="player">PLAYER</option>
+            <option value="schedule">SCHEDULE</option>
+            <option value="admin">ADMIN</option>
+            <option value="system">SYSTEM</option>
+          </select>
+          <select className="bh-input" value={noticeAdminFilter} onChange={(e) => { setNoticeAdminFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification admin">
+            <option value="all">ALL ADMINS</option>
+            {noticeAdmins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
+          </select>
+          <select className="bh-input" value={noticeTimeFilter} onChange={(e) => { setNoticeTimeFilter(e.target.value); setNoticeAllPage(1); }} aria-label="Filter notification time">
+            <option value="all">ALL TIME</option>
+            <option value="today">TODAY</option>
+            <option value="7">LAST 7 DAYS</option>
+            <option value="30">LAST 30 DAYS</option>
+          </select>
+          <div className="bh-unified-date-control">
+            <label>DATE</label>
+            <div className="bh-unified-date-input">
+              <input className="bh-input" type="date" aria-label="Choose notification date" value={noticeDateFilter} onChange={(e) => { setNoticeDateFilter(e.target.value); setNoticeAllPage(1); }} />
+              <span aria-hidden="true">▣</span>
+            </div>
+          </div>
+          <div className="bh-unified-time-control"><label>FROM</label><input className="bh-input" type="time" value={noticeFromTime} onChange={(e) => { setNoticeFromTime(e.target.value); setNoticeAllPage(1); }} /></div>
+          <div className="bh-unified-time-control"><label>TO</label><input className="bh-input" type="time" value={noticeToTime} onChange={(e) => { setNoticeToTime(e.target.value); setNoticeAllPage(1); }} /></div>
+          {noticeDateFilter && <button type="button" className="bh-secondary-button bh-unified-clear" onClick={() => { setNoticeDateFilter(""); setNoticeFromTime("11:00"); setNoticeToTime("03:00"); setNoticeAllPage(1); }}>CLEAR DATE</button>}
+        </div>
+
+        <div className="bh-unified-notice-results-head">
+          <div><strong>{filteredAllNotices.length}</strong> notifications found <span className="bh-results-dot">•</span> <b>{newNotices.length}</b> new today</div>
+          <div>Showing {filteredAllNotices.length ? `${(safeAllPage - 1) * NOTICE_PAGE_SIZE + 1}–${Math.min(safeAllPage * NOTICE_PAGE_SIZE, filteredAllNotices.length)}` : "0"} of {filteredAllNotices.length}</div>
+        </div>
+
+        <div className="bh-unified-notice-table-wrap">
+          <table className="bh-unified-notice-table">
+            <colgroup><col className="c-num" /><col className="c-status" /><col className="c-icon" /><col className="c-category" /><col className="c-message" /><col className="c-time" /><col className="c-by" /><col className="c-open" /></colgroup>
+            <thead><tr><th>#</th><th>STATUS</th><th>ICON</th><th>CATEGORY</th><th>MESSAGE</th><th>TIME</th><th>BY</th><th aria-label="Open"></th></tr></thead>
+            <tbody>
+              {pagedAllNotices.map((notice, index) => {
+                const category = noticeCategoryKey(notice);
+                const categoryClass = noticeCategoryClass(notice);
+                const isNew = noticeDayKey(notice.updatedAt || notice.createdAt || notice.timestamp, effectiveTimezone) === todayKey;
+                return (
+                  <tr key={notice.id} className={`bh-unified-notice-row category-${categoryClass}`} onClick={() => setSelectedNotice(notice)} title="Click to view full notification details">
+                    <td className="notice-number">{(safeAllPage - 1) * NOTICE_PAGE_SIZE + index + 1}</td>
+                    <td><span className={`bh-unified-status ${isNew ? "new" : "old"}`}>{isNew ? "NEW" : "OLD"}</span></td>
+                    <td><span className={`bh-unified-icon category-${categoryClass}`}><NoticeCategoryIcon category={category} /></span></td>
+                    <td><span className={`bh-unified-category category-${categoryClass}`}>{noticeTypeLabel(notice)}</span></td>
+                    <td><div className="bh-unified-message"><strong>{notice.title || "Guild Activity"}</strong><span>{notice.message || "No additional message recorded."}</span></div></td>
+                    <td className="notice-time">{formatDateTime(notice.updatedAt || notice.createdAt || notice.timestamp, effectiveTimezone)}</td>
+                    <td className="notice-by">{notice.createdBy || "System"}</td>
+                    <td className="notice-open"><span>›</span></td>
+                  </tr>
+                );
+              })}
+              {!pagedAllNotices.length && <tr><td colSpan="8" className="bh-unified-empty">No notifications match your filters.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bh-unified-pagination">
+          <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage(1)} aria-label="First page">«</button>
+          <button disabled={safeAllPage <= 1} onClick={() => setNoticeAllPage((p) => Math.max(1, p - 1))} aria-label="Previous page">‹</button>
+          {Array.from({ length: Math.min(5, allNoticePageCount) }, (_, i) => {
+            const page = allNoticePageCount <= 5 ? i + 1 : Math.max(1, Math.min(allNoticePageCount - 4, safeAllPage - 2)) + i;
+            return <button key={page} className={safeAllPage === page ? "active" : ""} onClick={() => setNoticeAllPage(page)}>{page}</button>;
+          })}
+          <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage((p) => Math.min(allNoticePageCount, p + 1))} aria-label="Next page">›</button>
+          <button disabled={safeAllPage >= allNoticePageCount} onClick={() => setNoticeAllPage(allNoticePageCount)} aria-label="Last page">»</button>
+        </div>
+      </section>
+
+      {activeTab === "schedule" && (
+        /* ===================================================
+            ACTUAL SCHEDULE
+        =================================================== */
+
+        <section id="bh-schedule-panel" className="bh-panel bh-schedule-panel">
+          <div className="bh-panel-header">
+            <div>
+              <div className="bh-section-kicker">
+                EXACT SCHEDULED
+                SPAWN
+              </div>
+
+              <h2>
+                Actual Raid Schedule
+              </h2>
+
+              <p>
+                Schedule times come
+                directly from the
+                canonical Raid
+                Schedule.
+              </p>
+            </div>
+
+          </div>
+
+          <div className="bh-schedule-controls">
+            <div className="bh-form-group">
+              <label>
+                DAYS BACK
+              </label>
+
+              <select
+                className="bh-select"
+                value={
+                  scheduleBackDays
+                }
+                onChange={(e) =>
+                  setScheduleBackDays(
+                    Number(
+                      e.target.value
+                    )
+                  )
+                }
+              >
+                {Array.from(
+                  {
+                    length: 8,
+                  },
+                  (_, i) => (
+                    <option
+                      key={i}
+                      value={i}
+                    >
+                      {i}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div className="bh-form-group">
+              <label>
+                DAYS FORWARD
+              </label>
+
+              <select
+                className="bh-select"
+                value={
+                  scheduleForwardDays
+                }
+                onChange={(e) =>
+                  setScheduleForwardDays(
+                    Number(
+                      e.target.value
+                    )
+                  )
+                }
+              >
+                {Array.from(
+                  {
+                    length: 8,
+                  },
+                  (_, i) => (
+                    <option
+                      key={i}
+                      value={i}
+                    >
+                      {i}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div className="bh-form-group">
+              <label>
+                STATUS
+              </label>
+
+              <select
+                className="bh-select"
+                value={
+                  scheduleStatusFilter
+                }
+                onChange={(e) =>
+                  setScheduleStatusFilter(
+                    e.target.value
+                  )
+                }
+              >
+                <option value="all">
+                  All
+                </option>
+
+                <option value="active">
+                  Active
+                </option>
+
+                <option value="inactive">
+                  Inactive
+                </option>
+              </select>
+            </div>
+
+            <div className="bh-form-group">
+              <label>
+                BOSS
+              </label>
+
+              <select
+                className="bh-select"
+                value={
+                  scheduleBossFilter
+                }
+                onChange={(e) =>
+                  setScheduleBossFilter(
+                    e.target.value
+                  )
+                }
+              >
+                <option value="all">
+                  All Bosses
+                </option>
+
+                {bossOptions.map(
+                  (boss) => (
+                    <option
+                      key={
+                        boss.id
+                      }
+                      value={
+                        boss.id
+                      }
+                    >
+                      {
+                        boss.name
+                      }
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div className="bh-window-info">
+            TODAY is always shown
+            first. Showing{" "}
+            <strong>
+              {scheduleBackDays}
+            </strong>{" "}
+            previous day
+            {scheduleBackDays ===
+              1
+              ? ""
+              : "s"} and{" "}
+            <strong>
+              {
+                scheduleForwardDays
+              }
+            </strong>{" "}
+            future day
+            {scheduleForwardDays ===
+              1
+              ? ""
+              : "s"}.
+          </div>
+
+          <div className="bh-schedule-list">
+            {orderedScheduleDateKeys.map(
+              (dateKey) => {
+                const occurrences =
+                  filteredScheduleOccurrences.filter(
+                    (item) =>
+                      item.dateKey ===
+                      dateKey
+                  );
+
+                const isToday =
+                  dateKey ===
+                  todayKey;
+
+                const isSelected =
+                  dateKey ===
+                  selectedScheduleDate;
+
+                return (
+                  <div
+                    key={
+                      dateKey
+                    }
+                    className={`bh-date-section ${isSelected
+                      ? "selected"
+                      : ""
+                      }`}
+                  >
+                    <button
+                      className="bh-date-header"
+                      onClick={() =>
+                        setSelectedScheduleDate(
+                          dateKey
+                        )
+                      }
+                    >
                       <div>
-                        <div className="bh-section-kicker">
-                          EXACT SCHEDULED
-                          SPAWN
-                        </div>
-        
-                        <h2>
-                          Actual Raid Schedule
-                        </h2>
-        
-                        <p>
-                          Schedule times come
-                          directly from the
-                          canonical Raid
-                          Schedule.
-                        </p>
-                      </div>
-        
-                    </div>
-        
-                    <div className="bh-schedule-controls">
-                      <div className="bh-form-group">
-                        <label>
-                          DAYS BACK
-                        </label>
-        
-                        <select
-                          className="bh-select"
-                          value={
-                            scheduleBackDays
-                          }
-                          onChange={(e) =>
-                            setScheduleBackDays(
-                              Number(
-                                e.target.value
-                              )
-                            )
-                          }
-                        >
-                          {Array.from(
-                            {
-                              length: 8,
-                            },
-                            (_, i) => (
-                              <option
-                                key={i}
-                                value={i}
-                              >
-                                {i}
-                              </option>
-                            )
+                        <span className="bh-date-badge">
+                          {isToday
+                            ? "TODAY"
+                            : dateKey <
+                              todayKey
+                              ? "PREVIOUS"
+                              : "UPCOMING"}
+                        </span>
+
+                        <strong>
+                          {formatLongDate(
+                            zonedLocalToDate(
+                              dateKey,
+                              "12:00",
+                              effectiveTimezone
+                            ),
+                            effectiveTimezone
                           )}
-                        </select>
+                        </strong>
                       </div>
-        
-                      <div className="bh-form-group">
-                        <label>
-                          DAYS FORWARD
-                        </label>
-        
-                        <select
-                          className="bh-select"
-                          value={
-                            scheduleForwardDays
-                          }
-                          onChange={(e) =>
-                            setScheduleForwardDays(
-                              Number(
-                                e.target.value
-                              )
-                            )
-                          }
-                        >
-                          {Array.from(
-                            {
-                              length: 8,
-                            },
-                            (_, i) => (
-                              <option
-                                key={i}
-                                value={i}
-                              >
-                                {i}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </div>
-        
-                      <div className="bh-form-group">
-                        <label>
-                          STATUS
-                        </label>
-        
-                        <select
-                          className="bh-select"
-                          value={
-                            scheduleStatusFilter
-                          }
-                          onChange={(e) =>
-                            setScheduleStatusFilter(
-                              e.target.value
-                            )
-                          }
-                        >
-                          <option value="all">
-                            All
-                          </option>
-        
-                          <option value="active">
-                            Active
-                          </option>
-        
-                          <option value="inactive">
-                            Inactive
-                          </option>
-                        </select>
-                      </div>
-        
-                      <div className="bh-form-group">
-                        <label>
-                          BOSS
-                        </label>
-        
-                        <select
-                          className="bh-select"
-                          value={
-                            scheduleBossFilter
-                          }
-                          onChange={(e) =>
-                            setScheduleBossFilter(
-                              e.target.value
-                            )
-                          }
-                        >
-                          <option value="all">
-                            All Bosses
-                          </option>
-        
-                          {bossOptions.map(
-                            (boss) => (
-                              <option
-                                key={
-                                  boss.id
-                                }
-                                value={
-                                  boss.id
-                                }
-                              >
-                                {
-                                  boss.name
-                                }
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </div>
-                    </div>
-        
-                    <div className="bh-window-info">
-                      TODAY is always shown
-                      first. Showing{" "}
-                      <strong>
-                        {scheduleBackDays}
-                      </strong>{" "}
-                      previous day
-                      {scheduleBackDays ===
-                        1
-                        ? ""
-                        : "s"} and{" "}
-                      <strong>
+
+                      <span>
                         {
-                          scheduleForwardDays
-                        }
-                      </strong>{" "}
-                      future day
-                      {scheduleForwardDays ===
-                        1
-                        ? ""
-                        : "s"}.
-                    </div>
-        
-                    <div className="bh-schedule-list">
-                      {orderedScheduleDateKeys.map(
-                        (dateKey) => {
-                          const occurrences =
-                            filteredScheduleOccurrences.filter(
-                              (item) =>
-                                item.dateKey ===
-                                dateKey
-                            );
-        
-                          const isToday =
-                            dateKey ===
-                            todayKey;
-        
-                          const isSelected =
-                            dateKey ===
-                            selectedScheduleDate;
-        
-                          return (
-                            <div
-                              key={
-                                dateKey
-                              }
-                              className={`bh-date-section ${isSelected
-                                ? "selected"
-                                : ""
-                                }`}
-                            >
-                              <button
-                                className="bh-date-header"
-                                onClick={() =>
-                                  setSelectedScheduleDate(
-                                    dateKey
+                          occurrences.length
+                        }{" "}
+                        spawn
+                        {occurrences.length ===
+                          1
+                          ? ""
+                          : "s"}
+                      </span>
+                    </button>
+
+                    {occurrences.length ===
+                      0 ? (
+                      <div className="bh-empty-state">
+                        No scheduled
+                        occurrences
+                        for this
+                        date.
+                      </div>
+                    ) : (
+                      <div className="bh-occurrence-grid">
+                        {occurrences.map(
+                          (
+                            occurrence
+                          ) => {
+                            const recordedCount =
+                              attendanceRows.filter(
+                                (
+                                  row
+                                ) =>
+                                  occurrenceMatchesRow(
+                                    row,
+                                    occurrence
                                   )
+                              ).length;
+
+                            return (
+                              <button
+                                key={
+                                  occurrence.occurrenceKey
                                 }
+                                className={`bh-occurrence-card ${recordedCount
+                                  ? "recorded"
+                                  : ""
+                                  }`}
+                                onClick={() => {
+                                  setSelectedScheduleDate(dateKey);
+
+                                  // ADMIN: preserve the existing attendance/admin flow.
+                                  if (isAdmin) {
+                                    openAttendanceModal(
+                                      dateKey,
+                                      occurrence
+                                    );
+                                    return;
+                                  }
+
+                                  // GUEST / REGULAR USER: ONLY the individual spawn card
+                                  // redirects to Players & History. The top BH navigation
+                                  // remains completely normal and usable.
+                                  switchActiveTab("players");
+                                }}
                               >
-                                <div>
-                                  <span className="bh-date-badge">
-                                    {isToday
-                                      ? "TODAY"
-                                      : dateKey <
-                                        todayKey
-                                        ? "PREVIOUS"
-                                        : "UPCOMING"}
+                                <div className="bh-occurrence-media">
+                                  <img
+                                    className="bh-occurrence-image"
+                                    src={bossImagePath(occurrence.bossId)}
+                                    alt={`${occurrence.bossName} boss`}
+                                  />
+                                  <div className="bh-occurrence-media-shade" />
+                                  <span className="bh-occurrence-kind">
+                                    {normalizeBossId(occurrence.bossId) === "sonya" ? "BOSS RAID" : normalizeBossId(occurrence.bossId) === "reflector" ? "MINI BOSS" : "BOSS RAID"}
                                   </span>
-        
-                                  <strong>
-                                    {formatLongDate(
-                                      zonedLocalToDate(
-                                        dateKey,
-                                        "12:00",
-                                        effectiveTimezone
-                                      ),
+                                </div>
+
+                                <div className="bh-occurrence-content">
+                                  <div className="bh-occurrence-time">
+                                    {formatTime(
+                                      occurrence.spawnAt,
                                       effectiveTimezone
                                     )}
-                                  </strong>
+                                  </div>
+
+                                  <div className="bh-occurrence-boss">
+                                    {occurrence.bossName}
+                                  </div>
+
+                                  <div className="bh-occurrence-meta">
+                                    <span className="bh-occurrence-points">
+                                      +{safeNumber(occurrence.points, 0).toFixed(2)} POINTS
+                                    </span>
+                                    <span className="bh-occurrence-status">
+                                      {recordedCount
+                                        ? `${recordedCount} RECORDED`
+                                        : "NO ATTENDANCE"}
+                                    </span>
+                                  </div>
                                 </div>
-        
-                                <span>
-                                  {
-                                    occurrences.length
-                                  }{" "}
-                                  spawn
-                                  {occurrences.length ===
-                                    1
-                                    ? ""
-                                    : "s"}
-                                </span>
                               </button>
-        
-                              {occurrences.length ===
-                                0 ? (
-                                <div className="bh-empty-state">
-                                  No scheduled
-                                  occurrences
-                                  for this
-                                  date.
-                                </div>
-                              ) : (
-                                <div className="bh-occurrence-grid">
-                                  {occurrences.map(
-                                    (
-                                      occurrence
-                                    ) => {
-                                      const recordedCount =
-                                        attendanceRows.filter(
-                                          (
-                                            row
-                                          ) =>
-                                            occurrenceMatchesRow(
-                                              row,
-                                              occurrence
-                                            )
-                                        ).length;
-        
-                                      return (
-                                        <button
-                                          key={
-                                            occurrence.occurrenceKey
-                                          }
-                                          className={`bh-occurrence-card ${recordedCount
-                                            ? "recorded"
-                                            : ""
-                                            }`}
-                                          onClick={() => {
-                                            setSelectedScheduleDate(
-                                              dateKey
-                                            );
-        
-                                            if (
-                                              isAdmin
-                                            ) {
-                                              openAttendanceModal(
-                                                dateKey,
-                                                occurrence
-                                              );
-                                            }
-                                          }}
-                                        >
-                                          <div className="bh-occurrence-media">
-                                            <img
-                                              className="bh-occurrence-image"
-                                              src={bossImagePath(occurrence.bossId)}
-                                              alt={`${occurrence.bossName} boss`}
-                                            />
-                                            <div className="bh-occurrence-media-shade" />
-                                            <span className="bh-occurrence-kind">
-                                              {normalizeBossId(occurrence.bossId) === "sonya" ? "BOSS RAID" : normalizeBossId(occurrence.bossId) === "reflector" ? "MINI BOSS" : "BOSS RAID"}
-                                            </span>
-                                          </div>
-        
-                                          <div className="bh-occurrence-content">
-                                            <div className="bh-occurrence-time">
-                                              {formatTime(
-                                                occurrence.spawnAt,
-                                                effectiveTimezone
-                                              )}
-                                            </div>
-        
-                                            <div className="bh-occurrence-boss">
-                                              {occurrence.bossName}
-                                            </div>
-        
-                                            <div className="bh-occurrence-meta">
-                                              <span className="bh-occurrence-points">
-                                                +{safeNumber(occurrence.points, 0).toFixed(2)} POINTS
-                                              </span>
-                                              <span className="bh-occurrence-status">
-                                                {recordedCount
-                                                  ? `${recordedCount} RECORDED`
-                                                  : "NO ATTENDANCE"}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </button>
-                                      );
-                                    }
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
-                      )}
-                    </div>
-                  </section>
+                            );
+                          }
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+            )}
+          </div>
+        </section>
       )}
 
-{activeTab === "players" && (
-               /* ===================================================
-                  PLAYERS
-              =================================================== */
-        
-              <section id="players-history" className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
-                  <div className="bh-players-hero bh-players-hero-v8">
-                    <div className="bh-players-title-wrap bh-players-title-wrap-v8">
-                      <div className="bh-players-emblem bh-players-emblem-v8" aria-hidden="true">
-                        <span>♟</span>
+      {activeTab === "players" && (
+        /* ===================================================
+           PLAYERS
+       =================================================== */
+
+        <section id="players-history" className="bh-panel bh-players-dashboard bh-players-dashboard-v8">
+          <div className="bh-players-hero bh-players-hero-v8">
+            <div className="bh-players-title-wrap bh-players-title-wrap-v8">
+              <div className="bh-players-emblem bh-players-emblem-v8" aria-hidden="true">
+                <span>♟</span>
+              </div>
+              <div>
+                <div className="bh-section-kicker">PLAYER ROSTER</div>
+                <div className="bh-players-title-row">
+                  <h2>Players &amp; History</h2>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="bh-inline-add-player"
+                      onClick={openBHAddPlayers}
+                    >
+                      ＋ ADD NEW PLAYER
+                    </button>
+                  )}
+                  {isAdmin && <button type="button" className="bh-inline-add-player bh-bulk-tools-trigger" onClick={() => openBHMultiTools("menu")}>⚙ BULK TOOLS</button>}
+                </div>
+                <p>Manage registered players, track attendance records and reward activities.</p>
+              </div>
+            </div>
+
+            <div className="bh-players-stat-grid bh-players-stat-grid-v8">
+              <div className="bh-player-stat bh-player-stat-cyan bh-player-stat-v8">
+                <div className="bh-player-stat-icon">♟</div>
+                <div>
+                  <strong>{totalPlayers}</strong>
+                  <span>TOTAL PLAYERS</span>
+                  <small>Registered players in the roster</small>
+                </div>
+              </div>
+
+              <div className="bh-player-stat bh-player-stat-green bh-player-stat-v8">
+                <div className="bh-player-stat-icon">◫</div>
+                <div>
+                  <strong>
+                    {(() => {
+                      const activeCount = players.filter((player) => player.active).length;
+                      const possible = activeCount * Math.max(1, new Set(attendanceRows.map((row) => clean(row.occurrenceKey || row.id))).size);
+                      const attended = new Set(
+                        attendanceRows
+                          .filter((row) => activeCount && attendanceMatchesPlayer(row, row.playerId))
+                          .map((row) => `${clean(row.playerId)}|${clean(row.occurrenceKey || row.id)}`)
+                      ).size;
+                      return possible ? `${Math.min(100, Math.round((attended / possible) * 100))}%` : "0%";
+                    })()}
+                  </strong>
+                  <span>ATTENDANCE RATE</span>
+                  <small>Attendance on recorded scheduled spawns</small>
+                </div>
+              </div>
+
+              <div className="bh-player-stat bh-player-stat-purple bh-player-stat-v8 bh-player-stat-sonya">
+                <div className="bh-player-stat-sonya-art" aria-hidden="true">
+                  <img src={sonyaImage} alt="" />
+                </div>
+                <div className="bh-player-stat-sonya-icon bh-player-stat-icon">⚔</div>
+                <div className="bh-player-stat-content">
+                  <strong>{totalSonyaClaims}</strong>
+                  <span>SONYA WEAPONS CLAIMED</span>
+                  <small>All-time Sonya claims</small>
+                  <em>-6.00 pts per Sonya claim</em>
+                </div>
+              </div>
+
+              <div className="bh-player-stat bh-player-stat-gold bh-player-stat-v8">
+                <div className="bh-player-stat-icon">⚔</div>
+                <div>
+                  <strong>{eligiblePlayers.length}</strong>
+                  <span>ELIGIBLE FOR SONYA WEAPON</span>
+                  <small>Players with {safeNumber(BH_CLAIM_THRESHOLD, 6).toFixed(2)}+ points eligible to claim</small>
+                </div>
+              </div>
+
+              <div className="bh-mini-boss-rewards-card bh-mini-boss-rewards-card-v10">
+                <div className="bh-mini-boss-rewards-head">
+                  <div className="bh-mini-boss-rewards-title">
+                    <span className="bh-mini-boss-rewards-gift" aria-hidden="true">🎁</span>
+                    <div>
+                      <span>MINI BOSS REWARDS</span>
+                      <small>CLAIMED / AVAILABLE</small>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bh-mini-boss-rewards-list">
+                  {[
+                    { id: "geomancer", name: "Geomancer", color: "blue" },
+                    { id: "reflector", name: "Reflector", color: "green" },
+                    { id: "giant-hawk", name: "Giant Hawk", color: "gold" },
+                  ].map((miniBoss) => {
+                    const summary = rewardBossSummary.find((boss) => boss.id === miniBoss.id) || {
+                      total: 0,
+                      claimed: 0,
+                      unclaimed: 0,
+                    };
+                    const total = safeNumber(summary.total, 0);
+                    const claimed = safeNumber(summary.claimed, 0);
+                    const unclaimed = safeNumber(summary.unclaimed, Math.max(0, total - claimed));
+                    const percent = total > 0 ? Math.min(100, Math.round((claimed / total) * 100)) : 0;
+
+                    return (
+                      <div className={`bh-mini-boss-row bh-mini-boss-${miniBoss.color}`} key={miniBoss.id}>
+                        <div className="bh-mini-boss-icon-wrap">
+                          <img
+                            src={bossImagePath(miniBoss.id)}
+                            alt={`${miniBoss.name} boss`}
+                            className="bh-mini-boss-icon"
+                          />
+                        </div>
+                        <div className="bh-mini-boss-main">
+                          <div className="bh-mini-boss-topline">
+                            <strong>{miniBoss.name}</strong>
+                            <b>{claimed} / {total}</b>
+                          </div>
+                          <div className="bh-mini-boss-track" aria-hidden="true">
+                            <span style={{ width: `${percent}%` }} />
+                          </div>
+                          <div className="bh-mini-boss-bottomline">
+                            <span>{claimed} CLAIMED</span>
+                            <span>{unclaimed} AVAILABLE</span>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="bh-section-kicker">PLAYER ROSTER</div>
-                        <div className="bh-players-title-row">
-                          <h2>Players &amp; History</h2>
-                          {isAdmin && (
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bh-players-filters bh-players-filters-v8">
+            <div className="bh-players-search">
+              <span aria-hidden="true">⌕</span>
+              <input
+                className="bh-input"
+                value={playerSearch}
+                placeholder="Search IGN..."
+                onChange={(e) => {
+                  setPlayerSearch(e.target.value);
+                  setPlayerPage(1);
+                }}
+              />
+            </div>
+
+            <div className="bh-players-class-filter">
+              <span aria-hidden="true">☷</span>
+              <select
+                className="bh-select"
+                value={playerClassFilter}
+                onChange={(e) => {
+                  setPlayerClassFilter(e.target.value);
+                  setPlayerPage(1);
+                }}
+              >
+                <option value="all">All Classes</option>
+                {CLASS_OPTIONS.map((className) => (
+                  <option key={className} value={className}>
+                    {className}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="bh-players-table-card bh-players-table-card-v8">
+            <TableScroller>
+              <table className="bh-table bh-players-table bh-players-table-v8">
+                <colgroup>
+                  <col className="bh-col-player" />
+                  <col className="bh-col-class" />
+                  {DEFAULT_BOSS_LIST.map((boss) => (
+                    <col key={`col-${boss.id}`} className="bh-col-boss" />
+                  ))}
+                  <col className="bh-col-total" />
+                  <col className="bh-col-sonya-count" />
+                  <col className="bh-col-sonya-deducted" />
+                  <col className="bh-col-balance" />
+                  <col className="bh-col-updated" />
+                  <col className="bh-col-updated-by" />
+                  <col className="bh-col-actions" />
+                </colgroup>
+                <thead>
+                  <tr className="bh-v6-group-row">
+                    <th rowSpan="2" className="bh-v6-player-head">PLAYER</th>
+                    <th rowSpan="2" className="bh-v6-class-head">CLASS</th>
+                    <th colSpan={DEFAULT_BOSS_LIST.length + 1} className="bh-v6-attendance-group">
+                      ATTENDANCE EARNED (ALL TIME)
+                    </th>
+                    <th colSpan="2" className="bh-v6-sonya-group">
+                      SONYA WEAPON CLAIMS (ALL TIME)
+                    </th>
+                    <th rowSpan="2" className="bh-v6-balance-head">
+                      CURRENT REWARD<br />BALANCE (POINTS)
+                      <small>(EARNED - SONYA CLAIMS)</small>
+                    </th>
+                    <th rowSpan="2" className="bh-v6-update-head">
+                      LAST UPDATED<br />LIVE STATUS
+                    </th>
+                    <th rowSpan="2" className="bh-v6-update-head">
+                      UPDATED BY<br />ADMIN
+                    </th>
+                    <th rowSpan="2" className="bh-v6-actions-head">ACTIONS</th>
+                  </tr>
+                  <tr className="bh-v6-sub-row">
+                    {DEFAULT_BOSS_LIST.map((boss) => {
+                      const bossKey = String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+                      const bossGlyph = {
+                        sonya: "⚔",
+                        geomancer: "⚔",
+                        reflector: "✥",
+                        "giant-hawk": "✦",
+                      }[bossKey] || "✦";
+                      return (
+                        <th key={boss.id} className={`bh-boss-head-${bossKey}`}>
+                          <span className="bh-boss-head-icon" aria-hidden="true">{bossGlyph}</span>
+                          {boss.name.toUpperCase()}<small>({safeNumber(boss.points, 0).toFixed(1)} PT)</small>
+                        </th>
+                      );
+                    })}
+                    <th>TOTAL<small>POINTS</small></th>
+                    <th>
+                      # SONYA<br />WEAPONS CLAIMED
+                    </th>
+                    <th>
+                      POINTS DEDUCTED<br />(-6.00 EACH)
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {visiblePlayers.map((player) => {
+                    const initials = clean(player.ign || "?").charAt(0).toUpperCase() || "?";
+                    const classIcon = {
+                      Swordman: swordmanIcon,
+                      Archer: archerIcon,
+                      Gunner: gunnerIcon,
+                      Shaman: shamanIcon,
+                      Extreme: extremeIcon,
+                      Brawler: brawlerIcon,
+                    }[player.class] || swordmanIcon;
+
+                    return (
+                      <tr key={String(player.id)} className="bh-player-row bh-player-row-v8">
+                        <td>
+                          <div className="bh-player-identity">
+                            <div className="bh-player-avatar">{initials}</div>
+                            <div className="bh-player-name-wrap">
+                              <strong>{player.ign || "Unknown"}</strong>
+                              <span className={player.active ? "bh-player-online" : "bh-player-disabled"}>
+                                <i /> {player.active ? "ONLINE" : "DISABLED"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td>
+                          <div className="bh-player-class bh-player-class-v8">
+                            <img src={classIcon} alt="" />
+                            <span>{player.class || "—"}</span>
+                          </div>
+                        </td>
+
+                        {DEFAULT_BOSS_LIST.map((boss) => (
+                          <td key={boss.id} className={`bh-v6-attendance-cell bh-attendance-${String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                            <strong>{safeNumber(player.attendanceByBoss?.[boss.id], 0).toFixed(2)}+</strong>
+                          </td>
+                        ))}
+
+                        <td className="bh-v6-total-cell">
+                          <strong>{safeNumber(player.points, 0).toFixed(2)}</strong>
+                        </td>
+
+                        <td className="bh-v6-sonya-count-cell">
+                          <strong>{safeNumber(player.sonyaClaimsCount, 0)}</strong>
+                        </td>
+
+                        <td className={`bh-v6-deduction-cell ${player.sonyaDeducted > 0 ? "bh-deduction-negative" : "bh-deduction-zero"}`}>
+                          <strong>{player.sonyaDeducted > 0 ? `-${safeNumber(player.sonyaDeducted, 0).toFixed(2)}` : "0.00"}</strong>
+                        </td>
+
+                        {(() => {
+                          const balance = safeNumber(player.available, 0);
+                          const eligible = balance >= BH_CLAIM_THRESHOLD;
+                          const negative = balance < 0;
+                          const balanceClass = negative
+                            ? "bh-balance-negative"
+                            : eligible
+                              ? "bh-balance-eligible"
+                              : "bh-balance-pending";
+                          return (
+                            <td className={`bh-v6-balance-cell ${balanceClass}`}>
+                              <div className="bh-balance-status-card">
+                                <strong>{balance.toFixed(2)}</strong>
+                                <span>{eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</span>
+                              </div>
+                            </td>
+                          );
+                        })()}
+
+                        <td className="bh-v6-updated-cell bh-live-status-cell">
+                          <span>◫ {formatDate(player.latestUpdatedAt, effectiveTimezone)}</span>
+                          <span>◷ {formatTime(player.latestUpdatedAt, effectiveTimezone)}</span>
+                          {(() => {
+                            const live = bhLiveStatusByPlayer[String(player.id)];
+                            if (!live) return null;
+                            return <span className={`bh-live-attendance-status is-${live.state}`}>
+                              <b>{live.state === "attended" ? "✓" : live.state === "missed" ? "✕" : "◷"}</b>
+                              <strong>{live.label}</strong>
+                              {live.occurrence && <small>{bossLabel(live.occurrence.bossId)} • {formatTime(live.occurrence.spawnAt, effectiveTimezone)}</small>}
+                            </span>;
+                          })()}
+                        </td>
+
+                        <td className="bh-v6-updated-by-cell">
+                          <span>♙ {player.latestUpdatedBy || "SYSTEM"}</span>
+                          <small>ADMIN</small>
+                        </td>
+
+                        <td>
+                          <div className="bh-player-actions bh-player-actions-v8">
                             <button
                               type="button"
-                              className="bh-inline-add-player"
+                              className="bh-player-action bh-player-action-history"
                               onClick={() => {
-                                setNewPlayerIgn("");
-                                setNewPlayerClass(CLASS_OPTIONS[0] || "");
-                                setNewPlayerWeapon("");
-                                setError("");
-                                setAddPlayerModalOpen(true);
+                                setHistoryPlayer(player);
+                                setHistoryPage(1);
+                                setHistorySearch("");
                               }}
                             >
-                              ＋ ADD NEW PLAYER
+                              <span>◷</span> HISTORY
                             </button>
-                          )}
-                        </div>
-                        <p>Manage registered players, track attendance records and reward activities.</p>
-                      </div>
-                    </div>
-        
-                    <div className="bh-players-stat-grid bh-players-stat-grid-v8">
-                      <div className="bh-player-stat bh-player-stat-cyan bh-player-stat-v8">
-                        <div className="bh-player-stat-icon">♟</div>
-                        <div>
-                          <strong>{totalPlayers}</strong>
-                          <span>TOTAL PLAYERS</span>
-                          <small>Registered players in the roster</small>
-                        </div>
-                      </div>
-        
-                      <div className="bh-player-stat bh-player-stat-green bh-player-stat-v8">
-                        <div className="bh-player-stat-icon">◫</div>
-                        <div>
-                          <strong>
-                            {(() => {
-                              const activeCount = players.filter((player) => player.active).length;
-                              const possible = activeCount * Math.max(1, new Set(attendanceRows.map((row) => clean(row.occurrenceKey || row.id))).size);
-                              const attended = new Set(
-                                attendanceRows
-                                  .filter((row) => activeCount && attendanceMatchesPlayer(row, row.playerId))
-                                  .map((row) => `${clean(row.playerId)}|${clean(row.occurrenceKey || row.id)}`)
-                              ).size;
-                              return possible ? `${Math.min(100, Math.round((attended / possible) * 100))}%` : "0%";
-                            })()}
-                          </strong>
-                          <span>ATTENDANCE RATE</span>
-                          <small>Attendance on recorded scheduled spawns</small>
-                        </div>
-                      </div>
-        
-                      <div className="bh-player-stat bh-player-stat-purple bh-player-stat-v8 bh-player-stat-sonya">
-                        <div className="bh-player-stat-sonya-art" aria-hidden="true">
-                          <img src={sonyaImage} alt="" />
-                        </div>
-                        <div className="bh-player-stat-sonya-icon bh-player-stat-icon">⚔</div>
-                        <div className="bh-player-stat-content">
-                          <strong>{totalSonyaClaims}</strong>
-                          <span>SONYA WEAPONS CLAIMED</span>
-                          <small>All-time Sonya claims</small>
-                          <em>-6.00 pts per Sonya claim</em>
-                        </div>
-                      </div>
-        
-                      <div className="bh-player-stat bh-player-stat-gold bh-player-stat-v8">
-                        <div className="bh-player-stat-icon">⚔</div>
-                        <div>
-                          <strong>{eligiblePlayers.length}</strong>
-                          <span>ELIGIBLE FOR SONYA WEAPON</span>
-                          <small>Players with {safeNumber(BH_CLAIM_THRESHOLD, 6).toFixed(2)}+ points eligible to claim</small>
-                        </div>
-                      </div>
-        
-                      <div className="bh-mini-boss-rewards-card bh-mini-boss-rewards-card-v10">
-                        <div className="bh-mini-boss-rewards-head">
-                          <div className="bh-mini-boss-rewards-title">
-                            <span className="bh-mini-boss-rewards-gift" aria-hidden="true">🎁</span>
-                            <div>
-                              <span>MINI BOSS REWARDS</span>
-                              <small>CLAIMED / AVAILABLE</small>
-                            </div>
+
+                            {isAdmin && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="bh-player-action bh-player-action-edit"
+                                  onClick={() => setEditingPlayer({ ...player })}
+                                >
+                                  <span>✎</span> EDIT
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="bh-player-action bh-player-action-disable"
+                                  onClick={() => togglePlayerActive(player)}
+                                >
+                                  <span>⊘</span> {player.active ? "DISABLE" : "ENABLE"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="bh-player-action bh-player-action-delete"
+                                  onClick={() => {
+                                    setDeletePlayerTarget(player);
+                                    setDeletePlayerPin("");
+                                    setError("");
+                                  }}
+                                >
+                                  <span>⌫</span> DELETE
+                                </button>
+                              </>
+                            )}
                           </div>
-                        </div>
-        
-                        <div className="bh-mini-boss-rewards-list">
-                          {[
-                            { id: "geomancer", name: "Geomancer", color: "blue" },
-                            { id: "reflector", name: "Reflector", color: "green" },
-                            { id: "giant-hawk", name: "Giant Hawk", color: "gold" },
-                          ].map((miniBoss) => {
-                            const summary = rewardBossSummary.find((boss) => boss.id === miniBoss.id) || {
-                              total: 0,
-                              claimed: 0,
-                              unclaimed: 0,
-                            };
-                            const total = safeNumber(summary.total, 0);
-                            const claimed = safeNumber(summary.claimed, 0);
-                            const unclaimed = safeNumber(summary.unclaimed, Math.max(0, total - claimed));
-                            const percent = total > 0 ? Math.min(100, Math.round((claimed / total) * 100)) : 0;
-        
-                            return (
-                              <div className={`bh-mini-boss-row bh-mini-boss-${miniBoss.color}`} key={miniBoss.id}>
-                                <div className="bh-mini-boss-icon-wrap">
-                                  <img
-                                    src={bossImagePath(miniBoss.id)}
-                                    alt={`${miniBoss.name} boss`}
-                                    className="bh-mini-boss-icon"
-                                  />
-                                </div>
-                                <div className="bh-mini-boss-main">
-                                  <div className="bh-mini-boss-topline">
-                                    <strong>{miniBoss.name}</strong>
-                                    <b>{claimed} / {total}</b>
-                                  </div>
-                                  <div className="bh-mini-boss-track" aria-hidden="true">
-                                    <span style={{ width: `${percent}%` }} />
-                                  </div>
-                                  <div className="bh-mini-boss-bottomline">
-                                    <span>{claimed} CLAIMED</span>
-                                    <span>{unclaimed} AVAILABLE</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-        
-                  <div className="bh-players-filters bh-players-filters-v8">
-                    <div className="bh-players-search">
-                      <span aria-hidden="true">⌕</span>
-                      <input
-                        className="bh-input"
-                        value={playerSearch}
-                        placeholder="Search IGN..."
-                        onChange={(e) => {
-                          setPlayerSearch(e.target.value);
-                          setPlayerPage(1);
-                        }}
-                      />
-                    </div>
-        
-                    <div className="bh-players-class-filter">
-                      <span aria-hidden="true">☷</span>
-                      <select
-                        className="bh-select"
-                        value={playerClassFilter}
-                        onChange={(e) => {
-                          setPlayerClassFilter(e.target.value);
-                          setPlayerPage(1);
-                        }}
-                      >
-                        <option value="all">All Classes</option>
-                        {CLASS_OPTIONS.map((className) => (
-                          <option key={className} value={className}>
-                            {className}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-        
-                  <div className="bh-players-table-card bh-players-table-card-v8">
-                    <TableScroller>
-                      <table className="bh-table bh-players-table bh-players-table-v8">
-                        <colgroup>
-                          <col className="bh-col-player" />
-                          <col className="bh-col-class" />
-                          {DEFAULT_BOSS_LIST.map((boss) => (
-                            <col key={`col-${boss.id}`} className="bh-col-boss" />
-                          ))}
-                          <col className="bh-col-total" />
-                          <col className="bh-col-sonya-count" />
-                          <col className="bh-col-sonya-deducted" />
-                          <col className="bh-col-balance" />
-                          <col className="bh-col-updated" />
-                          <col className="bh-col-updated-by" />
-                          <col className="bh-col-actions" />
-                        </colgroup>
-                        <thead>
-                          <tr className="bh-v6-group-row">
-                            <th rowSpan="2" className="bh-v6-player-head">PLAYER</th>
-                            <th rowSpan="2" className="bh-v6-class-head">CLASS</th>
-                            <th colSpan={DEFAULT_BOSS_LIST.length + 1} className="bh-v6-attendance-group">
-                              ATTENDANCE EARNED (ALL TIME)
-                            </th>
-                            <th colSpan="2" className="bh-v6-sonya-group">
-                              SONYA WEAPON CLAIMS (ALL TIME)
-                            </th>
-                            <th rowSpan="2" className="bh-v6-balance-head">
-                              CURRENT REWARD<br />BALANCE (POINTS)
-                              <small>(EARNED - SONYA CLAIMS)</small>
-                            </th>
-                            <th rowSpan="2" className="bh-v6-update-head">
-                              LAST UPDATED<br />DATE &amp; TIME
-                            </th>
-                            <th rowSpan="2" className="bh-v6-update-head">
-                              UPDATED BY<br />ADMIN
-                            </th>
-                            <th rowSpan="2" className="bh-v6-actions-head">ACTIONS</th>
-                          </tr>
-                          <tr className="bh-v6-sub-row">
-                            {DEFAULT_BOSS_LIST.map((boss) => {
-                              const bossKey = String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-                              const bossGlyph = {
-                                sonya: "⚔",
-                                geomancer: "⚔",
-                                reflector: "✥",
-                                "giant-hawk": "✦",
-                              }[bossKey] || "✦";
-                              return (
-                                <th key={boss.id} className={`bh-boss-head-${bossKey}`}>
-                                  <span className="bh-boss-head-icon" aria-hidden="true">{bossGlyph}</span>
-                                  {boss.name.toUpperCase()}<small>({safeNumber(boss.points, 0).toFixed(1)} PT)</small>
-                                </th>
-                              );
-                            })}
-                            <th>TOTAL<small>POINTS</small></th>
-                            <th>
-                              # SONYA<br />WEAPONS CLAIMED
-                            </th>
-                            <th>
-                              POINTS DEDUCTED<br />(-6.00 EACH)
-                            </th>
-                          </tr>
-                        </thead>
-        
-                        <tbody>
-                          {visiblePlayers.map((player) => {
-                            const initials = clean(player.ign || "?").charAt(0).toUpperCase() || "?";
-                            const classIcon = {
-                              Swordman: swordmanIcon,
-                              Archer: archerIcon,
-                              Gunner: gunnerIcon,
-                              Shaman: shamanIcon,
-                              Extreme: extremeIcon,
-                              Brawler: brawlerIcon,
-                            }[player.class] || swordmanIcon;
-        
-                            return (
-                              <tr key={String(player.id)} className="bh-player-row bh-player-row-v8">
-                                <td>
-                                  <div className="bh-player-identity">
-                                    <div className="bh-player-avatar">{initials}</div>
-                                    <div className="bh-player-name-wrap">
-                                      <strong>{player.ign || "Unknown"}</strong>
-                                      <span className={player.active ? "bh-player-online" : "bh-player-disabled"}>
-                                        <i /> {player.active ? "ONLINE" : "DISABLED"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </td>
-        
-                                <td>
-                                  <div className="bh-player-class bh-player-class-v8">
-                                    <img src={classIcon} alt="" />
-                                    <span>{player.class || "—"}</span>
-                                  </div>
-                                </td>
-        
-                                {DEFAULT_BOSS_LIST.map((boss) => (
-                                  <td key={boss.id} className={`bh-v6-attendance-cell bh-attendance-${String(boss.id || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
-                                    <strong>{safeNumber(player.attendanceByBoss?.[boss.id], 0).toFixed(2)}+</strong>
-                                  </td>
-                                ))}
-        
-                                <td className="bh-v6-total-cell">
-                                  <strong>{safeNumber(player.points, 0).toFixed(2)}</strong>
-                                </td>
-        
-                                <td className="bh-v6-sonya-count-cell">
-                                  <strong>{safeNumber(player.sonyaClaimsCount, 0)}</strong>
-                                </td>
-        
-                                <td className={`bh-v6-deduction-cell ${player.sonyaDeducted > 0 ? "bh-deduction-negative" : "bh-deduction-zero"}`}>
-                                  <strong>{player.sonyaDeducted > 0 ? `-${safeNumber(player.sonyaDeducted, 0).toFixed(2)}` : "0.00"}</strong>
-                                </td>
-        
-                                {(() => {
-                                  const balance = safeNumber(player.available, 0);
-                                  const eligible = balance >= BH_CLAIM_THRESHOLD;
-                                  const negative = balance < 0;
-                                  const balanceClass = negative
-                                    ? "bh-balance-negative"
-                                    : eligible
-                                      ? "bh-balance-eligible"
-                                      : "bh-balance-pending";
-                                  return (
-                                    <td className={`bh-v6-balance-cell ${balanceClass}`}>
-                                      <div className="bh-balance-status-card">
-                                        <strong>{balance.toFixed(2)}</strong>
-                                        <span>{eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</span>
-                                      </div>
-                                    </td>
-                                  );
-                                })()}
-        
-                                <td className="bh-v6-updated-cell">
-                                  <span>◫ {formatDate(player.latestUpdatedAt, effectiveTimezone)}</span>
-                                  <span>◷ {formatTime(player.latestUpdatedAt, effectiveTimezone)}</span>
-                                </td>
-        
-                                <td className="bh-v6-updated-by-cell">
-                                  <span>♙ {player.latestUpdatedBy || "SYSTEM"}</span>
-                                  <small>ADMIN</small>
-                                </td>
-        
-                                <td>
-                                  <div className="bh-player-actions bh-player-actions-v8">
-                                    <button
-                                      type="button"
-                                      className="bh-player-action bh-player-action-history"
-                                      onClick={() => {
-                                        setHistoryPlayer(player);
-                                        setHistoryPage(1);
-                                        setHistorySearch("");
-                                      }}
-                                    >
-                                      <span>◷</span> HISTORY
-                                    </button>
-        
-                                    {isAdmin && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="bh-player-action bh-player-action-edit"
-                                          onClick={() => setEditingPlayer({ ...player })}
-                                        >
-                                          <span>✎</span> EDIT
-                                        </button>
-        
-                                        <button
-                                          type="button"
-                                          className="bh-player-action bh-player-action-disable"
-                                          onClick={() => togglePlayerActive(player)}
-                                        >
-                                          <span>⊘</span> {player.active ? "DISABLE" : "ENABLE"}
-                                        </button>
-        
-                                        <button
-                                          type="button"
-                                          className="bh-player-action bh-player-action-delete"
-                                          onClick={() => {
-                                            setDeletePlayerTarget(player);
-                                            setDeletePlayerPin("");
-                                            setError("");
-                                          }}
-                                        >
-                                          <span>⌫</span> DELETE
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-        
-                          {!visiblePlayers.length && (
-                            <tr>
-                              <td colSpan={DEFAULT_BOSS_LIST.length + 9} className="bh-empty-cell">
-                                No players found.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </TableScroller>
-                  </div>
-        
-                  <div className="bh-players-pagination bh-players-pagination-v6">
-                    <div className="bh-v6-page-controls">
-                      <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage(1)}>«</button>
-                      <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage((p) => Math.max(1, p - 1))}>‹</button>
-                      <div className="bh-players-page-number"><span>{playerPage}</span></div>
-                      <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage((p) => Math.min(playerPageCount, p + 1))}>›</button>
-                      <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage(playerPageCount)}>»</button>
-                    </div>
-                    <strong>Page {playerPage} of {playerPageCount}</strong>
-                    <span>Showing {visiblePlayers.length} of {filteredPlayers.length} players</span>
-                  </div>
-        
-                  <div className="bh-player-table-legend" aria-label="Players table color legend">
-                    <div className="bh-player-legend-attendance">
-                      <span className="legend-sonya"><b>＋</b> Sonya Points <small>(1.0 per attendance)</small></span>
-                      <span className="legend-geomancer"><b>＋</b> Geomancer Points <small>(0.2 per attendance)</small></span>
-                      <span className="legend-reflector"><b>＋</b> Reflector Points <small>(0.2 per attendance)</small></span>
-                      <span className="legend-hawk"><b>＋</b> Giant Hawk Points <small>(0.2 per attendance)</small></span>
-                      <span className="legend-total"><b>＋</b> Total Points <small>(Lifetime total)</small></span>
-                    </div>
-                    <div className="bh-player-legend-balance">
-                      <span className="legend-negative"><b>●</b> Balance &lt; 0 <small>Red + NOT ELIGIBLE</small></span>
-                      <span className="legend-pending"><b>●</b> 0.00 – 5.99 <small>Gold + NOT ELIGIBLE</small></span>
-                      <span className="legend-eligible"><b>●</b> 6.00+ <small>Green + ELIGIBLE</small></span>
-                    </div>
-                  </div>
-                </section>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {!visiblePlayers.length && (
+                    <tr>
+                      <td colSpan={DEFAULT_BOSS_LIST.length + 9} className="bh-empty-cell">
+                        No players found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </TableScroller>
+          </div>
+
+          <div className="bh-players-pagination bh-players-pagination-v6">
+            <div className="bh-v6-page-controls">
+              <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage(1)}>«</button>
+              <button type="button" disabled={playerPage <= 1} onClick={() => setPlayerPage((p) => Math.max(1, p - 1))}>‹</button>
+              <div className="bh-players-page-number"><span>{playerPage}</span></div>
+              <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage((p) => Math.min(playerPageCount, p + 1))}>›</button>
+              <button type="button" disabled={playerPage >= playerPageCount} onClick={() => setPlayerPage(playerPageCount)}>»</button>
+            </div>
+            <strong>Page {playerPage} of {playerPageCount}</strong>
+            <span>Showing {visiblePlayers.length} of {filteredPlayers.length} players</span>
+          </div>
+
+          <div className="bh-player-table-legend" aria-label="Players table color legend">
+            <div className="bh-player-legend-attendance">
+              <span className="legend-sonya"><b>＋</b> Sonya Points <small>(1.0 per attendance)</small></span>
+              <span className="legend-geomancer"><b>＋</b> Geomancer Points <small>(0.2 per attendance)</small></span>
+              <span className="legend-reflector"><b>＋</b> Reflector Points <small>(0.2 per attendance)</small></span>
+              <span className="legend-hawk"><b>＋</b> Giant Hawk Points <small>(0.2 per attendance)</small></span>
+              <span className="legend-total"><b>＋</b> Total Points <small>(Lifetime total)</small></span>
+            </div>
+            <div className="bh-player-legend-balance">
+              <span className="legend-negative"><b>●</b> Balance &lt; 0 <small>Red + NOT ELIGIBLE</small></span>
+              <span className="legend-pending"><b>●</b> 0.00 – 5.99 <small>Gold + NOT ELIGIBLE</small></span>
+              <span className="legend-eligible"><b>●</b> 6.00+ <small>Green + ELIGIBLE</small></span>
+            </div>
+          </div>
+        </section>
       )}
 
-{activeTab === "rewards" && (
-              /* ===================================================
-                  REWARDS
-              =================================================== */
-        
-              <section className="bh-panel bh-reward-dashboard" id="bh-reward-center">
-                    <div className="bh-reward-dashboard-header">
-                      <div>
-                        <div className="bh-section-kicker">REWARD CENTER <span className="bh-live-indicator">LIVE</span></div>
-                        <h2>Boss Hunt Rewards</h2>
-                        <p>Manage Sonya grand rewards, daily Duck Race rewards, winners and claim history.</p>
+      {activeTab === "rewards" && (
+        /* ===================================================
+            REWARDS
+        =================================================== */
+
+        <section className="bh-panel bh-reward-dashboard" id="bh-reward-center">
+          <div className="bh-reward-dashboard-header">
+            <div>
+              <div className="bh-section-kicker">REWARD CENTER <span className="bh-live-indicator">LIVE</span></div>
+              <h2>Boss Hunt Rewards</h2>
+              <p>Manage Sonya grand rewards, daily Duck Race rewards, winners and claim history.</p>
+            </div>
+            <div className="bh-reward-last-updated">
+              <span>LAST UPDATED</span>
+              <strong>{rewardLastUpdated?.at ? formatDateTime(rewardLastUpdated.at, effectiveTimezone) : "—"}</strong>
+              <small>{rewardLastUpdated?.by || "System"}</small>
+            </div>
+          </div>
+
+          <div className="bh-reward-summary-grid">
+            <div className="bh-reward-summary-card"><span>🎁</span><div><small>TOTAL REWARDS</small><strong>{totalRewardCount}</strong><em>Across all bosses</em></div></div>
+            <div className="bh-reward-summary-card"><span>✓</span><div><small>TOTAL CLAIMED</small><strong>{totalClaimedRewardCount}</strong><em>All time</em></div></div>
+            <div className="bh-reward-summary-card"><span>⌛</span><div><small>UNCLAIMED</small><strong>{totalUnclaimedRewardCount}</strong><em>Available rewards</em></div></div>
+            <div className="bh-reward-summary-card"><span>🏆</span><div><small>TODAY'S WINNERS</small><strong>{Array.from(todayRewardClaimsByBoss.values()).reduce((n, x) => n + x.length, 0)}</strong><em>All bosses</em></div></div>
+          </div>
+
+          <div className="bh-reward-section-title">
+            <div><span className="bh-section-kicker">BOSS OVERVIEW</span><h3>Reward &amp; Duck Race Status</h3></div>
+            {isAdmin && <span className="bh-reward-admin-note">Only Sonya has a 6.00-point cost. Mini bosses use daily Duck Race status.</span>}
+          </div>
+
+          <div className="bh-reward-boss-grid">
+            {rewardBossSummary.map((boss) => {
+              const sonya = boss.id === "sonya";
+              const duck = !sonya ? getDuckRaceStatus(boss.id) : null;
+              const winnerCount = todayRewardClaimsByBoss.get(boss.id)?.length || 0;
+
+              /*
+               * UNIFIED REWARD STATUS
+               * Sonya: available while at least one unclaimed reward remains.
+               * Mini bosses: today's Duck Race must be completed first.
+               *   not raced -> WAITING FOR DUCK RACE
+               *   raced + stock -> AVAILABLE
+               *   raced + no stock -> CLAIMED OUT
+               * Player eligibility is intentionally separate from this status.
+               */
+              const hasRewards = safeNumber(boss.unclaimed, 0) > 0;
+              const duckRaced = duck?.status === "duck-raced";
+              const rewardStatus = sonya
+                ? hasRewards
+                  ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
+                  : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" }
+                : !duckRaced
+                  ? { key: "waiting", label: "WAITING FOR DUCK RACE", detail: "Today's Duck Race has not been completed" }
+                  : hasRewards
+                    ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
+                    : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" };
+
+              return (
+                <article key={boss.id} className={`bh-reward-boss-card bh-reward-boss-card-detailed ${sonya ? "sonya" : "mini"}`}>
+                  <div className="bh-reward-boss-hero">
+                    <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
+                    <div className="bh-reward-boss-hero-overlay">
+                      <span className="bh-reward-boss-kind">{sonya ? "GRAND BOSS" : "MINI BOSS"}</span>
+                      <strong>{boss.name}</strong>
+                      <small>{sonya ? "WEEKLY · WEDNESDAY" : boss.id === "geomancer" ? "EVERY 10 HOURS" : "DAILY · MULTIPLE SPAWNS"}</small>
+                    </div>
+                  </div>
+                  <div className="bh-reward-boss-detail-body">
+                    <div className="bh-reward-boss-score-row">
+                      <div><span>ATTENDANCE POINTS</span><strong>+{safeNumber(boss.points, 0).toFixed(2)}</strong></div>
+                      <div className={`bh-reward-boss-state ${sonya ? "grand" : duck?.status === "duck-raced" ? "done" : "pending"}`}>
+                        <span>{sonya ? "REWARD COST" : "DUCK RACE"}</span>
+                        <strong>{sonya ? "-6.00" : duck?.status === "duck-raced" ? "COMPLETED" : "PENDING"}</strong>
                       </div>
-                      <div className="bh-reward-last-updated">
-                        <span>LAST UPDATED</span>
-                        <strong>{rewardLastUpdated?.at ? formatDateTime(rewardLastUpdated.at, effectiveTimezone) : "—"}</strong>
-                        <small>{rewardLastUpdated?.by || "System"}</small>
-                      </div>
                     </div>
-        
-                    <div className="bh-reward-summary-grid">
-                      <div className="bh-reward-summary-card"><span>🎁</span><div><small>TOTAL REWARDS</small><strong>{totalRewardCount}</strong><em>Across all bosses</em></div></div>
-                      <div className="bh-reward-summary-card"><span>✓</span><div><small>TOTAL CLAIMED</small><strong>{totalClaimedRewardCount}</strong><em>All time</em></div></div>
-                      <div className="bh-reward-summary-card"><span>⌛</span><div><small>UNCLAIMED</small><strong>{totalUnclaimedRewardCount}</strong><em>Available rewards</em></div></div>
-                      <div className="bh-reward-summary-card"><span>🏆</span><div><small>TODAY'S WINNERS</small><strong>{Array.from(todayRewardClaimsByBoss.values()).reduce((n, x) => n + x.length, 0)}</strong><em>All bosses</em></div></div>
+                    <div className="bh-reward-boss-stat-grid">
+                      <div><small>TOTAL REWARDS</small><strong>{boss.total}</strong></div>
+                      <div><small>CLAIMED</small><strong>{boss.claimed}</strong></div>
+                      <div><small>UNCLAIMED</small><strong>{boss.unclaimed}</strong></div>
                     </div>
-        
-                    <div className="bh-reward-section-title">
-                      <div><span className="bh-section-kicker">BOSS OVERVIEW</span><h3>Reward &amp; Duck Race Status</h3></div>
-                      {isAdmin && <span className="bh-reward-admin-note">Only Sonya has a 6.00-point cost. Mini bosses use daily Duck Race status.</span>}
+                    <div className="bh-reward-boss-info-list">
+                      <div><span>SCHEDULE</span><strong>{sonya ? "Weekly Wednesday · 21:00 PH" : boss.id === "geomancer" ? "Every 10 hours" : "Daily · multiple spawns"}</strong></div>
+                      <div><span>REWARD TYPE</span><strong>{sonya ? "Point-funded reward" : "Duck Race reward"}</strong></div>
+                      <div className="bh-reward-status-row"><span>STATUS</span><strong className={`status-${rewardStatus.key}`}>{rewardStatus.label}</strong></div>
+                      <div className="bh-reward-status-detail"><span>DETAIL</span><em>{rewardStatus.detail}</em></div>
                     </div>
-        
-                    <div className="bh-reward-boss-grid">
-                      {rewardBossSummary.map((boss) => {
-                        const sonya = boss.id === "sonya";
-                        const duck = !sonya ? getDuckRaceStatus(boss.id) : null;
-                        const winnerCount = todayRewardClaimsByBoss.get(boss.id)?.length || 0;
-        
-                        /*
-                         * UNIFIED REWARD STATUS
-                         * Sonya: available while at least one unclaimed reward remains.
-                         * Mini bosses: today's Duck Race must be completed first.
-                         *   not raced -> WAITING FOR DUCK RACE
-                         *   raced + stock -> AVAILABLE
-                         *   raced + no stock -> CLAIMED OUT
-                         * Player eligibility is intentionally separate from this status.
-                         */
-                        const hasRewards = safeNumber(boss.unclaimed, 0) > 0;
-                        const duckRaced = duck?.status === "duck-raced";
-                        const rewardStatus = sonya
-                          ? hasRewards
-                            ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
-                            : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" }
-                          : !duckRaced
-                            ? { key: "waiting", label: "WAITING FOR DUCK RACE", detail: "Today's Duck Race has not been completed" }
-                            : hasRewards
-                              ? { key: "available", label: "AVAILABLE", detail: `${boss.unclaimed} reward${boss.unclaimed === 1 ? "" : "s"} remaining` }
-                              : { key: "claimed-out", label: "CLAIMED OUT", detail: "No rewards remaining" };
-        
-                        return (
-                          <article key={boss.id} className={`bh-reward-boss-card bh-reward-boss-card-detailed ${sonya ? "sonya" : "mini"}`}>
-                            <div className="bh-reward-boss-hero">
-                              <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
-                              <div className="bh-reward-boss-hero-overlay">
-                                <span className="bh-reward-boss-kind">{sonya ? "GRAND BOSS" : "MINI BOSS"}</span>
-                                <strong>{boss.name}</strong>
-                                <small>{sonya ? "WEEKLY · WEDNESDAY" : boss.id === "geomancer" ? "EVERY 10 HOURS" : "DAILY · MULTIPLE SPAWNS"}</small>
-                              </div>
-                            </div>
-                            <div className="bh-reward-boss-detail-body">
-                              <div className="bh-reward-boss-score-row">
-                                <div><span>ATTENDANCE POINTS</span><strong>+{safeNumber(boss.points, 0).toFixed(2)}</strong></div>
-                                <div className={`bh-reward-boss-state ${sonya ? "grand" : duck?.status === "duck-raced" ? "done" : "pending"}`}>
-                                  <span>{sonya ? "REWARD COST" : "DUCK RACE"}</span>
-                                  <strong>{sonya ? "-6.00" : duck?.status === "duck-raced" ? "COMPLETED" : "PENDING"}</strong>
-                                </div>
-                              </div>
-                              <div className="bh-reward-boss-stat-grid">
-                                <div><small>TOTAL REWARDS</small><strong>{boss.total}</strong></div>
-                                <div><small>CLAIMED</small><strong>{boss.claimed}</strong></div>
-                                <div><small>UNCLAIMED</small><strong>{boss.unclaimed}</strong></div>
-                              </div>
-                              <div className="bh-reward-boss-info-list">
-                                <div><span>SCHEDULE</span><strong>{sonya ? "Weekly Wednesday · 21:00 PH" : boss.id === "geomancer" ? "Every 10 hours" : "Daily · multiple spawns"}</strong></div>
-                                <div><span>REWARD TYPE</span><strong>{sonya ? "Point-funded reward" : "Duck Race reward"}</strong></div>
-                                <div className="bh-reward-status-row"><span>STATUS</span><strong className={`status-${rewardStatus.key}`}>{rewardStatus.label}</strong></div>
-                                <div className="bh-reward-status-detail"><span>DETAIL</span><em>{rewardStatus.detail}</em></div>
-                              </div>
-                              {!sonya && isAdmin && (
-                                <button type="button" className="bh-reward-duck-button" disabled={duckRaceSaving} onClick={() => setDuckRaceForToday(boss.id, duck?.status === "duck-raced" ? "not-yet" : "duck-raced")}>
-                                  {duck?.status === "duck-raced" ? "RESET DUCK RACE" : "MARK DUCK RACED"}
-                                </button>
-                              )}
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-        
-                    <div className="bh-reward-section-title winners"><div><span className="bh-section-kicker">🏆 TODAY'S WINNERS</span><h3>{formatDate(new Date(), effectiveTimezone)}</h3></div></div>
-                    <div className="bh-reward-winners-grid">
-                      {rewardBossSummary.map((boss) => {
-                        const claims = todayRewardClaimsByBoss.get(boss.id) || [];
-                        const last = lastWinnerByBoss.get(boss.id);
-                        const sonya = boss.id === "sonya";
-                        return (
-                          <div key={boss.id} className={`bh-reward-winner-card ${sonya ? "grand" : "duck"}`}>
-                            <div className="bh-reward-winner-title">{sonya ? "👑 SONYA — GRAND BOSS WINNERS" : <><img src={duckRaceIcon} alt="" /> {boss.name.toUpperCase()} — DUCK RACE WINNERS</>}</div>
-                            {claims.length ? <div className="bh-reward-winner-list">{claims.map((claim) => {
-                              const reward = rewards.find((r) => String(r.id) === String(claim.rewardId));
-                              const wc = claim.weaponClass || reward?.weaponClass || "";
-                              const icon = weaponClassIconPath(wc);
-                              return <div className={`bh-reward-winner-row ${sonya ? "grand-winner" : "duck-winner"}`} key={claim.id}><div className="bh-reward-winner-player"><strong>{claim.playerName || "Unknown"}</strong>{wc && <span>{icon && <img src={icon} alt="" />}{wc}</span>}</div><div><small>{claim.rewardName || "Reward"}</small><b>{sonya ? "-6.00 points" : "CLAIMED"}</b></div><time>{formatTime(claim.claimedAt, effectiveTimezone)}</time>{!sonya && <img className="bh-reward-winner-duck" src={duckRaceIcon} alt="Duck Race pick" title="Duck Race pick" />}</div>;
-                            })}</div> : <div className="bh-reward-no-winner"><strong>NO WINNER TODAY</strong><span>No reward claims for {boss.name} today.</span>{last && <div><small>LAST WINNER</small><b>{last.playerName || "Unknown"}</b><span>{formatDateTime(last.claimedAt, effectiveTimezone)}</span></div>}</div>}
-                            {claims.length > 0 && <div className="bh-reward-winner-total">TOTAL WINNERS: {claims.length}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-        
-                    <div className="bh-reward-section-title bh-reward-inventory-title">
-                      <div>
-                        <span className="bh-section-kicker">REWARD MANAGEMENT</span>
-                        <h3>Reward Inventory</h3>
-                        <p>Click any reward to view its complete claim history and details.</p>
-                      </div>
+                    {!sonya && isAdmin && (
+                      <button type="button" className="bh-reward-duck-button" disabled={duckRaceSaving} onClick={() => setDuckRaceForToday(boss.id, duck?.status === "duck-raced" ? "not-yet" : "duck-raced")}>
+                        {duck?.status === "duck-raced" ? "RESET DUCK RACE" : "MARK DUCK RACED"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="bh-reward-section-title winners"><div><span className="bh-section-kicker">🏆 TODAY'S WINNERS</span><h3>{formatDate(new Date(), effectiveTimezone)}</h3></div></div>
+          <div className="bh-reward-winners-grid">
+            {rewardBossSummary.map((boss) => {
+              const claims = todayRewardClaimsByBoss.get(boss.id) || [];
+              const last = lastWinnerByBoss.get(boss.id);
+              const sonya = boss.id === "sonya";
+              return (
+                <div key={boss.id} className={`bh-reward-winner-card ${sonya ? "grand" : "duck"}`}>
+                  <div className="bh-reward-winner-title">{sonya ? "👑 SONYA — GRAND BOSS WINNERS" : <><img src={duckRaceIcon} alt="" /> {boss.name.toUpperCase()} — DUCK RACE WINNERS</>}</div>
+                  {claims.length ? <div className="bh-reward-winner-list">{claims.map((claim) => {
+                    const reward = rewards.find((r) => String(r.id) === String(claim.rewardId));
+                    const wc = claim.weaponClass || reward?.weaponClass || "";
+                    const icon = weaponClassIconPath(wc);
+                    return <div className={`bh-reward-winner-row ${sonya ? "grand-winner" : "duck-winner"}`} key={claim.id}><div className="bh-reward-winner-player"><strong>{claim.playerName || "Unknown"}</strong>{wc && <span>{icon && <img src={icon} alt="" />}{wc}</span>}</div><div><small>{claim.rewardName || "Reward"}</small><b>{sonya ? "-6.00 points" : "CLAIMED"}</b></div><time>{formatTime(claim.claimedAt, effectiveTimezone)}</time>{!sonya && <img className="bh-reward-winner-duck" src={duckRaceIcon} alt="Duck Race pick" title="Duck Race pick" />}</div>;
+                  })}</div> : <div className="bh-reward-no-winner"><strong>NO WINNER TODAY</strong><span>No reward claims for {boss.name} today.</span>{last && <div><small>LAST WINNER</small><b>{last.playerName || "Unknown"}</b><span>{formatDateTime(last.claimedAt, effectiveTimezone)}</span></div>}</div>}
+                  {claims.length > 0 && <div className="bh-reward-winner-total">TOTAL WINNERS: {claims.length}</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="bh-reward-section-title bh-reward-inventory-title">
+            <div>
+              <span className="bh-section-kicker">REWARD MANAGEMENT</span>
+              <h3>Reward Inventory</h3>
+              <p>Click any reward to view its complete claim history and details.</p>
+            </div>
+            {isAdmin && (
+              <button
+                type="button"
+                className="bh-reward-add-inline"
+                onClick={openNewRewardModal}
+              >
+                ＋ ADD NEW REWARD
+              </button>
+            )}
+          </div>
+
+          <div id="reward-inventory" className="bh-filter-row bh-reward-filters">
+            <input className="bh-input" value={rewardSearch} placeholder="Search reward, boss or player..." onChange={(e) => { setRewardSearch(e.target.value); setRewardPage(1); }} />
+            <select className="bh-select" value={rewardBossFilter} onChange={(e) => { setRewardBossFilter(e.target.value); setRewardPage(1); }}><option value="all">All Bosses</option>{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select>
+            <select className="bh-select" value={rewardStatusFilter} onChange={(e) => { setRewardStatusFilter(e.target.value); setRewardPage(1); }}><option value="all">All Status</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="disabled">Disabled</option></select>
+          </div>
+
+          <TableScroller><table className="bh-table bh-reward-management-table"><thead><tr><th>REWARD</th><th>BOSS</th><th>WEAPON CLASS</th><th>COST</th><th>DUCK RACE</th><th>STATUS</th><th>CLAIMS</th><th>UNCLAIMED</th><th>CREATED BY</th><th>CREATED AT</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
+            {visibleRewards.map((reward) => {
+              const bossId = normalizeBossId(reward.bossId); const isSonya = bossId === "sonya"; const icon = weaponClassIconPath(reward.weaponClass); const rewardClaimsForReward = rewardClaims.filter((c) => String(c.rewardId) === String(reward.id) && lower(c.status) !== "cancelled"); const claimed = claimedRewardIds.has(String(reward.id)); const duck = !isSonya ? getDuckRaceStatus(bossId) : null; const assignedStats = reward.playerId ? playerStats.find((p) => String(p.id) === String(reward.playerId)) : null; const claimEligible = Boolean(reward.playerId) && lower(reward.status) === "available" && Boolean(assignedStats) && (isSonya ? assignedStats.available >= SONYA_REWARD_COST : duck?.status === "duck-raced");
+              return (
+                <tr
+                  key={reward.id}
+                  className="bh-reward-inventory-row"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View details and claim history for ${reward.name || "reward"}`}
+                  onClick={() => openRewardInventoryDetails(reward)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openRewardInventoryDetails(reward);
+                    }
+                  }}
+                >
+                  <td>
+                    <strong>{reward.name}</strong>
+                    {reward.playerName && <small className="bh-reward-assignee">Assigned: {reward.playerName}</small>}
+                    <small className="bh-reward-row-hint">CLICK FOR HISTORY &amp; DETAILS</small>
+                  </td>
+                  <td>{reward.bossName}</td>
+                  <td><span className="bh-reward-class-cell">{icon && <img src={icon} alt="" />}{reward.weaponClass || "—"}</span></td>
+                  <td>{isSonya ? <strong className="bh-reward-cost">-6.00</strong> : <span>—</span>}</td>
+                  <td>{isSonya ? <span className="bh-reward-na">N/A</span> : <span className={`bh-reward-duck-pill ${duck?.status === "duck-raced" ? "done" : "pending"}`}>{duck?.status === "duck-raced" ? "DUCK RACED" : "NOT YET"}</span>}</td>
+                  <td><span className={`bh-status-pill bh-status-${reward.status}`}>{reward.status}</span></td>
+                  <td>{rewardClaimsForReward.length + (claimed && !rewardClaimsForReward.length ? 1 : 0)}</td>
+                  <td>{claimed ? 0 : reward.status === "available" ? 1 : 0}</td>
+                  <td>{reward.createdBy || "System"}</td>
+                  <td>{formatDateTime(reward.createdAt, effectiveTimezone)}</td>
+                  <td>{formatDateTime(reward.updatedAt, effectiveTimezone)}</td>
+                  <td>
+                    <div className="bh-action-row" onClick={(e) => e.stopPropagation()}>
+                      {reward.playerId && reward.status === "available" && <button type="button" className={`bh-small-button ${!claimEligible ? "bh-small-button-disabled" : ""}`} disabled={saving || !claimEligible} title={!assignedStats ? "Assigned player could not be found." : isSonya && assignedStats.available < SONYA_REWARD_COST ? `Player needs ${SONYA_REWARD_COST.toFixed(2)} available points.` : !isSonya && duck?.status !== "duck-raced" ? `${reward.bossName || bossLabel(bossId)} must be marked DUCK RACED for today.` : "Claim reward"} onClick={(e) => { e.stopPropagation(); claimReward(reward); }}>{saving ? "CLAIMING..." : claimEligible ? "CLAIM" : !isSonya ? "DUCK RACE" : "NOT ELIGIBLE"}</button>}
                       {isAdmin && (
-                        <button
-                          type="button"
-                          className="bh-reward-add-inline"
-                          onClick={openNewRewardModal}
-                        >
-                          ＋ ADD NEW REWARD
-                        </button>
+                        <>
+                          <button className="bh-small-button" onClick={() => setEditingReward({ ...reward })}>EDIT</button>
+                          <button className="bh-small-button danger" onClick={() => deleteReward(reward)}>DELETE</button>
+                        </>
                       )}
                     </div>
-        
-                    <div id="reward-inventory" className="bh-filter-row bh-reward-filters">
-                      <input className="bh-input" value={rewardSearch} placeholder="Search reward, boss or player..." onChange={(e) => { setRewardSearch(e.target.value); setRewardPage(1); }} />
-                      <select className="bh-select" value={rewardBossFilter} onChange={(e) => { setRewardBossFilter(e.target.value); setRewardPage(1); }}><option value="all">All Bosses</option>{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select>
-                      <select className="bh-select" value={rewardStatusFilter} onChange={(e) => { setRewardStatusFilter(e.target.value); setRewardPage(1); }}><option value="all">All Status</option><option value="available">Available</option><option value="claimed">Claimed</option><option value="disabled">Disabled</option></select>
-                    </div>
-        
-                    <TableScroller><table className="bh-table bh-reward-management-table"><thead><tr><th>REWARD</th><th>BOSS</th><th>WEAPON CLASS</th><th>COST</th><th>DUCK RACE</th><th>STATUS</th><th>CLAIMS</th><th>UNCLAIMED</th><th>CREATED BY</th><th>CREATED AT</th><th>UPDATED AT</th><th>ACTIONS</th></tr></thead><tbody>
-                      {visibleRewards.map((reward) => {
-                        const bossId = normalizeBossId(reward.bossId); const isSonya = bossId === "sonya"; const icon = weaponClassIconPath(reward.weaponClass); const rewardClaimsForReward = rewardClaims.filter((c) => String(c.rewardId) === String(reward.id) && lower(c.status) !== "cancelled"); const claimed = claimedRewardIds.has(String(reward.id)); const duck = !isSonya ? getDuckRaceStatus(bossId) : null; const assignedStats = reward.playerId ? playerStats.find((p) => String(p.id) === String(reward.playerId)) : null; const claimEligible = Boolean(reward.playerId) && lower(reward.status) === "available" && Boolean(assignedStats) && (isSonya ? assignedStats.available >= SONYA_REWARD_COST : duck?.status === "duck-raced");
-                        return (
-                          <tr
-                            key={reward.id}
-                            className="bh-reward-inventory-row"
-                            tabIndex={0}
-                            role="button"
-                            aria-label={`View details and claim history for ${reward.name || "reward"}`}
-                            onClick={() => openRewardInventoryDetails(reward)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                openRewardInventoryDetails(reward);
-                              }
-                            }}
-                          >
-                            <td>
-                              <strong>{reward.name}</strong>
-                              {reward.playerName && <small className="bh-reward-assignee">Assigned: {reward.playerName}</small>}
-                              <small className="bh-reward-row-hint">CLICK FOR HISTORY &amp; DETAILS</small>
-                            </td>
-                            <td>{reward.bossName}</td>
-                            <td><span className="bh-reward-class-cell">{icon && <img src={icon} alt="" />}{reward.weaponClass || "—"}</span></td>
-                            <td>{isSonya ? <strong className="bh-reward-cost">-6.00</strong> : <span>—</span>}</td>
-                            <td>{isSonya ? <span className="bh-reward-na">N/A</span> : <span className={`bh-reward-duck-pill ${duck?.status === "duck-raced" ? "done" : "pending"}`}>{duck?.status === "duck-raced" ? "DUCK RACED" : "NOT YET"}</span>}</td>
-                            <td><span className={`bh-status-pill bh-status-${reward.status}`}>{reward.status}</span></td>
-                            <td>{rewardClaimsForReward.length + (claimed && !rewardClaimsForReward.length ? 1 : 0)}</td>
-                            <td>{claimed ? 0 : reward.status === "available" ? 1 : 0}</td>
-                            <td>{reward.createdBy || "System"}</td>
-                            <td>{formatDateTime(reward.createdAt, effectiveTimezone)}</td>
-                            <td>{formatDateTime(reward.updatedAt, effectiveTimezone)}</td>
-                            <td>
-                              <div className="bh-action-row" onClick={(e) => e.stopPropagation()}>
-                                {reward.playerId && reward.status === "available" && <button type="button" className={`bh-small-button ${!claimEligible ? "bh-small-button-disabled" : ""}`} disabled={saving || !claimEligible} title={!assignedStats ? "Assigned player could not be found." : isSonya && assignedStats.available < SONYA_REWARD_COST ? `Player needs ${SONYA_REWARD_COST.toFixed(2)} available points.` : !isSonya && duck?.status !== "duck-raced" ? `${reward.bossName || bossLabel(bossId)} must be marked DUCK RACED for today.` : "Claim reward"} onClick={(e) => { e.stopPropagation(); claimReward(reward); }}>{saving ? "CLAIMING..." : claimEligible ? "CLAIM" : !isSonya ? "DUCK RACE" : "NOT ELIGIBLE"}</button>}
-                                {isAdmin && (
-                                  <>
-                                    <button className="bh-small-button" onClick={() => setEditingReward({ ...reward })}>EDIT</button>
-                                    <button className="bh-small-button danger" onClick={() => deleteReward(reward)}>DELETE</button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {!visibleRewards.length && <tr><td colSpan="12" className="bh-empty-cell">No rewards found.</td></tr>}
-                    </tbody></table></TableScroller>
-                    <div className="bh-pagination"><button disabled={rewardPage <= 1} onClick={() => setRewardPage((p) => Math.max(1, p - 1))}>PREVIOUS</button><span>Page {rewardPage} of {rewardPageCount}</span><button disabled={rewardPage >= rewardPageCount} onClick={() => setRewardPage((p) => Math.min(rewardPageCount, p + 1))}>NEXT</button></div>
-        
-                  </section>
+                  </td>
+                </tr>
+              );
+            })}
+            {!visibleRewards.length && <tr><td colSpan="12" className="bh-empty-cell">No rewards found.</td></tr>}
+          </tbody></table></TableScroller>
+          <div className="bh-pagination"><button disabled={rewardPage <= 1} onClick={() => setRewardPage((p) => Math.max(1, p - 1))}>PREVIOUS</button><span>Page {rewardPage} of {rewardPageCount}</span><button disabled={rewardPage >= rewardPageCount} onClick={() => setRewardPage((p) => Math.min(rewardPageCount, p + 1))}>NEXT</button></div>
+
+        </section>
       )}
 
       {/* ===================================================
@@ -7876,7 +8350,7 @@ export default function BHPage() {
                               <div><span>WEAPON CLASS</span><strong>{claimClassIcon && <img src={claimClassIcon} alt="" />}{claimClass || "—"}</strong></div>
                               <div><span>COST</span><strong>{normalizeBossId(claim.bossId || detailReward.bossId) === "sonya" ? "-6.00 POINTS" : "—"}</strong></div>
                               <div><span>CLAIMED BY</span><strong>{claim.claimedBy || claim.updatedBy || claim.createdBy || "SYSTEM"}</strong></div>
-                              
+
                             </div>
                           </div>
                           {isAdmin && (
@@ -7950,36 +8424,7 @@ export default function BHPage() {
                     CLASS
                   </label>
 
-                  <select
-                    className="bh-select"
-                    value={
-                      newPlayerClass
-                    }
-                    onChange={(e) =>
-                      setNewPlayerClass(
-                        e.target.value
-                      )
-                    }
-                  >
-                    {CLASS_OPTIONS.map(
-                      (
-                        className
-                      ) => (
-                        <option
-                          key={
-                            className
-                          }
-                          value={
-                            className
-                          }
-                        >
-                          {
-                            className
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
+                  <TypeSelect id="bh-admin-new-player-class" className="bh-input" value={newPlayerClass} onChange={setNewPlayerClass} options={CLASS_OPTIONS} placeholder="Type or select class..." />
                 </div>
 
                 <div className="bh-form-group">
@@ -8458,7 +8903,7 @@ export default function BHPage() {
                 </div>
               </div>
 
-              {isAdmin && <span className="bh-add-attendance-v6-admin">⚙ ADMIN ONLY</span>}
+              {isAdmin && <div className="bh-add-attendance-v6-header-actions"><span className="bh-add-attendance-v6-admin">⚙ ADMIN ONLY</span><button type="button" className="bh-bulk-attendance-header-btn" onClick={openBHBulkAttendance}>☷ BULK ATTENDANCE</button></div>}
 
               <button
                 className="bh-modal-close"
@@ -8528,7 +8973,7 @@ export default function BHPage() {
                   )
                 }
               >
-                MANUAL OVERRIDE
+                ATTENDANCE CORRECTION
               </button>
             </div>
 
@@ -8593,7 +9038,7 @@ export default function BHPage() {
               )}
 
             {/* =================================================
-                MANUAL OVERRIDE
+                ATTENDANCE CORRECTION
             ================================================= */}
 
             {attendanceMode ===
@@ -8688,7 +9133,7 @@ export default function BHPage() {
 
                     <div className="bh-form-group">
                       <label>
-                        POINTS OVERRIDE
+                        POINTS CORRECTION
                       </label>
 
                       <input
@@ -8708,7 +9153,7 @@ export default function BHPage() {
                   </div>
 
                   <div className="bh-override-warning">
-                    Manual override
+                    Attendance correction
                     records the exact
                     selected date,
                     time, boss and
@@ -8719,7 +9164,7 @@ export default function BHPage() {
 
                   <div className="bh-form-group">
                     <label>
-                      OVERRIDE COMMENT
+                      CORRECTION COMMENT
                     </label>
 
                     <textarea
@@ -8727,7 +9172,7 @@ export default function BHPage() {
                       value={
                         overrideComment
                       }
-                      placeholder="Explain why this attendance or point value is being overridden."
+                      placeholder="Explain why this attendance is being corrected (for example: forgot to add attendance)."
                       onChange={(e) =>
                         setOverrideComment(
                           e.target
@@ -8761,7 +9206,7 @@ export default function BHPage() {
                     >
                       {attendanceSaving
                         ? "SAVING..."
-                        : "SAVE OVERRIDE"}
+                        : "SAVE CORRECTION"}
                     </button>
                   </div>
                 </>
@@ -9090,92 +9535,156 @@ export default function BHPage() {
         </div>
       )}
 
-      {/* ===================================================
-          ADD NEW PLAYER MODAL
-      =================================================== */}
+      {bulkAttendanceOpen && isAdmin && (
+        <div className="bh-modal-backdrop bh-bulk-attendance-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setBulkAttendanceOpen(false)}}>
+          <div className="bh-modal bh-bulk-attendance-modal" role="dialog" aria-modal="true" aria-labelledby="bh-bulk-attendance-title">
+            <div className="bh-modal-header bh-bulk-attendance-header">
+              <div>
+                <div className="bh-section-kicker">BOSS HUNT • BULK ATTENDANCE</div>
+                <h2 id="bh-bulk-attendance-title">Bulk Add Attendance</h2>
+                <p className="bh-modal-subtitle">Select saved scheduled boss spawns and multiple existing roster players. Each player is checked per boss; already-recorded combinations are shown and skipped.</p>
+              </div>
+              <button type="button" className="bh-modal-close" onClick={()=>setBulkAttendanceOpen(false)}>×</button>
+            </div>
+            <div className="bh-bulk-attendance-body">
+              <section className="bh-bulk-attendance-card">
+                <div className="bh-bulk-attendance-card-head"><div><span>1 • SCHEDULED DATE</span><small>Only dates that already have scheduled boss spawns can be selected.</small></div><b>{bulkAttendanceDateOccurrences.length} SPAWNS</b></div>
+                <select value={bulkAttendanceDate} onChange={e=>{const d=e.target.value;setBulkAttendanceDate(d);setBulkAttendanceSpawns(scheduleOccurrences.filter(o=>o.dateKey===d).map(o=>o.occurrenceKey));setBulkAttendancePage(1)}}>
+                  {bulkAttendanceDateOptions.map(d=><option key={d} value={d}>{d}</option>)}
+                </select>
+              </section>
 
+              <section className="bh-bulk-attendance-card">
+                <div className="bh-bulk-attendance-card-head"><div><span>2 • BOSS SPAWNS</span><small>Click a saved spawn to include it. Existing player records will be marked ATTENDED and not duplicated.</small></div><b>{bulkAttendanceSpawns.length} SELECTED</b></div>
+                <div className="bh-bulk-spawn-grid">
+                  {bulkAttendanceDateOccurrences.map(o=>{const checked=bulkAttendanceSpawns.includes(o.occurrenceKey);return <button type="button" key={o.occurrenceKey} className={`bh-bulk-spawn-chip ${checked?"is-selected":""}`} onClick={()=>setBulkAttendanceSpawns(cur=>cur.includes(o.occurrenceKey)?cur.filter(x=>x!==o.occurrenceKey):[...cur,o.occurrenceKey])}>
+                    <strong>{o.bossName || bossLabel(o.bossId)}</strong><span>{o.timeKey || "—"}</span><small>+{safeNumber(o.points,0).toFixed(2)} pts</small><i>{checked?"✓ SELECTED":"SELECT"}</i>
+                  </button>})}
+                  {!bulkAttendanceDateOccurrences.length&&<div className="bh-bulk-empty">No saved scheduled spawns exist for this date. No attendance record can be created from this date.</div>}
+                </div>
+              </section>
+
+              <section className="bh-bulk-attendance-card">
+                <div className="bh-bulk-attendance-card-head"><div><span>3 • PLAYERS</span><small>Select existing active roster players. Attendance status is shown separately for every selected boss.</small></div><b>{bulkAttendancePlayers.length} SELECTED</b></div>
+                <div className="bh-bulk-player-toolbar"><input value={bulkAttendanceSearch} onChange={e=>{setBulkAttendanceSearch(e.target.value);setBulkAttendancePage(1)}} placeholder="Search IGN, class, preferred weapon..."/><select value={bulkAttendanceClassFilter} onChange={e=>{setBulkAttendanceClassFilter(e.target.value);setBulkAttendancePage(1)}}><option value="all">ALL CLASSES</option>{Array.from(new Set(players.filter(p=>p.active!==false).map(p=>clean(p.class||p.className)).filter(Boolean))).sort().map(c=><option key={c} value={c}>{c}</option>)}</select><select value={bulkAttendanceStatusFilter} onChange={e=>{setBulkAttendanceStatusFilter(e.target.value);setBulkAttendancePage(1)}}><option value="all">ALL ATTENDANCE</option><option value="not-attended">NOT ATTENDED</option><option value="attended">ALREADY ATTENDED</option><option value="partial">PARTIALLY ATTENDED</option></select><button type="button" onClick={toggleBHBulkPlayerPage}>{bulkAttendancePageRows.length&&bulkAttendancePageRows.every(p=>bulkAttendancePlayers.includes(String(p.id)))?"CLEAR PAGE":"SELECT PAGE"}</button><button type="button" onClick={()=>setBulkAttendancePlayers([])}>CLEAR</button></div>
+                <div className="bh-bulk-player-table-wrap"><table className="bh-bulk-player-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS</th>{bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o=><th key={o.occurrenceKey}>{o.bossName || bossLabel(o.bossId)}<small>{o.timeKey}</small></th>)}</tr></thead><tbody>
+                  {bulkAttendancePageRows.map(p=><tr key={p.id} className={bulkAttendancePlayers.includes(String(p.id))?"is-selected":""}><td><input type="checkbox" checked={bulkAttendancePlayers.includes(String(p.id))} onChange={()=>toggleBHBulkPlayer(p.id)}/></td><td><strong>{p.ign}</strong><small>{clean(p.weapon)||"Preferred weapon —"}</small></td><td>{clean(p.class||p.className)||"—"}</td>{bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o=>{const attended=hasBHAttendanceForOccurrence(p.id,o);return <td key={o.occurrenceKey}><span className={`bh-bulk-boss-status ${attended?"is-attended":"is-ready"}`}>{attended?"✓ ATTENDED":"READY"}</span></td>})}</tr>)}
+                  {!bulkAttendancePageRows.length&&<tr><td colSpan={3+bulkAttendanceSpawns.length} className="bh-bulk-empty">No active players match the filter.</td></tr>}
+                </tbody></table></div>
+                <div className="bh-bulk-pagination"><span>PAGE {bulkAttendanceSafePage} OF {bulkAttendancePageCount} • 5 PER PAGE • {bulkAttendanceVisiblePlayers.length} PLAYERS</span><div><button disabled={bulkAttendanceSafePage<=1} onClick={()=>setBulkAttendancePage(v=>Math.max(1,v-1))}>‹</button><button disabled={bulkAttendanceSafePage>=bulkAttendancePageCount} onClick={()=>setBulkAttendancePage(v=>Math.min(bulkAttendancePageCount,v+1))}>›</button></div></div>
+              </section>
+
+              <div className="bh-bulk-attendance-summary"><div><strong>{bulkAttendancePlayers.length}</strong><span>PLAYERS SELECTED</span></div><div><strong>{bulkAttendanceSpawns.length}</strong><span>BOSSES SELECTED</span></div><div><strong>{bulkAttendancePlayers.length * bulkAttendanceSpawns.length}</strong><span>COMBINATIONS CHECKED</span></div><div><strong>{bulkAttendancePlayers.filter(id=>bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).every(o=>hasBHAttendanceForOccurrence(id,o))).length}</strong><span>ALREADY COMPLETE</span></div></div>
+              <label className="bh-bulk-attendance-comment">ADMIN COMMENT *<textarea value={bulkAttendanceComment} onChange={e=>setBulkAttendanceComment(e.target.value)} placeholder="Required. Explain why this bulk attendance is being recorded."/></label>
+              {bulkAttendanceError&&<div className="bh-bulk-error">{bulkAttendanceError}</div>}
+            </div>
+            <div className="bh-modal-actions"><button type="button" className="bh-secondary-button" onClick={()=>setBulkAttendanceOpen(false)}>CANCEL</button><button type="button" className="bh-primary-button" disabled={bulkAttendanceSaving||!bulkAttendancePlayers.length||!bulkAttendanceSpawns.length||!bulkAttendanceDateOccurrences.length} onClick={saveBHBulkAttendance}>{bulkAttendanceSaving?"SAVING...":"✓ SAVE BULK ATTENDANCE"}</button></div>
+          </div>
+        </div>
+      )}
+
+      {bulkToolsModal && isAdmin && (
+        <div className="bh-modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setBulkToolsModal(null)}}>
+          <style>{`.bh-bulk-tools-modal{width:min(1180px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}.bh-bulk-tools-body{padding:18px 20px;overflow:auto}.bh-bulk-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.bh-bulk-menu button{display:flex;gap:14px;align-items:flex-start;text-align:left;padding:15px;border:1px solid rgba(0,183,255,.25);background:#061b28;color:#e9f7ff;border-radius:9px;cursor:pointer}.bh-bulk-menu button:hover{border-color:#00b7ff}.bh-bulk-menu b{font-size:20px;color:#00c8ff;min-width:26px}.bh-bulk-menu strong{display:block;font-size:11px;letter-spacing:.08em}.bh-bulk-menu small{display:block;margin-top:5px;color:#82a9bc;line-height:1.4}.bh-bulk-toolbar{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(130px,.5fr)) auto;gap:8px;align-items:end;margin-bottom:10px}.bh-bulk-toolbar label,.bh-bulk-form label{display:flex;flex-direction:column;gap:5px;font-size:9px;font-weight:800;letter-spacing:.08em;color:#8bb5c9}.bh-bulk-toolbar input,.bh-bulk-form input,.bh-bulk-form select,.bh-bulk-form textarea{box-sizing:border-box;width:100%;border:1px solid #0a5575;background:#041923;color:#e9f7ff;border-radius:6px;padding:9px}.bh-bulk-toolbar button{padding:9px 11px;border:1px solid #0b668c;background:#062535;color:#aee8ff;border-radius:6px;cursor:pointer}.bh-bulk-table-wrap{border:1px solid rgba(0,183,255,.22);border-radius:8px;overflow:auto}.bh-bulk-table{width:100%;border-collapse:collapse;min-width:760px}.bh-bulk-table th,.bh-bulk-table td{padding:8px 9px;border-bottom:1px solid rgba(74,138,162,.15);text-align:left;font-size:10px}.bh-bulk-table th{color:#70cfff;font-size:8px;letter-spacing:.09em;background:#061d2b}.bh-bulk-table tr.is-selected{background:rgba(0,183,255,.09)}.bh-bulk-table td small{display:block;color:#7199aa;margin-top:2px}.bh-bulk-status{font-size:8px;font-weight:900;color:#66f3b0}.bh-bulk-footer{display:flex;justify-content:space-between;align-items:center;padding:8px 0;color:#6e9aae;font-size:9px}.bh-bulk-footer button{border:1px solid #0b5572;background:#061f2d;color:#a9d9ea;padding:6px 9px;border-radius:5px}.bh-bulk-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.bh-bulk-form .full{grid-column:1/-1}.bh-bulk-form textarea{min-height:70px;resize:vertical}.bh-bulk-warning,.bh-bulk-error{margin-top:10px;padding:10px 12px;border-radius:7px;font-size:10px}.bh-bulk-warning{border:1px solid rgba(255,82,105,.35);background:rgba(92,12,24,.2);color:#ff9eac}.bh-bulk-error{border:1px solid rgba(255,82,105,.5);background:rgba(92,12,24,.28);color:#ffb3bd}@media(max-width:800px){.bh-bulk-menu{grid-template-columns:1fr}.bh-bulk-toolbar{grid-template-columns:1fr 1fr}.bh-bulk-toolbar label:first-child{grid-column:1/-1}.bh-bulk-form{grid-template-columns:1fr}.bh-bulk-form .full{grid-column:auto}}`}</style>
+          <div className="bh-modal bh-bulk-tools-modal" role="dialog" aria-modal="true">
+            <div className="bh-modal-header"><div><div className="bh-section-kicker">BOSS HUNT • ADMIN TOOLS</div><h2>{bulkToolsMode==="menu"?"Bulk Tools":`Bulk ${bulkToolsMode.replaceAll("-"," ")}`}</h2><p className="bh-modal-subtitle">Every modification can target multiple EXISTING records. FROM/TO filters records only — they never create a new record.</p></div><button type="button" className="bh-modal-close" onClick={()=>setBulkToolsModal(null)}>×</button></div>
+            <div className="bh-bulk-tools-body">
+              {bulkToolsMode==="menu" ? <div className="bh-bulk-menu">
+                <button className="bh-bulk-add-card" onClick={openBHBulkAttendance}><b>＋</b><span><strong>BULK ADD ATTENDANCE</strong><small>Mark multiple existing roster players against multiple existing scheduled boss spawns.</small></span></button>
+                <button onClick={()=>openBHMultiTools("attendance-edit")}><b>✎</b><span><strong>BULK EDIT ATTENDANCE</strong><small>Correct points/comment on multiple saved BH attendance records.</small></span></button>
+                <button onClick={()=>openBHMultiTools("attendance-redo")}><b>↻</b><span><strong>BULK REDO ATTENDANCE</strong><small>Remove multiple saved attendance records so they can be recorded again.</small></span></button>
+                <button onClick={()=>openBHMultiTools("attendance-delete")}><b>×</b><span><strong>BULK DELETE ATTENDANCE</strong><small>Delete multiple existing attendance records only.</small></span></button>
+                <button onClick={()=>openBHMultiTools("player-edit")}><b>♟</b><span><strong>BULK EDIT PLAYERS</strong><small>Apply class and/or preferred weapon changes to multiple players.</small></span></button>
+                <button onClick={()=>openBHMultiTools("player-disable")}><b>⊘</b><span><strong>BULK DISABLE PLAYERS</strong><small>Disable multiple players while preserving history.</small></span></button>
+                <button onClick={()=>openBHMultiTools("player-delete")}><b>⌫</b><span><strong>BULK DELETE PLAYERS</strong><small>Delete multiple roster profiles.</small></span></button>
+                <button onClick={()=>openBHMultiTools("reward-edit")}><b>◆</b><span><strong>BULK EDIT REWARDS</strong><small>Update multiple existing rewards.</small></span></button>
+                <button onClick={()=>openBHMultiTools("reward-delete")}><b>×</b><span><strong>BULK DELETE REWARDS</strong><small>Delete multiple unclaimed rewards; claimed rewards are protected.</small></span></button>
+                <button onClick={()=>openBHMultiTools("claim-edit")}><b>✎</b><span><strong>BULK EDIT CLAIMS</strong><small>Correct notes on multiple existing reward claims.</small></span></button>
+                <button onClick={()=>openBHMultiTools("claim-delete")}><b>×</b><span><strong>BULK DELETE CLAIMS</strong><small>Remove multiple claims and restore linked rewards.</small></span></button>
+              </div> : <>
+                <div className="bh-bulk-toolbar"><label>SEARCH<input value={bulkToolsSearch} onChange={e=>{setBulkToolsSearch(e.target.value);setBulkToolsPage(1)}} placeholder="IGN, boss, reward, date, status..."/></label><label>FROM<input type="date" value={bulkToolsFrom} onChange={e=>{setBulkToolsFrom(e.target.value);setBulkToolsPage(1)}}/></label><label>TO<input type="date" value={bulkToolsTo} onChange={e=>{setBulkToolsTo(e.target.value);setBulkToolsPage(1)}}/></label><div><button type="button" onClick={toggleBHMultiPage}>{bulkBHVisibleRows.length&&bulkBHVisibleRows.every(x=>bulkToolsSelected.includes(String(x.id)))?"CLEAR PAGE":"SELECT PAGE"}</button> <button type="button" onClick={()=>setBulkToolsSelected([])}>CLEAR</button></div></div>
+                <div className="bh-bulk-table-wrap"><table className="bh-bulk-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / TYPE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>{bulkBHVisibleRows.map(x=><tr key={`${x.kind}-${x.id}`} className={bulkToolsSelected.includes(String(x.id))?"is-selected":""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={()=>toggleBHMultiSelection(x.id)}/></td><td><strong>{x.ign||"—"}</strong></td><td>{x.className||"—"}<small>{x.weapon||"—"}</small></td><td><strong>{x.recordLabel}</strong></td><td>{x.dateKey||"—"}<small>{x.timeKey||"—"}</small></td><td>{x.value||"—"}</td><td><span className="bh-bulk-status">{x.status}</span></td></tr>)}{!bulkBHVisibleRows.length&&<tr><td colSpan="7">No EXISTING records match the filters.</td></tr>}</tbody></table></div>
+                <div className="bh-bulk-footer"><span>PAGE {bulkBHSafePage} OF {bulkBHPageCount} • 5 PER PAGE • {filteredBHMultiRows.length} MATCHES • {bulkToolsSelected.length} SELECTED</span><div><button disabled={bulkBHSafePage<=1} onClick={()=>setBulkToolsPage(v=>Math.max(1,v-1))}>‹</button> <button disabled={bulkBHSafePage>=bulkBHPageCount} onClick={()=>setBulkToolsPage(v=>Math.min(bulkBHPageCount,v+1))}>›</button></div></div>
+                <div className="bh-bulk-form">
+                  {bulkToolsMode==="attendance-edit"&&<label>NEW POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e=>setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g,""))} placeholder="Leave blank to keep each record"/></label>}
+                  {bulkToolsMode==="player-edit"&&<label>CLASS / NEW CLASS<TypeSelect id="bh-bulk-class" className="bh-input" value={bulkToolsClass} onChange={setBulkToolsClass} options={CLASS_OPTIONS} placeholder="Type or select class" /></label>}
+                  {bulkToolsMode==="player-edit"&&<label>PREFERRED WEAPON<TypeSelect id="bh-bulk-weapon" className="bh-input" value={bulkToolsWeapon} onChange={setBulkToolsWeapon} options={Array.from(new Set([...players.map(p => clean(p.weapon)), ...rewards.map(r => clean(r.weaponClass)), ...rewardClaims.map(c => clean(c.weaponClass))].filter(Boolean)))} placeholder="Type or select weapon • blank keeps current" /></label>}
+                  {bulkToolsMode==="reward-edit"&&<label>STATUS<select value={bulkToolsStatus} onChange={e=>setBulkToolsStatus(e.target.value)}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></label>}
+                  {(bulkToolsMode==="reward-edit"||bulkToolsMode==="claim-edit")&&<label className="full">NOTES<textarea value={bulkToolsNotes} onChange={e=>setBulkToolsNotes(e.target.value)} placeholder="Leave blank to keep each record's notes"/></label>}
+                  {["attendance-delete","attendance-redo","reward-delete","claim-delete","player-disable","player-delete"].includes(bulkToolsMode)&&<div className="bh-bulk-warning full">EXACT SAVED RECORDS ONLY. The date filters only narrow the table. Selecting a date with no record cannot create a record.</div>}
+                  {bulkToolsMode==="player-delete"&&<label>DELETE PIN *<input inputMode="numeric" value={bulkToolsPin} onChange={e=>setBulkToolsPin(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="5-digit PIN"/></label>}
+                  <label className="full">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e=>setBulkToolsComment(e.target.value)} placeholder="Required. Explain why these existing records are being changed."/></label>
+                </div>
+                {bulkToolsError&&<div className="bh-bulk-error">{bulkToolsError}</div>}
+              </>}
+            </div>
+            <div className="bh-modal-actions">{bulkToolsMode==="menu"?<button type="button" className="bh-secondary-button" onClick={()=>setBulkToolsModal(null)}>CLOSE</button>:<><button type="button" className="bh-secondary-button" onClick={()=>setBulkToolsMode("menu")}>BACK</button><button type="button" className="bh-primary-button" disabled={bulkToolsSaving||!bulkSelectedBHRows.length} onClick={saveBHMultiChange}>{bulkToolsSaving?"PROCESSING...":"SAVE BULK CHANGE"}</button></>}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================
+          UNIFIED ADD NEW PLAYER MODAL — ONE OR MANY
+      =================================================== */}
       {addPlayerModalOpen && isAdmin && (
-        <div
-          className="bh-modal-backdrop bh-add-player-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setAddPlayerModalOpen(false);
-          }}
-        >
-          <div className="bh-modal bh-add-player-modal" role="dialog" aria-modal="true" aria-labelledby="add-player-title">
+        <div className="bh-modal-backdrop bh-add-player-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setAddPlayerModalOpen(false); }}>
+          <div className="bh-modal bh-add-player-modal bh-unified-player-add-modal" role="dialog" aria-modal="true" aria-labelledby="add-player-title">
             <div className="bh-add-player-header">
               <div className="bh-add-player-icon">♙</div>
               <div>
-                <div className="bh-section-kicker">PLAYER ROSTER</div>
+                <div className="bh-section-kicker">PLAYER ROSTER • UNIFIED ADD</div>
                 <h2 id="add-player-title">Add New Player</h2>
-                <p>Create a new active player and add them to the guild roster.</p>
+                <p>Enter one IGN or paste many IGNs. One line works exactly like individual adding; multiple lines create players in bulk.</p>
               </div>
               <span className="bh-add-player-admin">⚙ ADMIN ONLY</span>
               <button type="button" className="bh-modal-close" onClick={() => setAddPlayerModalOpen(false)} aria-label="Close add player">×</button>
             </div>
 
-            <div className="bh-add-player-body">
+            <div className="bh-add-player-body bh-unified-player-add-body">
               <div className="bh-add-player-intro">
-                <span>NEW ROSTER ENTRY</span>
-                <strong>Player information</strong>
-                <p>The player will be created as <b>ACTIVE</b> and will immediately appear in Players &amp; History.</p>
+                <span>ONE OR MANY PLAYERS</span>
+                <strong>Same workflow for single and bulk</strong>
+                <p>Paste one IGN for a single player or one IGN per line for bulk. Existing IGNs and duplicate lines are detected before anything is saved.</p>
               </div>
 
-              <div className="bh-add-player-grid">
-                <div className="bh-form-group bh-add-player-field-full">
-                  <label>IGN / IN-GAME NAME</label>
-                  <input
-                    className="bh-input bh-add-player-large-input"
-                    value={newPlayerIgn}
-                    placeholder="Enter player IGN..."
-                    autoComplete="off"
-                    autoFocus
-                    onChange={(e) => setNewPlayerIgn(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") addPlayer(); }}
+              {bulkPlayerGroups.map((group, index) => (
+                <section className="bh-unified-player-group" key={group.id}>
+                  <div className="bh-unified-group-head">
+                    <div><strong>GROUP {index + 1}</strong><small>IGN / IN-GAME NAME • ONE PER LINE</small></div>
+                    {bulkPlayerGroups.length > 1 && <button type="button" className="bh-secondary-button bh-unified-remove-group" onClick={() => setBulkPlayerGroups(groups => groups.filter(g => g.id !== group.id))}>REMOVE GROUP</button>}
+                  </div>
+                  <textarea
+                    className="bh-input bh-unified-igns"
+                    value={group.igns}
+                    onChange={e => { setBulkPlayerGroups(groups => groups.map(g => g.id === group.id ? { ...g, igns: e.target.value } : g)); setBulkPlayerError(""); }}
+                    placeholder={'Player 1\nPlayer 2\nPlayer 3\nPlayer 4'}
                   />
-                </div>
+                  <div className="bh-unified-player-fields">
+                    <label>CLASS / NEW CLASS
+                      <TypeSelect id={`bh-unified-class-${group.id}`} className="bh-input" value={group.className} onChange={value => setBulkPlayerGroups(groups => groups.map(g => g.id === group.id ? { ...g, className: value } : g))} options={CLASS_OPTIONS} placeholder="Type or select class..." />
+                    </label>
+                    <label>PREFERRED WEAPON
+                      <TypeSelect id={`bh-unified-weapon-${group.id}`} className="bh-input" value={group.weapon} onChange={value => setBulkPlayerGroups(groups => groups.map(g => g.id === group.id ? { ...g, weapon: value } : g))} options={Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean)))} placeholder="Type or select preferred weapon..." />
+                    </label>
+                  </div>
+                  <div className="bh-unified-count">{String(group.igns || '').split(/\r?\n/).map(clean).filter(Boolean).length} player(s) in this group</div>
+                  <div className="bh-unified-validation">
+                    {Array.from(new Set(String(group.igns || '').split(/\r?\n/).map(clean).filter(Boolean))).map(ign => {
+                      const existing = players.find(p => clean(p.ign).toLowerCase() === ign.toLowerCase());
+                      return <div key={ign.toLowerCase()} className={existing ? "is-existing" : "is-new"}><span>{existing ? "⚠" : "✓"}</span><strong>{ign}</strong><small>{existing ? `ALREADY EXISTS • ${existing.active === false ? "DISABLED" : "ACTIVE"}` : "NEW PLAYER"}</small></div>;
+                    })}
+                  </div>
+                </section>
+              ))}
 
-                <div className="bh-form-group">
-                  <label>CLASS</label>
-                  <select
-                    className="bh-select bh-add-player-large-input"
-                    value={newPlayerClass}
-                    onChange={(e) => setNewPlayerClass(e.target.value)}
-                  >
-                    {CLASS_OPTIONS.map((className) => (
-                      <option key={className} value={className}>{className}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="bh-form-group">
-                  <label>WEAPON</label>
-                  <input
-                    className="bh-input bh-add-player-large-input"
-                    value={newPlayerWeapon}
-                    placeholder="Enter weapon..."
-                    autoComplete="off"
-                    onChange={(e) => setNewPlayerWeapon(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {error && <div className="bh-add-player-error">{error}</div>}
-
-              <div className="bh-add-player-preview">
-                <div className="bh-add-player-preview-avatar">{clean(newPlayerIgn || "?").charAt(0).toUpperCase()}</div>
-                <div>
-                  <small>ROSTER PREVIEW</small>
-                  <strong>{clean(newPlayerIgn) || "New Player"}</strong>
-                  <span>{newPlayerClass || "Class not selected"}{newPlayerWeapon ? ` • ${newPlayerWeapon}` : ""}</span>
-                </div>
-                <em>ACTIVE</em>
-              </div>
+              <button type="button" className="bh-unified-add-group" onClick={() => setBulkPlayerGroups(groups => [...groups, { id: Date.now() + groups.length, igns: "", className: CLASS_OPTIONS[0] || "Swordman", weapon: "" }])}>＋ ADD ANOTHER GROUP</button>
+              {bulkPlayerError && <div className="bh-add-player-error bh-unified-error">{bulkPlayerError}</div>}
             </div>
 
             <div className="bh-add-player-footer">
               <button type="button" className="bh-secondary-button" onClick={() => setAddPlayerModalOpen(false)}>CANCEL</button>
-              <button type="button" className="bh-primary-button bh-add-player-save" disabled={!clean(newPlayerIgn)} onClick={addPlayer}>
-                ＋ ADD PLAYER &amp; VIEW ROSTER
+              <button type="button" className="bh-primary-button bh-add-player-save" disabled={bulkPlayerSaving || !bulkPlayerGroups.some(g => String(g.igns || '').trim())} onClick={saveBHPlayers}>
+                {bulkPlayerSaving ? "SAVING PLAYERS..." : "＋ SAVE PLAYER(S)"}
               </button>
             </div>
           </div>
@@ -9245,23 +9754,7 @@ export default function BHPage() {
                       <small>Player class</small>
                     </span>
                   </div>
-                  <select
-                    className="bh-select bh-edit-large-input"
-                    value={editingPlayer.class || ""}
-                    onChange={(e) =>
-                      setEditingPlayer((current) => ({
-                        ...current,
-                        class: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Select class...</option>
-                    {CLASS_OPTIONS.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
-                  </select>
+                  <TypeSelect id="bh-edit-player-class" className="bh-input bh-edit-large-input" value={editingPlayer.class || ""} onChange={(value) => setEditingPlayer((current) => ({ ...current, class: value }))} options={CLASS_OPTIONS} placeholder="Type or select class..." />
                 </div>
 
                 <div className="bh-edit-field-card">
@@ -9443,8 +9936,8 @@ export default function BHPage() {
             <div className="bh-modal-header"><div><div className="bh-section-kicker">ADMIN ONLY</div><h2>{editingReward.__new ? "Add New Reward" : "Edit Reward"}</h2><p className="bh-modal-subtitle">Assign a weapon-class reward to an eligible player. Sonya always costs 6.00 points; mini-boss Duck Race rewards are free.</p></div><button className="bh-modal-close" onClick={() => setEditingReward(null)}>×</button></div>
             <div className="bh-reward-form-grid">
               <div className="bh-form-group"><label>REWARD NAME</label><input className="bh-input" value={editingReward.__new ? rewardForm.name : editingReward.name || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, name: e.target.value })) : setEditingReward((x) => ({ ...x, name: e.target.value }))} placeholder="e.g. Dex Gaunt" /></div>
-              <div className="bh-form-group"><label>BOSS</label><select className="bh-select" value={editingReward.__new ? rewardForm.bossId : editingReward.bossId || "sonya"} onChange={(e) => { const bossId = e.target.value; if (editingReward.__new) setRewardForm((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); else setEditingReward((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); }} >{bossOptions.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select></div>
-              <div className="bh-form-group"><label>WEAPON CLASS</label><select className="bh-select" value={editingReward.__new ? rewardForm.weaponClass : editingReward.weaponClass || ""} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, weaponClass: e.target.value })) : setEditingReward((x) => ({ ...x, weaponClass: e.target.value }))}><option value="">Choose class...</option>{CLASS_OPTIONS.map((cls) => <option key={cls} value={cls}>{cls}</option>)}</select></div>
+              <div className="bh-form-group"><label>BOSS</label><TypeSelect id="bh-edit-reward-boss" className="bh-input" value={editingReward.__new ? rewardForm.bossId : editingReward.bossId || "sonya"} onChange={(bossId) => { if (editingReward.__new) setRewardForm((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); else setEditingReward((x) => ({ ...x, bossId, cost: bossId === "sonya" ? SONYA_REWARD_COST : 0 })); }} options={bossOptions.map((boss) => ({ value: boss.id, label: boss.name }))} placeholder="Type or select boss..." /></div>
+              <div className="bh-form-group"><label>WEAPON CLASS</label><TypeSelect id="bh-edit-reward-class" className="bh-input" value={editingReward.__new ? rewardForm.weaponClass : editingReward.weaponClass || ""} onChange={(value) => editingReward.__new ? setRewardForm((x) => ({ ...x, weaponClass: value })) : setEditingReward((x) => ({ ...x, weaponClass: value }))} options={CLASS_OPTIONS} placeholder="Type or select class..." /></div>
               <div className="bh-form-group"><label>COST</label><div className="bh-readonly-field bh-readonly-gold"><strong>{(editingReward.__new ? rewardForm.bossId : editingReward.bossId) === "sonya" ? "-6.00" : "FREE"}</strong><span>{(editingReward.__new ? rewardForm.bossId : editingReward.bossId) === "sonya" ? "Fixed Sonya cost" : "Duck Race reward — no point deduction"}</span></div></div>
               <div className="bh-form-group"><label>PLAYER / WINNER</label><select className="bh-select" value={editingReward.__new ? rewardForm.playerId : editingReward.playerId || ""} onChange={(e) => { const v = e.target.value; const player = players.find((p) => String(p.id) === String(v)); editingReward.__new ? setRewardForm((x) => ({ ...x, playerId: v })) : setEditingReward((x) => ({ ...x, playerId: v, playerName: player?.ign || "" })); }}><option value="">Unassigned</option>{players.filter((p) => p.active).map((player) => <option key={String(player.id)} value={String(player.id)}>{player.ign} · {safeNumber(playerStats.find((s) => String(s.id) === String(player.id))?.available, 0).toFixed(2)} pts</option>)}</select></div>
               <div className="bh-form-group"><label>STATUS</label><select className="bh-select" value={editingReward.__new ? rewardForm.status : editingReward.status || "available"} onChange={(e) => editingReward.__new ? setRewardForm((x) => ({ ...x, status: e.target.value })) : setEditingReward((x) => ({ ...x, status: e.target.value }))}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></div>
@@ -9490,7 +9983,7 @@ export default function BHPage() {
                 {(selectedNotice.recipientPlayerName || selectedNotice.playerName || selectedNotice.ign) && <div><b>PLAYER / RECIPIENT</b><span>{selectedNotice.recipientPlayerName || selectedNotice.playerName || selectedNotice.ign}</span></div>}
                 {selectedNotice.entityId && <div><b>RECORD</b><span>{displayAuditText(selectedNotice.entityType || "Activity")}</span></div>}
                 {(selectedNotice.rewardName || selectedNotice.reward) && <div><b>REWARD</b><span>{displayAuditText(selectedNotice.rewardName || selectedNotice.reward || "Reward")}</span></div>}
-                
+
                 {selectedNotice.scheduleId && <div><b>SCHEDULE</b><span>{selectedNotice.bossName || "Boss Hunt schedule"}</span></div>}
               </div>
             </div>

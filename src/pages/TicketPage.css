@@ -1232,7 +1232,7 @@
   border: 1px solid #17617d;
   border-radius: 7px;
   background: #061721;
-  box-shadow: 0 20px 50px rgba(0,0,0,.62), 0 0 25px rgba(0,180,240,.07);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .62), 0 0 25px rgba(0, 180, 240, .07);
 }
 
 .ticket-ign-menu-head {
@@ -1387,7 +1387,7 @@
   align-items: start;
 }
 
-.ticket-board-head > div:first-child {
+.ticket-board-head>div:first-child {
   min-width: 0;
 }
 
@@ -1404,7 +1404,7 @@
   grid-row: 2;
 }
 
-.ticket-board-head > div:first-child {
+.ticket-board-head>div:first-child {
   grid-column: 1;
   grid-row: 1;
 }
@@ -1483,7 +1483,7 @@
     align-items: stretch;
   }
 
-  .ticket-board-head > div:first-child,
+  .ticket-board-head>div:first-child,
   .ticket-category-chips,
   .ticket-board-tools {
     width: 100%;
@@ -1603,7 +1603,7 @@
     padding: 12px;
   }
 
-  .ticket-pagination > div {
+  .ticket-pagination>div {
     gap: 7px;
   }
 
@@ -1636,14 +1636,14 @@
     z-index: 2;
     margin-inline: -13px;
     padding: 10px 13px calc(10px + env(safe-area-inset-bottom));
-    background: linear-gradient(180deg, rgba(6,23,33,0), #061721 25%);
+    background: linear-gradient(180deg, rgba(6, 23, 33, 0), #061721 25%);
   }
 
   .ticket-form-actions button {
     min-height: 44px;
   }
 
-  .ticket-reply > div {
+  .ticket-reply>div {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
@@ -1691,3 +1691,286 @@
     padding-bottom: calc(24px + env(safe-area-inset-bottom));
   }
 }
+
+
+/* =========================================================
+   RAN EP7 — V58 ALL-PAGES RESPONSIVE PATCH
+   CSS ONLY. Existing selectors/features are intentionally preserved.
+   Goals: prevent live-status/action overlap, preserve desktop density,
+   and make tables/modals/filters usable at tablet/mobile widths.
+   ========================================================= */
+
+/* Global safety inside each page stylesheet */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Never let long labels/values force the page wider than the viewport. */
+.cw-page,
+.bh-page,
+.raid-page,
+.ticket-page,
+.admin-page,
+.cw-page *,
+.bh-page *,
+.raid-page *,
+.ticket-page *,
+.admin-page * {
+  min-width: 0;
+}
+
+/* ---------- CW ---------- */
+.cw-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cw-player-table {
+  width: 100%;
+  min-width: 1180px;
+  table-layout: auto;
+}
+
+.cw-updated-status-cell {
+  min-width: 210px;
+  vertical-align: middle;
+}
+
+.cw-updated-main,
+.cw-updated-status-cell>small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cw-live-attendance-status,
+.cw-action-live-status {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cw-live-attendance-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+  line-height: 1.15;
+}
+
+.cw-live-attendance-status small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cw-player-actions {
+  min-width: 330px;
+  vertical-align: middle;
+}
+
+.cw-player-actions .cw-btn {
+  margin: 2px;
+  white-space: nowrap;
+}
+
+.cw-action-live-status {
+  display: inline-flex;
+  align-items: center;
+  margin: 2px;
+  white-space: nowrap;
+}
+
+/* CW filters stay in one clean row when possible and stack when needed. */
+.cw-filter-row {
+  width: 100%;
+  max-width: 100%;
+}
+
+.cw-filter-row input,
+.cw-filter-row select {
+  max-width: 100%;
+}
+
+/* ---------- BH ---------- */
+.bh-table-scroll,
+.bh-player-table-scroll,
+.bh-roster-table-scroll,
+.bh-history-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bh-player-table,
+.bh-roster-table {
+  min-width: 1280px;
+}
+
+.bh-live-status,
+.bh-live-attendance-status,
+.bh-action-live-status {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.bh-live-attendance-status,
+.bh-action-live-status {
+  margin-top: 6px;
+}
+
+/* ---------- Raid Schedule ---------- */
+.raid-page {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.raid-page img,
+.raid-page video,
+.raid-page iframe,
+.raid-page table {
+  max-width: 100%;
+}
+
+.raid-page table {
+  display: table;
+}
+
+/* ---------- Tickets ---------- */
+.ticket-page {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.ticket-page img,
+.ticket-page video,
+.ticket-page iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------- Admin ---------- */
+.admin-page {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.admin-page img,
+.admin-page video,
+.admin-page iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------- Shared modal safety ---------- */
+.cw-modal,
+.bh-modal,
+.raid-modal,
+.ticket-modal,
+.admin-modal,
+[class*="cw-modal"],
+[class*="bh-modal"],
+[class*="raid-modal"],
+[class*="ticket-modal"],
+[class*="admin-modal"] {
+  max-width: 100vw;
+}
+
+@media (max-width: 1100px) {
+  .cw-filter-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cw-player-actions {
+    min-width: 300px;
+  }
+}
+
+@media (max-width: 800px) {
+  .cw-player-actions {
+    min-width: 285px;
+  }
+
+  .cw-player-actions .cw-btn {
+    max-width: 100%;
+  }
+
+  /* Do not squeeze large roster tables; allow intentional horizontal scroll. */
+  .cw-table-scroll,
+  .bh-table-scroll,
+  .bh-player-table-scroll,
+  .bh-roster-table-scroll,
+  .bh-history-table-scroll {
+    overflow-x: auto !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .cw-player-actions {
+    min-width: 270px;
+  }
+
+  .cw-player-actions .cw-btn {
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  /* Full-screen-ish modals on phones without changing their desktop design. */
+  .cw-modal,
+  .bh-modal,
+  .raid-modal,
+  .ticket-modal,
+  .admin-modal,
+  [class*="cw-modal"],
+  [class*="bh-modal"],
+  [class*="raid-modal"],
+  [class*="ticket-modal"],
+  [class*="admin-modal"] {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+
+  .raid-page,
+  .ticket-page,
+  .admin-page {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+
+  .cw-player-table,
+  .bh-player-table,
+  .bh-roster-table {
+    min-width: 1100px;
+  }
+}
+/* Responsive repair — Ticket tables/buttons stay inside the viewport. */
+.ticket-page { min-width:0; overflow-x:hidden; }
+.ticket-page .ticket-table-scroll,.ticket-page .ticket-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.ticket-page table { min-width:680px; }
+.ticket-page button { max-width:100%; }
+@media (max-width:620px){.ticket-page .ticket-actions,.ticket-page .ticket-toolbar,.ticket-page .ticket-filter-row{display:flex;flex-wrap:wrap;gap:8px}.ticket-page .ticket-actions button,.ticket-page .ticket-toolbar button{flex:1 1 140px}}
+
+/* V60 responsive repair — Ticket only */
+.ticket-page,.ticket-page *{box-sizing:border-box}.ticket-page .ticket-table-wrap,.ticket-page .table-scroll,.ticket-page .ticket-table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.ticket-page table{min-width:720px}.ticket-page .ticket-actions,.ticket-page .actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ticket-page button{max-width:100%;white-space:normal}
+@media(max-width:700px){.ticket-page .ticket-modal,.ticket-page .modal{width:calc(100vw - 16px)!important;max-width:none!important}.ticket-page .ticket-actions,.ticket-page .actions{display:grid;grid-template-columns:1fr 1fr}.ticket-page .ticket-actions button,.ticket-page .actions button{width:100%}}
+
+/* =========================================================
+   RAN EP7 — TICKET HISTORY / RECORD TABLE POLISH
+========================================================= */
+.ticket-page .ticket-table,.ticket-page table{border-collapse:separate !important;border-spacing:0 !important;border:1px solid rgba(0,184,235,.30) !important;border-radius:9px !important;overflow:hidden !important;background:rgba(2,18,28,.94) !important;}
+.ticket-page .ticket-table thead th,.ticket-page table thead th{background:linear-gradient(180deg,#0a2b3d,#062333) !important;color:#75ddff !important;border-bottom:1px solid rgba(0,201,255,.34) !important;font-weight:900 !important;}
+.ticket-page .ticket-table tbody tr:nth-child(even) td,.ticket-page table tbody tr:nth-child(even) td{background:rgba(6,29,42,.72) !important;}
+.ticket-page .ticket-table tbody tr:hover td,.ticket-page table tbody tr:hover td{background:rgba(0,152,208,.12) !important;}
+

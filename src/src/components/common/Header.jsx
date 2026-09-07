@@ -1,5 +1,6 @@
 import { TIMEZONES } from "../../lib/constants";
 import { useGlobalDisplayTimezone } from "../../lib/displayTimezone";
+import ranVIcon from "../../assets/ran-v-icon.png";
 
 export default function Header({
   page,
@@ -9,9 +10,8 @@ export default function Header({
   onLogin,
   onLogout,
   onAdmin,
+  onGuide,
 }) {
-  // Treasury is intentionally NOT a top-level page anymore.
-  // It lives inside the combined Clan War module.
   const nav = [
     ["raid", "RAID SCHEDULE", "calendar"],
     ["bh", "BH ATTENDANCE", "boss"],
@@ -46,12 +46,7 @@ export default function Header({
           aria-label="Go to Raid Schedule"
         >
           <span className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 64 64" className="brand-logo-svg">
-              <path d="M32 4 48 20 32 36 16 20 32 4Z" />
-              <path d="M32 14 38 20 32 26 26 20 32 14Z" />
-              <path d="M32 28 44 40 32 52 20 40 32 28Z" />
-              <path d="M32 35 37 40 32 45 27 40 32 35Z" />
-            </svg>
+            <img src={ranVIcon} className="brand-logo-image" alt="" />
           </span>
           <span className="brand-text">
             <strong>RAN ONLINE</strong>
@@ -69,7 +64,9 @@ export default function Header({
             >
               <span className="nav-icon"><NavIcon type={icon} /></span>
               <span className="nav-label">{label}</span>
-              <span className="nav-sub">{id === "raid" ? "World Boss Timer" : id === "bh" ? "Players & Rewards" : id === "cw" ? "Castle War Records" : "Guides & Info"}</span>
+              <span className="nav-sub">
+                {id === "raid" ? "World Boss Timer" : id === "bh" ? "Players & Rewards" : id === "cw" ? "Castle War Records" : "Guides & Info"}
+              </span>
             </button>
           ))}
         </nav>
@@ -82,42 +79,41 @@ export default function Header({
             onChange={(event) => setDisplayTimezone(event.target.value)}
           >
             {TIMEZONES.map((timezone) => (
-              <option key={timezone.value} value={timezone.value}>
-                {timezone.label}
-              </option>
+              <option key={timezone.value} value={timezone.value}>{timezone.label}</option>
             ))}
           </select>
         </div>
 
         <div className="header-user">
+          <button
+            type="button"
+            className="button button-small guide-button"
+            onClick={onGuide}
+            title={isAdmin ? "Open the Administrator Step-by-Step Manual" : "Open the User Step-by-Step Manual"}
+            aria-label={isAdmin ? "Open administrator step-by-step manual" : "Open user step-by-step manual"}
+          >
+            <span aria-hidden="true">?</span> GUIDE
+          </button>
+
           {user ? (
             <>
               {isAdmin ? (
                 <button type="button" className="user-badge admin user-badge-button" onClick={onAdmin} title="Open Administrator Portal">
-                  <span className="user-badge-icon" aria-hidden="true">♛</span>
+                  <img src={ranVIcon} className="role-v-icon" alt="" aria-hidden="true" />
                   ADMIN
                 </button>
               ) : (
                 <span className="user-badge">
-                  <span className="user-badge-icon" aria-hidden="true">♛</span>
+                  <img src={ranVIcon} className="role-v-icon" alt="" aria-hidden="true" />
                   USER
                 </span>
               )}
-              <button
-                type="button"
-                className="button button-small header-logout-button"
-                onClick={onLogout}
-              >
-                <span className="logout-icon" aria-hidden="true">⇥</span>
-                LOGOUT
+              <button type="button" className="button button-small header-logout-button" onClick={onLogout}>
+                <span className="logout-icon" aria-hidden="true">⇥</span> LOGOUT
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              className="button button-small admin-login-button"
-              onClick={onLogin}
-            >
+            <button type="button" className="button button-small admin-login-button" onClick={onLogin}>
               ADMIN LOGIN
             </button>
           )}

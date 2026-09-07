@@ -11,7 +11,8 @@ service cloud.firestore {
       return signedIn()
         && (request.auth.uid == "oKGRQDdmiXUFuyRPDw5QsPBmsAD2"
           || (exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
-            && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true));
+            && (get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true
+              || get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == "active")));
     }
 
 
@@ -27,6 +28,8 @@ service cloud.firestore {
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.email == request.auth.token.email
           && request.resource.data.active == true
+          && request.resource.data.role == "admin"
+          && request.resource.data.status == "active"
           && request.resource.data.registrationRequestId is string
           && exists(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId))
           && get(/databases/$(database)/documents/adminRequests/$(request.resource.data.registrationRequestId)).data.status == "verified_pending_auth"
@@ -126,19 +129,56 @@ service cloud.firestore {
     }
 
     // RAID SCHEDULES
+    // RaidPage uses the shared "raids" collection. Raid schedules are
+    // intentionally editable by ANY visitor (regular user or admin).
+    // This is a deliberate exception to the normal admin-only write rules.
+    match /raids/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly([
+        "id", "name", "type", "scheduleType", "days",
+        "hour", "minute", "intervalHours", "anchorDate",
+        "anchorHour", "anchorMinute", "timezone", "active",
+        "updatedAt", "updatedBy", "updatedByUid"
+      ]);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "id", "name", "type", "scheduleType", "days",
+        "hour", "minute", "intervalHours", "anchorDate",
+        "anchorHour", "anchorMinute", "timezone", "active",
+        "updatedAt", "updatedBy", "updatedByUid"
+      ]);
+      allow delete: if false;
+    }
+
+    // Legacy schedule collection retained for compatibility with older data.
     match /raidSchedules/{id} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // GUILD QUESTIONS
-    // PIN ownership is verified by TicketPage.jsx before a player edit/delete.
-    // Admin can edit/delete any ticket.
-    // This collection intentionally permits client writes so PIN-based players
-    // can edit/delete tickets even when they are not Firebase-authenticated.
+    // GUILD QUESTIONS / TICKETS
+    // Preserve current ownership behavior. Administrators can manage any ticket;
+    // authenticated users can manage their own tickets.
     match /guildTickets/{ticketId} {
       allow read: if true;
-      allow create, update, delete: if true;
+
+      allow create: if isAdmin()
+        || (
+          request.auth != null
+          && request.resource.data.createdByUid == request.auth.uid
+        );
+
+      allow update: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.createdByUid == request.auth.uid
+          && request.resource.data.createdByUid == resource.data.createdByUid
+        );
+
+      allow delete: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.createdByUid == request.auth.uid
+        );
     }
 
     // Existing app collections: public read, admin write.
@@ -184,7 +224,13 @@ service cloud.firestore {
 
     match /guildNotices/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      // Raid schedule edits are public by design, and their audit entries
+      // must therefore be writable by the same users. Other notices remain
+      // administrator-only.
+      allow create: if isAdmin()
+        || (request.resource.data.entityType == "raid-schedule"
+          && request.resource.data.module == "raid-schedule");
+      allow update, delete: if isAdmin();
     }
 
     match /treasuryEntries/{id} {
