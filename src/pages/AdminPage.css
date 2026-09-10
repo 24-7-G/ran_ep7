@@ -1634,3 +1634,105 @@
 .admin-page .health-row:nth-child(even),.admin-page .mini-row:nth-child(even),.admin-page .archive-row:nth-child(even){background:rgba(6,29,42,.48) !important;}
 .admin-page .health-row:hover,.admin-page .mini-row:hover,.admin-page .archive-row:hover{background:rgba(0,152,208,.10) !important;}
 
+
+/* =========================================================
+   BH POINT SYSTEM — ADMIN PORTAL POLISH + 10-ROW FILTERABLE HISTORY
+========================================================= */
+.admin-page .bh-scoring-history-card{width:100%;overflow:hidden}
+.admin-page .bh-scoring-history-card .admin-feature-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.admin-page .bh-scoring-history-card .admin-feature-grid>label{display:flex;flex-direction:column;gap:7px;border:1px solid #174963;border-radius:9px;padding:14px;background:linear-gradient(180deg,#071d2a,#061722);color:#9edcf2;font-size:10px;font-weight:900;letter-spacing:.08em}
+.admin-page .bh-scoring-history-card .admin-feature-grid>label input{width:100%;min-width:0;font-size:16px;font-weight:700}
+.admin-page .bh-history-filters{display:grid;grid-template-columns:minmax(220px,1.6fr) minmax(150px,.8fr) minmax(145px,.8fr) minmax(145px,.8fr) auto auto;gap:8px;align-items:end;margin:18px 0 12px}
+.admin-page .bh-history-filters label{display:flex;flex-direction:column;gap:5px;min-width:0}
+.admin-page .bh-history-filters label>span{font-size:9px;font-weight:900;letter-spacing:.09em;color:#70cde9}
+.admin-page .bh-history-filters input,.admin-page .bh-history-filters select{width:100%;height:42px;min-width:0;border:1px solid #24536c;border-radius:7px;background:#061925;color:#dff5ff;padding:0 11px;outline:none}
+.admin-page .bh-history-filters input:focus,.admin-page .bh-history-filters select:focus{border-color:#18cfff;box-shadow:0 0 0 2px #00cfff22}
+.admin-page .bh-filter-button,.admin-page .bh-clear-button{height:42px;padding:0 16px}
+.admin-page .bh-history-table-scroll{width:100%;overflow-x:auto;border:1px solid #12445f;border-radius:9px;background:#04131d}
+.admin-page .bh-history-admin-table{width:100%;min-width:1040px;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.admin-page .bh-history-admin-table th{height:40px;padding:8px 10px;background:linear-gradient(180deg,#0b2b3d,#062333);border-bottom:1px solid #18516b;color:#79dfff;text-align:left;font-size:9px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
+.admin-page .bh-history-admin-table th:nth-child(1){width:42px;text-align:center}.admin-page .bh-history-admin-table th:nth-child(2){width:175px}.admin-page .bh-history-admin-table th:nth-child(3){width:125px}.admin-page .bh-history-admin-table th:nth-child(4){width:365px}.admin-page .bh-history-admin-table th:nth-child(5){width:230px}.admin-page .bh-history-admin-table th:nth-child(6){width:90px}
+.admin-page .bh-history-admin-table td{padding:9px 10px;border-bottom:1px solid #123447;color:#c9e1ed;font-size:10px;vertical-align:middle;overflow:hidden}
+.admin-page .bh-history-admin-table tbody tr:nth-child(even){background:#061c29aa}.admin-page .bh-history-admin-table tbody tr:hover{background:#0098d018}.admin-page .bh-history-admin-table td:first-child{text-align:center;color:#6faec5;font-weight:900}.admin-page .bh-history-date{white-space:nowrap;color:#a8d7e9!important}.admin-page .bh-history-comment{white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:230px}
+.admin-page .bh-change-badges{display:flex;flex-wrap:wrap;gap:5px;min-width:320px}.admin-page .bh-change-badge{display:inline-flex;align-items:center;border:1px solid #27556a;border-radius:12px;padding:4px 8px;background:#0a2635;color:#d8f5ff;font-size:9px;font-weight:900;white-space:nowrap}.admin-page .bh-change-badge.boss-sonya{border-color:#9e4050;background:#321722;color:#ffabb7}.admin-page .bh-change-badge.boss-geomancer{border-color:#6a4baf;background:#241a3c;color:#d5baff}.admin-page .bh-change-badge.boss-reflector{border-color:#168b67;background:#082d26;color:#73efc3}.admin-page .bh-change-badge.boss-giant-hawk{border-color:#a88327;background:#302811;color:#f4d678}
+.admin-page .bh-view-button{padding:6px 10px;font-size:9px;min-width:58px}.admin-page .bh-history-empty{text-align:center!important;padding:28px!important;color:#7093a5!important}
+.admin-page .bh-history-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 8px 2px;color:#7fa7b9;font-size:10px}.admin-page .bh-history-pagination{display:flex;gap:6px;align-items:center}.admin-page .bh-history-pagination .admin-btn{min-width:34px;padding:8px 9px}.admin-page .bh-history-page-size{border:1px solid #174963;border-radius:6px;padding:8px 10px;color:#9dc8d9;font-weight:900;white-space:nowrap}
+.admin-page .admin-modal-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:#000b;backdrop-filter:blur(5px)}
+.admin-page .bh-history-detail{width:min(760px,calc(100vw - 30px));max-height:calc(100vh - 40px);overflow:auto;border:1px solid #1c607d;border-radius:12px;background:linear-gradient(180deg,#082331,#061722);box-shadow:0 25px 80px #000c;padding:20px}
+.admin-page .admin-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;border-bottom:1px solid #174963;padding-bottom:13px}.admin-page .admin-modal-head h2{margin:4px 0 0}.admin-page .bh-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.admin-page .bh-detail-grid>div,.admin-page .bh-detail-values>div{border:1px solid #174963;border-radius:8px;padding:12px;background:#061925}.admin-page .bh-detail-grid span,.admin-page .bh-detail-values span{display:block;color:#62c8e8;font-size:9px;font-weight:900;letter-spacing:.08em;margin-bottom:5px}.admin-page .bh-detail-grid strong{display:block;color:#dff6ff;font-size:12px;overflow-wrap:anywhere}.admin-page .bh-detail-wide{grid-column:1/-1}.admin-page .bh-detail-values{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.admin-page .bh-detail-values strong{color:#fff;font-size:15px}
+@media(max-width:1100px){.admin-page .bh-history-filters{grid-template-columns:1fr 1fr 1fr 1fr}.admin-page .bh-filter-button,.admin-page .bh-clear-button{width:100%}.admin-page .bh-scoring-history-card .admin-feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.admin-page .bh-history-filters{grid-template-columns:1fr 1fr}.admin-page .bh-history-search{grid-column:1/-1}.admin-page .bh-history-footer{flex-wrap:wrap}.admin-page .bh-history-pagination{order:3;width:100%;justify-content:center}.admin-page .bh-history-page-size{margin-left:auto}.admin-page .bh-detail-grid,.admin-page .bh-detail-values{grid-template-columns:1fr}.admin-page .bh-detail-wide{grid-column:auto}}
+@media(max-width:480px){.admin-page .bh-scoring-history-card .admin-feature-grid{grid-template-columns:1fr}.admin-page .bh-history-filters{grid-template-columns:1fr}.admin-page .bh-history-search{grid-column:auto}.admin-page .bh-history-page-size{margin-left:0}.admin-page .bh-history-detail{padding:14px}}
+
+/* =========================================================
+   BH POINT SYSTEM — DARK INPUT OVERRIDE
+   Keep every point-system control dark; never fall back to the
+   browser's white input background.
+========================================================= */
+.admin-page .bh-scoring-history-card input,
+.admin-page .bh-scoring-history-card textarea,
+.admin-page .bh-scoring-history-card select,
+.admin-page .bh-scoring-history-card .admin-feature-grid input,
+.admin-page .bh-scoring-history-card .standalone-label textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background-color: #061925 !important;
+  background-image: none !important;
+  color: #e8f6ff !important;
+  -webkit-text-fill-color: #e8f6ff !important;
+  border: 1px solid #24566f !important;
+  border-radius: 7px;
+  outline: none;
+  caret-color: #16cfff;
+  color-scheme: dark;
+}
+
+.admin-page .bh-scoring-history-card .admin-feature-grid input {
+  min-height: 42px;
+  padding: 9px 11px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.admin-page .bh-scoring-history-card textarea,
+.admin-page .bh-scoring-history-card .standalone-label textarea {
+  min-height: 96px;
+  padding: 11px 12px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.admin-page .bh-scoring-history-card input::placeholder,
+.admin-page .bh-scoring-history-card textarea::placeholder {
+  color: #63879a !important;
+  opacity: 1;
+}
+
+.admin-page .bh-scoring-history-card input:focus,
+.admin-page .bh-scoring-history-card textarea:focus,
+.admin-page .bh-scoring-history-card select:focus {
+  background-color: #071d2a !important;
+  border-color: #16cfff !important;
+  box-shadow: 0 0 0 2px rgba(22,207,255,.12), 0 0 16px rgba(22,207,255,.08);
+}
+
+.admin-page .bh-scoring-history-card select option {
+  background: #061925;
+  color: #e8f6ff;
+}
+
+/* Chromium date controls: keep the calendar control dark as well. */
+.admin-page .bh-scoring-history-card input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(.85);
+  opacity: .85;
+  cursor: pointer;
+}
+
+/* Number steppers remain visible without creating a white control. */
+.admin-page .bh-scoring-history-card input[type="number"]::-webkit-inner-spin-button,
+.admin-page .bh-scoring-history-card input[type="number"]::-webkit-outer-spin-button {
+  opacity: .8;
+}

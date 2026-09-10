@@ -15,10 +15,11 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  addDoc,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { ADMIN_UID } from "../lib/constants";
+import { ADMIN_UID, BH_BOSSES } from "../lib/constants";
 import {
   ARCHIVE_RETENTION_DAYS,
   BACKUP_COLLECTIONS,
@@ -119,6 +120,18 @@ export default function AdminPage({ user, isAdmin }) {
   const [resetBusy, setResetBusy] = useState(false);
   const [consolidateDays, setConsolidateDays] = useState("30");
   const [consolidateBusy, setConsolidateBusy] = useState(false);
+  const [bhScoring, setBhScoring] = useState(() => Object.fromEntries(BH_BOSSES.map((boss) => [boss.id, boss.points])));
+  const [bhScoringDraft, setBhScoringDraft] = useState(() => Object.fromEntries(BH_BOSSES.map((boss) => [boss.id, boss.points])));
+  const [bhScoringHistory, setBhScoringHistory] = useState([]);
+  const [bhScoringComment, setBhScoringComment] = useState("");
+  const [bhScoringSaving, setBhScoringSaving] = useState(false);
+  const [bhHistorySearch, setBhHistorySearch] = useState("");
+  const [bhHistoryBoss, setBhHistoryBoss] = useState("all");
+  const [bhHistoryStart, setBhHistoryStart] = useState("");
+  const [bhHistoryEnd, setBhHistoryEnd] = useState("");
+  const [bhHistoryPage, setBhHistoryPage] = useState(1);
+  const [bhHistoryView, setBhHistoryView] = useState(null);
+
   const [auditPage, setAuditPage] = useState(1);
   const [auditRows, setAuditRows] = useState([]);
   const [auditTotal, setAuditTotal] = useState(0);
@@ -204,6 +217,137 @@ export default function AdminPage({ user, isAdmin }) {
       unsubAdmins();
     };
   }, [isAdmin, user]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    let active = true;
+    const loadBhScoring = async () => {
+      try {
+        const currentSnap = await getDocs(collection(db, "bhScoring"));
+        const currentDoc = currentSnap.docs.find((item) => item.id === "current");
+        const current = currentDoc?.data()?.bosses || {};
+        const normalized = Object.fromEntries(BH_BOSSES.map((boss) => [boss.id, Number.isFinite(Number(current[boss.id])) ? Number(current[boss.id]) : boss.points]));
+        if (active) {
+          setBhScoring(normalized);
+          setBhScoringDraft(normalized);
+        }
+        const historySnap = await getDocs(collection(db, "bhScoringHistory"));
+        const history = historySnap.docs.map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
+        if (active) setBhScoringHistory(history);
+      } catch (err) {
+        if (active) setError(err?.message || "Unable to load Boss Hunt scoring settings.");
+      }
+    };
+    loadBhScoring();
+    return () => { active = false; };
+  }, [isAdmin, message]);
+
+  const filteredBhScoringHistory = useMemo(() => {
+    const search = clean(bhHistorySearch).toLowerCase();
+    const start = bhHistoryStart ? new Date(`${bhHistoryStart}T00:00:00`).getTime() : null;
+    const end = bhHistoryEnd ? new Date(`${bhHistoryEnd}T23:59:59.999`).getTime() : null;
+    return [...bhScoringHistory]
+      .filter((entry) => {
+        const date = toDate(entry.createdAt);
+        const time = date?.getTime() || 0;
+        const bossMatch = bhHistoryBoss === "all" || BH_BOSSES.some((boss) => {
+          const previous = Number(entry.previous?.[boss.id] ?? boss.points);
+          const next = Number(entry.next?.[boss.id] ?? boss.points);
+          return boss.id === bhHistoryBoss && previous !== next;
+        });
+        if (!bossMatch) return false;
+        if (start !== null && time < start) return false;
+        if (end !== null && time > end) return false;
+        if (!search) return true;
+        const haystack = [entry.comment, entry.createdBy, entry.createdByUid, ...BH_BOSSES.flatMap((boss) => [boss.name, entry.previous?.[boss.id], entry.next?.[boss.id]])].join(" ").toLowerCase();
+        return haystack.includes(search);
+      })
+      .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
+  }, [bhScoringHistory, bhHistorySearch, bhHistoryBoss, bhHistoryStart, bhHistoryEnd]);
+
+  const bhHistoryPageCount = Math.max(1, Math.ceil(filteredBhScoringHistory.length / PAGE_SIZE));
+  const visibleBhScoringHistory = filteredBhScoringHistory.slice((bhHistoryPage - 1) * PAGE_SIZE, bhHistoryPage * PAGE_SIZE);
+
+  useEffect(() => {
+    if (bhHistoryPage > bhHistoryPageCount) setBhHistoryPage(bhHistoryPageCount);
+  }, [bhHistoryPage, bhHistoryPageCount]);
+
+  function clearBhHistoryFilters() {
+    setBhHistorySearch("");
+    setBhHistoryBoss("all");
+    setBhHistoryStart("");
+    setBhHistoryEnd("");
+    setBhHistoryPage(1);
+  }
+
+  async function saveBhScoring() {
+    if (!isAdmin || bhScoringSaving) return;
+    const next = Object.fromEntries(BH_BOSSES.map((boss) => [boss.id, Math.max(0, Number(bhScoringDraft[boss.id] ?? boss.points) || 0)]));
+    const changed = BH_BOSSES.filter((boss) => Number(bhScoring[boss.id] ?? boss.points) !== Number(next[boss.id]));
+    if (!changed.length) {
+      setMessage("No Boss Hunt point values changed.");
+      return;
+    }
+    setBhScoringSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const actor = actorName(user);
+      await setDoc(doc(db, "bhScoring", "current"), {
+        bosses: next,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor,
+        updatedByUid: user?.uid || null,
+      }, { merge: true });
+      await addDoc(collection(db, "bhScoringHistory"), {
+        previous: bhScoring,
+        next,
+        comment: clean(bhScoringComment),
+        createdAt: serverTimestamp(),
+        createdBy: actor,
+        createdByUid: user?.uid || null,
+      });
+      for (const boss of changed) {
+        await addDoc(collection(db, "guildNotices"), {
+          scope: "boss-hunt",
+          module: "bh-scoring",
+          title: "Boss Hunt Scoring Changed",
+          message: `${boss.name} changed from ${Number(bhScoring[boss.id] ?? boss.points).toFixed(2)} to ${Number(next[boss.id]).toFixed(2)} points.`,
+          type: "warning",
+          active: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+          createdBy: actor,
+          createdByUid: user?.uid || null,
+          action: "Boss Hunt Scoring Changed",
+          entityType: "scoring",
+          entityId: boss.id,
+          bossId: boss.id,
+          bossName: boss.name,
+          points: Number(next[boss.id]),
+          reason: clean(bhScoringComment),
+          notes: clean(bhScoringComment),
+          details: [
+            `Boss: ${boss.name}`,
+            `Previous points: ${Number(bhScoring[boss.id] ?? boss.points).toFixed(2)}`,
+            `New points: ${Number(next[boss.id]).toFixed(2)}`,
+            ...(clean(bhScoringComment) ? [`Comment: ${clean(bhScoringComment)}`] : []),
+          ],
+          changes: [`Points: ${Number(bhScoring[boss.id] ?? boss.points).toFixed(2)} → ${Number(next[boss.id]).toFixed(2)}`],
+        });
+      }
+      setBhScoring(next);
+      setBhScoringDraft(next);
+      setBhScoringComment("");
+      setMessage("Boss Hunt point values updated and recorded in scoring history + BH notification history.");
+    } catch (err) {
+      setError(err?.message || "Could not save Boss Hunt point values.");
+    } finally {
+      setBhScoringSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -681,6 +825,7 @@ export default function AdminPage({ user, isAdmin }) {
           ["overview", "OVERVIEW"],
           ["profile", "MY PROFILE"],
           ["admins", "ADMIN ACCESS"],
+          ["bh-points", "BH POINT SYSTEM"],
           ["backup", "BACKUP / RESTORE"],
           ["health", "DATA STATUS"],
           ["maintenance", "MAINTENANCE"],
@@ -701,6 +846,7 @@ export default function AdminPage({ user, isAdmin }) {
             <div className="admin-feature-grid">
               <div><b>PROFILE</b><span>Name, email, password and backup reminder.</span></div>
               <div><b>ACCESS</b><span>Registration PIN and active administrator directory.</span></div>
+              <div><b>BH POINTS</b><span>Configure Boss Hunt boss scoring and review scoring changes.</span></div>
               <div><b>BACKUP</b><span>Exact JSON plus organized, importable XLSX.</span></div>
               <div><b>STATUS</b><span>Live Firebase collection/document inventory.</span></div>
               <div><b>RECOVERY</b><span>Deleted/reset data retained for 90 days.</span></div>
@@ -789,6 +935,84 @@ export default function AdminPage({ user, isAdmin }) {
               {!admins.length && <div className="admin-empty">No administrator records found.</div>}
             </div>
           </article>
+        </section>
+      )}
+
+      {tab === "bh-points" && (
+        <section className="admin-stack">
+          <article className="admin-card admin-card-wide">
+            <div className="admin-card-kicker">BOSS HUNT • POINT SYSTEM</div>
+            <h2>Boss Hunt Point Values</h2>
+            <p>Administrator-only control for the points awarded by each Boss Hunt boss. Changes update the live BH scoring configuration and preserve a separate scoring-history record.</p>
+            <div className="admin-feature-grid">
+              {BH_BOSSES.map((boss) => (
+                <label key={boss.id}>
+                  {boss.name.toUpperCase()} POINTS
+                  <input type="number" min="0" step="0.01" value={bhScoringDraft[boss.id] ?? boss.points} onChange={(e) => setBhScoringDraft((current) => ({ ...current, [boss.id]: e.target.value }))} />
+                </label>
+              ))}
+            </div>
+            <label className="standalone-label">ADMIN CHANGE COMMENT
+              <textarea value={bhScoringComment} onChange={(e) => setBhScoringComment(e.target.value)} placeholder="Why are the Boss Hunt point values changing?" rows={4} />
+            </label>
+            <div className="admin-form-actions">
+              <button className="admin-btn primary" disabled={bhScoringSaving} onClick={saveBhScoring}>{bhScoringSaving ? "SAVING..." : "SAVE BH POINT VALUES"}</button>
+            </div>
+          </article>
+
+          <article className="admin-card admin-card-wide bh-scoring-history-card">
+            <div className="admin-card-kicker">SCORING HISTORY</div>
+            <h2>Boss Hunt Point Change History</h2>
+            <p>Every scoring save records the previous values, new values, administrator, timestamp and comment. Each changed boss also creates a BH notification/audit entry.</p>
+
+            <div className="bh-history-filters">
+              <label className="bh-history-search"><span>SEARCH</span><input value={bhHistorySearch} onChange={(e) => { setBhHistorySearch(e.target.value); setBhHistoryPage(1); }} placeholder="Search comments, admin name..." /></label>
+              <label><span>BOSS</span><select value={bhHistoryBoss} onChange={(e) => { setBhHistoryBoss(e.target.value); setBhHistoryPage(1); }}><option value="all">ALL BOSSES</option>{BH_BOSSES.map((boss) => <option key={boss.id} value={boss.id}>{boss.name}</option>)}</select></label>
+              <label><span>START DATE</span><input type="date" value={bhHistoryStart} onChange={(e) => { setBhHistoryStart(e.target.value); setBhHistoryPage(1); }} /></label>
+              <label><span>END DATE</span><input type="date" value={bhHistoryEnd} onChange={(e) => { setBhHistoryEnd(e.target.value); setBhHistoryPage(1); }} /></label>
+              <button type="button" className="admin-btn primary bh-filter-button" onClick={() => setBhHistoryPage(1)}>FILTER</button>
+              <button type="button" className="admin-btn bh-clear-button" onClick={clearBhHistoryFilters}>CLEAR</button>
+            </div>
+
+            <div className="bh-history-table-scroll">
+              <table className="bh-history-admin-table">
+                <thead><tr><th>#</th><th>DATE &amp; TIME</th><th>ADMIN</th><th>CHANGES</th><th>COMMENT</th><th>ACTIONS</th></tr></thead>
+                <tbody>
+                  {visibleBhScoringHistory.map((entry, index) => (
+                    <tr key={entry.id}>
+                      <td>{(bhHistoryPage - 1) * PAGE_SIZE + index + 1}</td>
+                      <td className="bh-history-date">{dateText(entry.createdAt)}</td>
+                      <td>{entry.createdBy || "Administrator"}</td>
+                      <td><div className="bh-change-badges">{BH_BOSSES.map((boss) => { const previous = Number(entry.previous?.[boss.id] ?? boss.points); const next = Number(entry.next?.[boss.id] ?? boss.points); if (previous === next) return null; return <span className={`bh-change-badge boss-${boss.id}`} key={boss.id}>{boss.name}: {next.toFixed(2)}</span>; })}</div></td>
+                      <td className="bh-history-comment" title={entry.comment || "Boss Hunt point values updated"}>{entry.comment || "Boss Hunt point values updated"}</td>
+                      <td><button type="button" className="admin-btn bh-view-button" onClick={() => setBhHistoryView(entry)}>VIEW</button></td>
+                    </tr>
+                  ))}
+                  {!visibleBhScoringHistory.length && <tr><td colSpan="6" className="bh-history-empty">No Boss Hunt scoring changes match the current filters.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="bh-history-footer">
+              <span>Showing {filteredBhScoringHistory.length ? ((bhHistoryPage - 1) * PAGE_SIZE + 1) : 0} to {Math.min(bhHistoryPage * PAGE_SIZE, filteredBhScoringHistory.length)} of {filteredBhScoringHistory.length} entries</span>
+              <div className="bh-history-pagination">
+                <button type="button" className="admin-btn" disabled={bhHistoryPage <= 1} onClick={() => setBhHistoryPage((p) => Math.max(1, p - 1))}>«</button>
+                {Array.from({ length: bhHistoryPageCount }, (_, i) => i + 1).slice(Math.max(0, bhHistoryPage - 3), Math.min(bhHistoryPageCount, bhHistoryPage + 2)).map((page) => <button type="button" key={page} className={`admin-btn ${page === bhHistoryPage ? "primary" : ""}`} onClick={() => setBhHistoryPage(page)}>{page}</button>)}
+                <button type="button" className="admin-btn" disabled={bhHistoryPage >= bhHistoryPageCount} onClick={() => setBhHistoryPage((p) => Math.min(bhHistoryPageCount, p + 1))}>»</button>
+              </div>
+              <span className="bh-history-page-size">10 PER PAGE</span>
+            </div>
+          </article>
+
+          {bhHistoryView && (
+            <div className="admin-modal-backdrop" onClick={() => setBhHistoryView(null)}>
+              <div className="admin-modal bh-history-detail" onClick={(e) => e.stopPropagation()}>
+                <div className="admin-modal-head"><div><div className="admin-card-kicker">SCORING HISTORY DETAIL</div><h2>Boss Hunt Point Change</h2></div><button type="button" className="admin-btn" onClick={() => setBhHistoryView(null)}>CLOSE</button></div>
+                <div className="bh-detail-grid"><div><span>DATE &amp; TIME</span><strong>{dateText(bhHistoryView.createdAt)}</strong></div><div><span>ADMIN</span><strong>{bhHistoryView.createdBy || "Administrator"}</strong></div><div className="bh-detail-wide"><span>COMMENT</span><strong>{bhHistoryView.comment || "Boss Hunt point values updated"}</strong></div></div>
+                <div className="bh-detail-values">{BH_BOSSES.map((boss) => <div key={boss.id}><span>{boss.name}</span><strong>{Number(bhHistoryView.previous?.[boss.id] ?? boss.points).toFixed(2)} → {Number(bhHistoryView.next?.[boss.id] ?? boss.points).toFixed(2)}</strong></div>)}</div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
