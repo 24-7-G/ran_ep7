@@ -1,5 +1,8 @@
 {
   "firestore": {
-    "rules": "src/firestore.rules"
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }

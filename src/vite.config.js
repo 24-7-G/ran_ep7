@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
-  base: "/ran_ep7/",
+export default defineConfig(({ command }) => ({
+  // Local dev must use / so /src/main.jsx resolves correctly.
+  // Production build is deployed under GitHub Pages /ran_ep7/.
+  base: command === "build" ? "/ran_ep7/" : "/",
 
   plugins: [react()],
 
@@ -15,4 +17,4 @@ export default defineConfig({
   build: {
     sourcemap: true,
   },
-});
+}));
