@@ -2309,6 +2309,16 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
   ] = useState("all");
 
   const [
+    playerSonyaClaimFilter,
+    setPlayerSonyaClaimFilter,
+  ] = useState("all");
+
+  const [
+    playerSonyaClaimSort,
+    setPlayerSonyaClaimSort,
+  ] = useState("latest");
+
+  const [
     playerPage,
     setPlayerPage,
   ] = useState(1);
@@ -3853,6 +3863,17 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
         const sonyaDeducted = sonyaClaimsCount * sonyaCost;
         const available = earned - sonyaDeducted;
 
+        const sonyaClaimDates = sonyaClaims
+          .map((claim) =>
+            safeToDate(claim?.claimedAt) ||
+            safeToDate(claim?.updatedAt) ||
+            safeToDate(claim?.createdAt)
+          )
+          .filter(Boolean)
+          .sort((a, b) => b.getTime() - a.getTime());
+
+        const latestSonyaClaimAt = sonyaClaimDates[0] || null;
+
         const updateEvents = [
           {
             at: safeToDate(player.updatedAt),
@@ -3888,6 +3909,8 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
           claimed: sonyaDeducted,
           sonyaClaimsCount,
           sonyaDeducted,
+          sonyaClaimDates,
+          latestSonyaClaimAt,
           attendanceByBoss,
           available,
           latestUpdatedAt:
@@ -4013,7 +4036,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
 
   const filteredPlayers =
     useMemo(() => {
-      return playerStats.filter(
+      const rows = playerStats.filter(
         (player) => {
           if (
             playerSearch &&
@@ -4037,13 +4060,56 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
             return false;
           }
 
+          const hasSonyaClaim = safeNumber(player.sonyaClaimsCount, 0) > 0;
+
+          if (playerSonyaClaimFilter === "claimed" && !hasSonyaClaim) {
+            return false;
+          }
+
+          if (playerSonyaClaimFilter === "not-claimed" && hasSonyaClaim) {
+            return false;
+          }
+
           return true;
         }
-      ).sort((a, b) => (safeToDate(b.latestUpdatedAt)?.getTime() || 0) - (safeToDate(a.latestUpdatedAt)?.getTime() || 0) || lower(a.ign).localeCompare(lower(b.ign)));
+      );
+
+      return rows.sort((a, b) => {
+        if (playerSonyaClaimSort === "latest") {
+          const aTime = safeToDate(a.latestSonyaClaimAt)?.getTime() || 0;
+          const bTime = safeToDate(b.latestSonyaClaimAt)?.getTime() || 0;
+          if (aTime !== bTime) return bTime - aTime;
+        }
+
+        if (playerSonyaClaimSort === "oldest") {
+          const aTime = safeToDate(a.latestSonyaClaimAt)?.getTime() || 0;
+          const bTime = safeToDate(b.latestSonyaClaimAt)?.getTime() || 0;
+          const aHas = aTime > 0;
+          const bHas = bTime > 0;
+          if (aHas !== bHas) return aHas ? -1 : 1;
+          if (aHas && bHas && aTime !== bTime) return aTime - bTime;
+        }
+
+        if (playerSonyaClaimSort === "claimed-first") {
+          const aHas = safeNumber(a.sonyaClaimsCount, 0) > 0;
+          const bHas = safeNumber(b.sonyaClaimsCount, 0) > 0;
+          if (aHas !== bHas) return aHas ? -1 : 1;
+        }
+
+        if (playerSonyaClaimSort === "unclaimed-first") {
+          const aHas = safeNumber(a.sonyaClaimsCount, 0) > 0;
+          const bHas = safeNumber(b.sonyaClaimsCount, 0) > 0;
+          if (aHas !== bHas) return aHas ? 1 : -1;
+        }
+
+        return (safeToDate(b.latestUpdatedAt)?.getTime() || 0) - (safeToDate(a.latestUpdatedAt)?.getTime() || 0) || lower(a.ign).localeCompare(lower(b.ign));
+      });
     }, [
       playerStats,
       playerSearch,
       playerClassFilter,
+      playerSonyaClaimFilter,
+      playerSonyaClaimSort,
     ]);
 
   const playerPageCount =
@@ -7962,6 +8028,39 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
                 ))}
               </select>
             </div>
+
+            <div className="bh-players-claim-filter">
+              <span aria-hidden="true">⚔</span>
+              <select
+                className="bh-select"
+                value={playerSonyaClaimFilter}
+                onChange={(e) => {
+                  setPlayerSonyaClaimFilter(e.target.value);
+                  setPlayerPage(1);
+                }}
+              >
+                <option value="all">All Sonya Claims</option>
+                <option value="claimed">Sonya Claimed</option>
+                <option value="not-claimed">Sonya Not Claimed</option>
+              </select>
+            </div>
+
+            <div className="bh-players-claim-sort">
+              <span aria-hidden="true">↕</span>
+              <select
+                className="bh-select"
+                value={playerSonyaClaimSort}
+                onChange={(e) => {
+                  setPlayerSonyaClaimSort(e.target.value);
+                  setPlayerPage(1);
+                }}
+              >
+                <option value="latest">Claim Date: Newest First</option>
+                <option value="oldest">Claim Date: Oldest First</option>
+                <option value="claimed-first">Claimed Players First</option>
+                <option value="unclaimed-first">Not Claimed First</option>
+              </select>
+            </div>
           </div>
 
           <div className="bh-players-table-card bh-players-table-card-v8">
@@ -8075,6 +8174,18 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
 
                         <td className="bh-v6-sonya-count-cell">
                           <strong>{safeNumber(player.sonyaClaimsCount, 0)}</strong>
+                          {player.sonyaClaimDates?.length ? (
+                            <div className="bh-sonya-claim-dates" title="Sonya weapon claim dates">
+                              <span>CLAIMED {player.sonyaClaimDates.length === 1 ? "DATE" : "DATES"}</span>
+                              {player.sonyaClaimDates.map((claimDate, index) => (
+                                <time key={`${String(player.id)}-sonya-claim-${index}`} dateTime={claimDate.toISOString()}>
+                                  {formatDateTime(claimDate, effectiveTimezone)}
+                                </time>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="bh-sonya-not-claimed">NOT CLAIMED</span>
+                          )}
                         </td>
 
                         <td className={`bh-v6-deduction-cell ${player.sonyaDeducted > 0 ? "bh-deduction-negative" : "bh-deduction-zero"}`}>
