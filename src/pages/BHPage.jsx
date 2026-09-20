@@ -2235,6 +2235,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
   const [bulkToolsSaving, setBulkToolsSaving] = useState(false);
   const [bulkToolsError, setBulkToolsError] = useState("");
   const [bulkToolsPoints, setBulkToolsPoints] = useState("");
+  const [bulkToolsPointOverrides, setBulkToolsPointOverrides] = useState({});
   const [bulkToolsClass, setBulkToolsClass] = useState("");
   const [bulkToolsWeapon, setBulkToolsWeapon] = useState("");
   const [bulkToolsStatus, setBulkToolsStatus] = useState("available");
@@ -6164,7 +6165,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
     setBulkToolsMode(mode); setBulkToolsSelected([]); setBulkToolsSearch("");
     setBulkToolsFrom(""); setBulkToolsTo(""); setBulkToolsPage(1);
     setBulkToolsComment(""); setBulkToolsError(""); setBulkToolsSaving(false);
-    setBulkToolsPoints(""); setBulkToolsClass("");
+    setBulkToolsPoints(""); setBulkToolsPointOverrides({}); setBulkToolsClass("");
     setBulkToolsWeapon(""); setBulkToolsStatus("available"); setBulkToolsNotes(""); setBulkToolsPin("");
     setBulkToolsModal("open");
   };
@@ -6213,10 +6214,175 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
   const bulkBHVisibleRows = filteredBHMultiRows.slice((bulkBHSafePage - 1) * 5, bulkBHSafePage * 5);
   const toggleBHMultiSelection = id => setBulkToolsSelected(cur => cur.includes(String(id)) ? cur.filter(x => x !== String(id)) : [...cur, String(id)]);
   const toggleBHMultiPage = () => { const ids = bulkBHVisibleRows.map(x => String(x.id)); setBulkToolsSelected(cur => ids.length && ids.every(id => cur.includes(id)) ? cur.filter(id => !ids.includes(id)) : Array.from(new Set([...cur, ...ids]))) };
+  const toggleBHMultiAllFiltered = () => {
+    const ids = filteredBHMultiRows.map(x => String(x.id));
+    setBulkToolsSelected(cur =>
+      ids.length && ids.every(id => cur.includes(id))
+        ? cur.filter(id => !ids.includes(id))
+        : Array.from(new Set([...cur, ...ids]))
+    );
+  };
   const bulkSelectedBHRows = bulkBHRows.filter(x => bulkToolsSelected.includes(String(x.id)));
+
+  /* =========================================================
+     INDIVIDUAL BH OVERALL POINT OVERRIDE FLOW
+     - Selection still works exactly like the other bulk tools.
+     - Each selected player receives an independent editable value.
+     - APPLY SAME SCORE only fills the individual fields; it does not save.
+     - Each SAVE writes only that player's override and creates its own notice.
+  ========================================================= */
+  const getBulkPointOverrideValue = (playerId, fallback = "") => {
+    const id = String(playerId);
+    return Object.prototype.hasOwnProperty.call(bulkToolsPointOverrides, id)
+      ? bulkToolsPointOverrides[id]
+      : fallback;
+  };
+
+  const setBulkPointOverrideValue = (playerId, value) => {
+    const id = String(playerId);
+    setBulkToolsPointOverrides((current) => ({
+      ...current,
+      [id]: value,
+    }));
+  };
+
+  const applyBulkPointScoreToSelected = () => {
+    if (!bulkSelectedBHRows.length) {
+      setBulkToolsError("Select one or more players first.");
+      return;
+    }
+
+    const rawValue = String(bulkToolsPoints ?? "").replace(/,/g, "").trim();
+    const numericValue = Number(rawValue);
+
+    if (
+      rawValue === "" ||
+      !Number.isFinite(numericValue) ||
+      numericValue < 0
+    ) {
+      setBulkToolsError("Enter a valid overall points value greater than or equal to 0.");
+      return;
+    }
+
+    const next = {};
+    bulkSelectedBHRows.forEach((row) => {
+      next[String(row.id)] = rawValue;
+    });
+
+    setBulkToolsPointOverrides((current) => ({
+      ...current,
+      ...next,
+    }));
+    setBulkToolsError("");
+  };
+
+  const clearBulkPointOverrides = () => {
+    setBulkToolsPointOverrides({});
+    setBulkToolsPoints("");
+    setBulkToolsError("");
+  };
+
+  const saveIndividualBulkPointOverride = async (row) => {
+    if (!isAdmin || bulkToolsSaving) return;
+
+    if (!row?.player?.id) {
+      setBulkToolsError("Player record is missing.");
+      return;
+    }
+
+    if (!clean(bulkToolsComment)) {
+      setBulkToolsError("Admin comment is required for every points override.");
+      return;
+    }
+
+    const playerId = String(row.player.id);
+    const rawValue = String(
+      getBulkPointOverrideValue(playerId, "")
+    ).replace(/,/g, "").trim();
+    const newOverallPoints = Number(rawValue);
+
+    if (
+      rawValue === "" ||
+      !Number.isFinite(newOverallPoints) ||
+      newOverallPoints < 0
+    ) {
+      setBulkToolsError(
+        `${row.ign || "Player"}: overall points must be a valid number greater than or equal to 0.`
+      );
+      return;
+    }
+
+    const oldOverallPoints = safeNumber(row.overallPoints, 0);
+    const playerName = clean(row.ign) || "Unknown Player";
+
+    setBulkToolsSaving(true);
+    setBulkToolsError("");
+
+    try {
+      await updateDoc(doc(db, "players", playerId), {
+        bhOverallPointsOverride: newOverallPoints,
+        bhOverallPointsOverrideActive: true,
+        bhOverallPointsOverrideAt: serverTimestamp(),
+        bhOverallPointsOverrideBy: getCurrentUpdaterName(),
+        bhOverallPointsOverrideByUid: currentUser?.uid || null,
+        bhOverallPointsOverrideComment: clean(bulkToolsComment),
+        updatedAt: serverTimestamp(),
+        updatedBy: getCurrentUpdaterName(),
+        updatedByUid: currentUser?.uid || null,
+      });
+
+      await createGuildNotice({
+        title: "BH OVERALL POINTS OVERRIDE",
+        message: `${playerName}: ${oldOverallPoints.toFixed(2)} → ${newOverallPoints.toFixed(2)} overall points.`,
+        type: "info",
+        module: "bh-scoring",
+        action: "BH OVERALL POINTS OVERRIDE",
+        entityType: "bh-points-override",
+        entityId: playerId,
+        playerId,
+        playerName,
+        points: newOverallPoints,
+        status: "overridden",
+        relatedModules: ["bh-scoring", "bh-attendance", "bh-rewards"],
+        details: [
+          `Player: ${playerName}`,
+          `Previous overall points: ${oldOverallPoints.toFixed(2)}`,
+          `New overall points: ${newOverallPoints.toFixed(2)}`,
+          `Admin comment: ${clean(bulkToolsComment)}`,
+          `Changed by: ${getCurrentUpdaterName()}`,
+        ],
+        changes: [
+          `Overall points: ${oldOverallPoints.toFixed(2)} → ${newOverallPoints.toFixed(2)}`,
+        ],
+      });
+
+      setBulkToolsPointOverrides((current) => ({
+        ...current,
+        [playerId]: newOverallPoints.toFixed(2),
+      }));
+      setSuccess(`${playerName} overall points saved: ${newOverallPoints.toFixed(2)}.`);
+
+      await loadAllData();
+      await reloadGuildNotices();
+    } catch (err) {
+      console.error(err);
+      setBulkToolsError(
+        err?.message || `Could not save ${playerName} overall points.`
+      );
+    } finally {
+      setBulkToolsSaving(false);
+    }
+  };
 
   const saveBHMultiChange = async () => {
     if (!isAdmin || bulkToolsSaving) return;
+
+    if (bulkToolsMode === "points-override") {
+      setBulkToolsError(
+        "Individual SAVE buttons are used for Overall Points Override. APPLY SAME SCORE only fills the individual values; it does not save them."
+      );
+      return;
+    }
     if (!bulkSelectedBHRows.length) { setBulkToolsError("Select one or more EXISTING records from the table."); return; }
     if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for every bulk modification."); return; }
     if (bulkToolsMode === "player-delete" && bulkToolsPin !== "12345") { setBulkToolsError("Incorrect delete PIN."); return; }
@@ -9687,17 +9853,102 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
                 <button onClick={() => openBHMultiTools("claim-edit")}><b>✎</b><span><strong>BULK EDIT CLAIMS</strong><small>Correct notes on multiple existing reward claims.</small></span></button>
                 <button onClick={() => openBHMultiTools("claim-delete")}><b>×</b><span><strong>BULK DELETE CLAIMS</strong><small>Remove multiple claims and restore linked rewards.</small></span></button>
               </div> : <>
-                <div className="bh-bulk-toolbar"><label>SEARCH<input value={bulkToolsSearch} onChange={e => { setBulkToolsSearch(e.target.value); setBulkToolsPage(1) }} placeholder="IGN, boss, reward, date, status..." /></label><label>FROM<input type="date" value={bulkToolsFrom} onChange={e => { setBulkToolsFrom(e.target.value); setBulkToolsPage(1) }} /></label><label>TO<input type="date" value={bulkToolsTo} onChange={e => { setBulkToolsTo(e.target.value); setBulkToolsPage(1) }} /></label><div><button type="button" onClick={toggleBHMultiPage}>{bulkBHVisibleRows.length && bulkBHVisibleRows.every(x => bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button> <button type="button" onClick={() => setBulkToolsSelected([])}>CLEAR</button></div></div>
+                <div className="bh-bulk-toolbar"><label>SEARCH<input value={bulkToolsSearch} onChange={e => { setBulkToolsSearch(e.target.value); setBulkToolsPage(1) }} placeholder="IGN, boss, reward, date, status..." /></label><label>FROM<input type="date" value={bulkToolsFrom} onChange={e => { setBulkToolsFrom(e.target.value); setBulkToolsPage(1) }} /></label><label>TO<input type="date" value={bulkToolsTo} onChange={e => { setBulkToolsTo(e.target.value); setBulkToolsPage(1) }} /></label><div><button type="button" onClick={toggleBHMultiPage}>{bulkBHVisibleRows.length && bulkBHVisibleRows.every(x => bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button> <button type="button" onClick={toggleBHMultiAllFiltered}>{filteredBHMultiRows.length && filteredBHMultiRows.every(x => bulkToolsSelected.includes(String(x.id))) ? "CLEAR ALL MATCHES" : "SELECT ALL MATCHES"}</button> <button type="button" onClick={() => setBulkToolsSelected([])}>CLEAR</button></div></div>
                 <div className="bh-bulk-table-wrap"><table className="bh-bulk-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / TYPE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>{bulkBHVisibleRows.map(x => <tr key={`${x.kind}-${x.id}`} className={bulkToolsSelected.includes(String(x.id)) ? "is-selected" : ""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={() => toggleBHMultiSelection(x.id)} /></td><td><strong>{x.ign || "—"}</strong></td><td>{x.className || "—"}<small>{x.weapon || "—"}</small></td><td><strong>{x.recordLabel}</strong></td><td>{x.dateKey || "—"}<small>{x.timeKey || "—"}</small></td><td>{x.value || "—"}</td><td><span className="bh-bulk-status">{x.status}</span></td></tr>)}{!bulkBHVisibleRows.length && <tr><td colSpan="7">No EXISTING records match the filters.</td></tr>}</tbody></table></div>
                 <div className="bh-bulk-footer"><span>PAGE {bulkBHSafePage} OF {bulkBHPageCount} • 5 PER PAGE • {filteredBHMultiRows.length} MATCHES • {bulkToolsSelected.length} SELECTED</span><div><button disabled={bulkBHSafePage <= 1} onClick={() => setBulkToolsPage(v => Math.max(1, v - 1))}>‹</button> <button disabled={bulkBHSafePage >= bulkBHPageCount} onClick={() => setBulkToolsPage(v => Math.min(bulkBHPageCount, v + 1))}>›</button></div></div>
                 <div className="bh-bulk-form">
-                  {bulkToolsMode === "points-override" && <label>NEW OVERALL POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e => setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Example: 10.00" /></label>}
+                  {bulkToolsMode === "points-override" && (
+                    <div className="bh-bulk-point-override-panel full">
+                      <div className="bh-bulk-point-override-tools">
+                        <label>
+                          DEFAULT SCORE
+                          <input
+                            inputMode="decimal"
+                            value={bulkToolsPoints}
+                            onChange={e => setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g, ""))}
+                            placeholder="Example: 10.00"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="bh-secondary-button"
+                          onClick={applyBulkPointScoreToSelected}
+                          disabled={!bulkToolsSelected.length || bulkToolsSaving}
+                        >
+                          APPLY SAME SCORE TO SELECTED
+                        </button>
+                        <button
+                          type="button"
+                          className="bh-secondary-button"
+                          onClick={clearBulkPointOverrides}
+                          disabled={bulkToolsSaving}
+                        >
+                          CLEAR OVERRIDES
+                        </button>
+                      </div>
+
+                      <div className="bh-bulk-point-override-help">
+                        <strong>INDIVIDUAL OVERRIDE MODE</strong>
+                        <span>Each selected player has their own score. Change the value and press SAVE on that player only.</span>
+                      </div>
+
+                      <div className="bh-bulk-point-override-list">
+                        {!bulkSelectedBHRows.length ? (
+                          <div className="bh-bulk-point-empty">SELECT PLAYERS ABOVE TO EDIT THEIR OVERALL POINTS.</div>
+                        ) : (
+                          bulkSelectedBHRows.map((row) => {
+                            const playerId = String(row.id);
+                            const currentValue = getBulkPointOverrideValue(
+                              playerId,
+                              safeNumber(row.overallPoints, 0).toFixed(2)
+                            );
+
+                            return (
+                              <div key={`point-override-${playerId}`} className="bh-bulk-point-row">
+                                <div className="bh-bulk-point-player">
+                                  <strong>{row.ign || "Unknown Player"}</strong>
+                                  <small>{row.className || "—"}{row.weapon ? ` • ${row.weapon}` : ""}</small>
+                                </div>
+
+                                <div className="bh-bulk-point-current">
+                                  <span>CURRENT</span>
+                                  <strong>{safeNumber(row.overallPoints, 0).toFixed(2)}</strong>
+                                </div>
+
+                                <div className="bh-bulk-point-input">
+                                  <label>
+                                    NEW OVERALL POINTS
+                                    <input
+                                      inputMode="decimal"
+                                      value={currentValue}
+                                      onChange={e => setBulkPointOverrideValue(playerId, e.target.value.replace(/[^0-9.]/g, ""))}
+                                      placeholder="0.00"
+                                      disabled={bulkToolsSaving}
+                                    />
+                                  </label>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="bh-primary-button"
+                                  onClick={() => saveIndividualBulkPointOverride(row)}
+                                  disabled={bulkToolsSaving}
+                                >
+                                  {bulkToolsSaving ? "SAVING..." : "SAVE"}
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {bulkToolsMode === "attendance-edit" && <label>NEW POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e => setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Leave blank to keep each record" /></label>}
                   {bulkToolsMode === "player-edit" && <label>CLASS / NEW CLASS<TypeSelect id="bh-bulk-class" className="bh-input" value={bulkToolsClass} onChange={setBulkToolsClass} options={CLASS_OPTIONS} placeholder="Type or select class" /></label>}
                   {bulkToolsMode === "player-edit" && <label>PREFERRED WEAPON<TypeSelect id="bh-bulk-weapon" className="bh-input" value={bulkToolsWeapon} onChange={setBulkToolsWeapon} options={Array.from(new Set([...players.map(p => clean(p.weapon)), ...rewards.map(r => clean(r.weaponClass)), ...rewardClaims.map(c => clean(c.weaponClass))].filter(Boolean)))} placeholder="Type or select weapon • blank keeps current" /></label>}
                   {bulkToolsMode === "reward-edit" && <label>STATUS<select value={bulkToolsStatus} onChange={e => setBulkToolsStatus(e.target.value)}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></label>}
                   {(bulkToolsMode === "reward-edit" || bulkToolsMode === "claim-edit") && <label className="full">NOTES<textarea value={bulkToolsNotes} onChange={e => setBulkToolsNotes(e.target.value)} placeholder="Leave blank to keep each record's notes" /></label>}
-                  {bulkToolsMode === "points-override" && <div className="bh-bulk-warning full">OVERALL POINTS OVERRIDE changes the player's lifetime TOTAL POINTS used for reward balance calculations. Individual attendance records and their per-boss history remain unchanged. Sonya claim deductions are still applied after the override.</div>}
+                  {bulkToolsMode === "points-override" && <div className="bh-bulk-warning full">OVERALL POINTS OVERRIDE changes the player's lifetime TOTAL POINTS used for reward balance calculations. Individual attendance records and their per-boss history remain unchanged. Apply Same Score only fills each selected player's field; each player must be saved individually. Sonya claim deductions are still applied after the override.</div>}
                   {["attendance-delete", "attendance-redo", "reward-delete", "claim-delete", "player-disable", "player-delete"].includes(bulkToolsMode) && <div className="bh-bulk-warning full">EXACT SAVED RECORDS ONLY. The date filters only narrow the table. Selecting a date with no record cannot create a record.</div>}
                   {bulkToolsMode === "player-delete" && <label>DELETE PIN *<input inputMode="numeric" value={bulkToolsPin} onChange={e => setBulkToolsPin(e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="5-digit PIN" /></label>}
                   <label className="full">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e => setBulkToolsComment(e.target.value)} placeholder="Required. Explain why these existing records are being changed." /></label>
@@ -9705,7 +9956,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
                 {bulkToolsError && <div className="bh-bulk-error">{bulkToolsError}</div>}
               </>}
             </div>
-            <div className="bh-modal-actions">{bulkToolsMode === "menu" ? <button type="button" className="bh-secondary-button" onClick={() => setBulkToolsModal(null)}>CLOSE</button> : <><button type="button" className="bh-secondary-button" onClick={() => setBulkToolsMode("menu")}>BACK</button><button type="button" className="bh-primary-button" disabled={bulkToolsSaving || !bulkSelectedBHRows.length} onClick={saveBHMultiChange}>{bulkToolsSaving ? "PROCESSING..." : "SAVE BULK CHANGE"}</button></>}</div>
+            <div className="bh-modal-actions">{bulkToolsMode === "menu" ? <button type="button" className="bh-secondary-button" onClick={() => setBulkToolsModal(null)}>CLOSE</button> : <><button type="button" className="bh-secondary-button" onClick={() => setBulkToolsMode("menu")}>BACK</button>{bulkToolsMode !== "points-override" ? <button type="button" className="bh-primary-button" disabled={bulkToolsSaving || !bulkSelectedBHRows.length} onClick={saveBHMultiChange}>{bulkToolsSaving ? "PROCESSING..." : "SAVE BULK CHANGE"}</button> : <div className="bh-bulk-point-footer-info">INDIVIDUAL SAVE MODE — USE SAVE BESIDE EACH PLAYER</div>}</>}</div>
           </div>
         </div>
       )}
