@@ -2003,6 +2003,16 @@ function AttendancePlayerFilter({
 ========================================================= */
 
 export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
+  // Class icon helper used by the Edit Player modal and BH player views.
+  const classIcon = (className) => ({
+    Swordman: swordmanIcon,
+    Archer: archerIcon,
+    Gunner: gunnerIcon,
+    Shaman: shamanIcon,
+    Extreme: extremeIcon,
+    Brawler: brawlerIcon,
+  }[className] || extremeIcon);
+
   const [
     currentUser,
     setCurrentUser,
@@ -3920,6 +3930,142 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
         };
       });
     }, [players, attendanceRows, rewardClaims, rewards]);
+
+  /* =========================================================
+     EDIT PLAYER — READ-ONLY PLAYER MANAGEMENT SUMMARY
+     The Edit Player modal is for ONE IGN only.  It does not edit
+     attendance, reward claims, or overall points directly.
+  ========================================================= */
+
+  const editingPlayerStats = useMemo(() => {
+    if (!editingPlayer) return null;
+    return playerStats.find((player) => String(player.id) === String(editingPlayer.id)) || null;
+  }, [editingPlayer, playerStats]);
+
+  const editingPlayerSonyaClaims = useMemo(() => {
+    if (!editingPlayer) return [];
+
+    const playerId = String(editingPlayer.id);
+    const rewardById = new Map(rewards.map((reward) => [String(reward.id), reward]));
+    const sonyaRewardIds = new Set(
+      rewards
+        .filter((reward) => normalizeBossId(reward?.bossId ?? reward?.boss ?? reward?.bossName) === "sonya")
+        .map((reward) => String(reward.id))
+    );
+    const sonyaRewardNames = new Set(
+      rewards
+        .filter((reward) => normalizeBossId(reward?.bossId ?? reward?.boss ?? reward?.bossName) === "sonya")
+        .flatMap((reward) => [clean(reward?.name).toLowerCase(), clean(reward?.rewardName).toLowerCase()])
+        .filter(Boolean)
+    );
+
+    const keys = new Set();
+    const claims = [];
+    const addClaim = (claim, fallbackKey) => {
+      const rewardId = clean(claim?.rewardId);
+      const key = rewardId ? `reward:${rewardId}` : (fallbackKey || `claim:${clean(claim?.id) || claims.length}`);
+      if (keys.has(key)) return;
+      keys.add(key);
+      claims.push(claim);
+    };
+
+    rewardClaims.forEach((claim) => {
+      if (String(claim?.playerId ?? "") !== playerId) return;
+      if (lower(claim?.status) === "cancelled") return;
+
+      const linkedReward = rewardById.get(String(claim?.rewardId ?? ""));
+      const claimBossId = normalizeBossId(claim?.bossId ?? claim?.boss ?? claim?.bossName);
+      const linkedBossId = normalizeBossId(linkedReward?.bossId ?? linkedReward?.boss ?? linkedReward?.bossName);
+      const claimRewardName = clean(claim?.rewardName ?? claim?.name).toLowerCase();
+      const isSonya = claimBossId === "sonya" || linkedBossId === "sonya" || sonyaRewardIds.has(String(claim?.rewardId ?? "")) || sonyaRewardNames.has(claimRewardName);
+      if (isSonya) addClaim(claim);
+    });
+
+    rewards.forEach((reward) => {
+      if (String(reward?.playerId ?? "") !== playerId) return;
+      if (lower(reward?.status) !== "claimed") return;
+      if (normalizeBossId(reward?.bossId ?? reward?.boss ?? reward?.bossName) !== "sonya") return;
+
+      addClaim({
+        id: `reward-${reward.id}`,
+        rewardId: String(reward.id),
+        rewardName: reward.name,
+        bossId: "sonya",
+        bossName: "Sonya",
+        playerId,
+        claimedAt: reward.updatedAt || reward.createdAt,
+        claimedBy: reward.updatedBy || reward.createdBy,
+        status: "claimed",
+      }, `reward:${String(reward.id)}`);
+    });
+
+    return claims.sort((a, b) => {
+      const aTime = safeToDate(a?.claimedAt)?.getTime() || safeToDate(a?.updatedAt)?.getTime() || safeToDate(a?.createdAt)?.getTime() || 0;
+      const bTime = safeToDate(b?.claimedAt)?.getTime() || safeToDate(b?.updatedAt)?.getTime() || safeToDate(b?.createdAt)?.getTime() || 0;
+      return bTime - aTime;
+    });
+  }, [editingPlayer, rewardClaims, rewards]);
+
+  const editingPlayerRecentActivity = useMemo(() => {
+    if (!editingPlayer) return [];
+
+    const playerId = String(editingPlayer.id);
+    const rows = [];
+
+    attendanceRows
+      .filter((row) => String(row?.playerId ?? "") === playerId)
+      .forEach((row) => {
+        const at = safeToDate(row?.updatedAt) || safeToDate(row?.spawnAt) || safeToDate(row?.createdAt);
+        if (!at) return;
+        rows.push({
+          id: `attendance-${row.id}`,
+          at,
+          type: row.manualOverride ? "Attendance Correction" : "Attendance",
+          details: bossLabel(row?.bossId ?? row?.boss ?? row?.bossName),
+          points: `${row.attended === false ? "0.00" : "+"}${safeNumber(row?.points, 0).toFixed(2)}`,
+          by: clean(row?.updatedBy) || "SYSTEM",
+        });
+      });
+
+    editingPlayerSonyaClaims.forEach((claim) => {
+      const at = safeToDate(claim?.claimedAt) || safeToDate(claim?.updatedAt) || safeToDate(claim?.createdAt);
+      if (!at) return;
+      rows.push({
+        id: `claim-${claim.id}`,
+        at,
+        type: "Reward Claim",
+        details: clean(claim?.rewardName ?? claim?.name) || "Sonya Weapon",
+        points: `-${SONYA_REWARD_COST.toFixed(2)}`,
+        by: clean(claim?.claimedBy ?? claim?.updatedBy ?? claim?.createdBy) || "SYSTEM",
+      });
+    });
+
+    guildNotices
+      .filter((notice) => String(notice?.playerId ?? "") === playerId)
+      .forEach((notice) => {
+        const at = safeToDate(notice?.createdAt) || safeToDate(notice?.updatedAt);
+        if (!at) return;
+        rows.push({
+          id: `notice-${notice.id}`,
+          at,
+          type: clean(notice?.action) || clean(notice?.title) || "Activity",
+          details: clean(notice?.message) || (Array.isArray(notice?.details) ? clean(notice.details[0]) : "Activity recorded"),
+          points: notice?.points == null ? "—" : `${safeNumber(notice.points, 0) >= 0 ? "+" : ""}${safeNumber(notice.points, 0).toFixed(2)}`,
+          by: clean(notice?.createdBy ?? notice?.updatedBy) || "SYSTEM",
+        });
+      });
+
+    const seen = new Set();
+    return rows
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .filter((row) => {
+        const key = `${row.type}|${row.details}|${row.at.getTime()}|${row.by}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 5);
+  }, [editingPlayer, attendanceRows, editingPlayerSonyaClaims, guildNotices]);
 
   const eligiblePlayers =
     useMemo(
@@ -10141,7 +10287,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
       )}
 
       {/* ===================================================
-          EDIT PLAYER MODAL
+          EDIT PLAYER MODAL — INDIVIDUAL PLAYER ONLY
       =================================================== */}
 
       {editingPlayer && (
@@ -10151,17 +10297,16 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
             if (e.target === e.currentTarget) setEditingPlayer(null);
           }}
         >
-          <div className="bh-modal bh-admin-edit-modal bh-edit-player-modal">
+          <div className="bh-modal bh-admin-edit-modal bh-edit-player-modal bh-edit-player-modal-v2">
             <div className="bh-edit-modal-header">
               <div className="bh-edit-modal-title-wrap">
                 <div className="bh-edit-modal-icon">♙</div>
                 <div>
                   <div className="bh-section-kicker">ADMIN</div>
                   <h2>Edit Player</h2>
-                  <p>Update the player's roster information.</p>
+                  <p>Manage this individual player's profile, BH summary and history.</p>
                 </div>
               </div>
-
               <button
                 type="button"
                 className="bh-modal-close"
@@ -10172,83 +10317,258 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
               </button>
             </div>
 
-            <div className="bh-edit-modal-body">
-              <div className="bh-edit-field-card bh-edit-field-full">
-                <div className="bh-edit-field-label">
-                  <span className="bh-edit-field-icon">♙</span>
-                  <span>
-                    <strong>IGN</strong>
-                    <small>In-game name</small>
-                  </span>
+            <div className="bh-edit-v2-body">
+              <section className="bh-edit-v2-profile-panel">
+                <div className="bh-edit-v2-section-title">
+                  <span>♙</span>
+                  <div><strong>PLAYER PROFILE</strong><small>Editable roster information for this IGN only.</small></div>
                 </div>
-                <input
-                  className="bh-input bh-edit-large-input"
-                  value={editingPlayer.ign || ""}
-                  onChange={(e) =>
-                    setEditingPlayer((current) => ({
-                      ...current,
-                      ign: e.target.value,
-                    }))
-                  }
-                  autoComplete="off"
-                />
-              </div>
 
-              <div className="bh-edit-field-grid">
-                <div className="bh-edit-field-card">
-                  <div className="bh-edit-field-label">
-                    <span className="bh-edit-field-icon">◈</span>
-                    <span>
-                      <strong>CLASS</strong>
-                      <small>Player class</small>
-                    </span>
+                <div className="bh-edit-v2-profile-grid">
+                  <div className="bh-edit-v2-field bh-edit-v2-field-wide">
+                    <label>IGN <small>In-game name</small></label>
+                    <input
+                      className="bh-input"
+                      value={editingPlayer.ign || ""}
+                      onChange={(e) => setEditingPlayer((current) => ({ ...current, ign: e.target.value }))}
+                      autoComplete="off"
+                    />
                   </div>
-                  <TypeSelect id="bh-edit-player-class" className="bh-input bh-edit-large-input" value={editingPlayer.class || ""} onChange={(value) => setEditingPlayer((current) => ({ ...current, class: value }))} options={CLASS_OPTIONS} placeholder="Type or select class..." />
-                </div>
 
-                <div className="bh-edit-field-card">
-                  <div className="bh-edit-field-label">
-                    <span className="bh-edit-field-icon">⚔</span>
-                    <span>
-                      <strong>WEAPON</strong>
-                      <small>Current weapon</small>
-                    </span>
+                  <div className="bh-edit-v2-field">
+                    <label>CLASS <small>Player class</small></label>
+                    <TypeSelect
+                      id="bh-edit-player-class-v2"
+                      className="bh-input"
+                      value={editingPlayer.class || ""}
+                      onChange={(value) => setEditingPlayer((current) => ({ ...current, class: value }))}
+                      options={CLASS_OPTIONS}
+                      placeholder="Type or select class..."
+                    />
                   </div>
-                  <input
-                    className="bh-input bh-edit-large-input"
-                    value={editingPlayer.weapon || ""}
-                    onChange={(e) =>
-                      setEditingPlayer((current) => ({
-                        ...current,
-                        weapon: e.target.value,
-                      }))
-                    }
-                    autoComplete="off"
-                  />
-                </div>
-              </div>
 
-              <div className="bh-edit-info-strip">
+                  <div className="bh-edit-v2-field">
+                    <label>WEAPON <small>Current weapon</small></label>
+                    <input
+                      className="bh-input"
+                      value={editingPlayer.weapon || ""}
+                      onChange={(e) => setEditingPlayer((current) => ({ ...current, weapon: e.target.value }))}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
+                <div className="bh-edit-v2-status-row">
+                  <div className="bh-edit-v2-player-mini">
+                    <img src={classIcon(editingPlayer.class)} alt="" />
+                    <div>
+                      <strong>{editingPlayer.ign || "Unknown Player"}</strong>
+                      <span>{clean(editingPlayer.class) || "Unspecified Class"}{editingPlayer.weapon ? ` • ${editingPlayer.weapon}` : ""}</span>
+                    </div>
+                  </div>
+                  <div className="bh-edit-v2-status-box">
+                    <span className={editingPlayer.active === false ? "bh-edit-v2-status-dot off" : "bh-edit-v2-status-dot"} />
+                    <div><small>ROSTER STATUS</small><strong>{editingPlayer.active === false ? "DISABLED" : "ACTIVE"}</strong></div>
+                    <button
+                      type="button"
+                      className={editingPlayer.active === false ? "bh-edit-v2-status-btn enable" : "bh-edit-v2-status-btn disable"}
+                      onClick={async () => {
+                        await togglePlayerActive(editingPlayer);
+                        setEditingPlayer((current) => current ? ({ ...current, active: current.active === false }) : current);
+                      }}
+                    >
+                      {editingPlayer.active === false ? "ENABLE PLAYER" : "DISABLE PLAYER"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="bh-edit-v2-section">
+                <div className="bh-edit-v2-section-title">
+                  <span>▥</span>
+                  <div><strong>BOSS HUNT SUMMARY</strong><small>Calculated from the existing BH attendance and reward records. Read only.</small></div>
+                </div>
+
+                <div className="bh-edit-v2-boss-grid">
+                  {DEFAULT_BOSS_LIST.filter((boss) => boss.id !== "override-boss").map((boss) => (
+                    <button
+                      type="button"
+                      key={boss.id}
+                      className="bh-edit-v2-boss-card"
+                      onClick={() => {
+                        setHistoryPlayer(editingPlayer);
+                        setHistoryPage(1);
+                        setHistorySearch(boss.name);
+                        setHistoryTab("attendance");
+                        setEditingPlayer(null);
+                      }}
+                    >
+                      <img src={bossImagePath(boss.id)} alt={`${boss.name} boss`} />
+                      <span>{boss.name}</span>
+                      <strong>{safeNumber(editingPlayerStats?.attendanceByBoss?.[boss.id], 0).toFixed(2)}</strong>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bh-edit-v2-total-row">
+                  <div><small>TOTAL OVERALL POINTS</small><strong>{safeNumber(editingPlayerStats?.points, 0).toFixed(2)}</strong></div>
+                  <div><small>SONYA CLAIMS</small><strong>{editingPlayerSonyaClaims.length}</strong></div>
+                  <div><small>POINTS DEDUCTED</small><strong className="danger">-{safeNumber(editingPlayerStats?.sonyaDeducted, 0).toFixed(2)}</strong></div>
+                  <div><small>CURRENT REWARD BALANCE</small><strong className="success">{safeNumber(editingPlayerStats?.available, 0).toFixed(2)}</strong></div>
+                </div>
+              </section>
+
+              <section className="bh-edit-v2-section">
+                <div className="bh-edit-v2-section-title">
+                  <span>⚔</span>
+                  <div><strong>SONYA WEAPONS CLAIMED</strong><small>Read-only claim ledger for this player.</small></div>
+                  <div className="bh-edit-v2-section-stat"><small>TOTAL CLAIMED</small><strong>{editingPlayerSonyaClaims.length}</strong></div>
+                </div>
+
+                {editingPlayerSonyaClaims.length ? (
+                  <div className="bh-edit-v2-claim-table-wrap">
+                    <table className="bh-edit-v2-claim-table">
+                      <thead><tr><th>#</th><th>WEAPON</th><th>CLAIMED DATE</th><th>CLAIMED BY</th></tr></thead>
+                      <tbody>
+                        {editingPlayerSonyaClaims.slice(0, 5).map((claim, index) => (
+                          <tr key={`${claim.id}-${index}`}>
+                            <td>{index + 1}</td>
+                            <td>{clean(claim?.rewardName ?? claim?.name) || "Sonya Weapon"}</td>
+                            <td>{formatDateTime(claim?.claimedAt || claim?.updatedAt || claim?.createdAt, effectiveTimezone)}</td>
+                            <td>{clean(claim?.claimedBy ?? claim?.updatedBy ?? claim?.createdBy) || "SYSTEM"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {editingPlayerSonyaClaims.length > 5 && <div className="bh-edit-v2-more-note">Showing the 5 most recent claims. Use FULL SONYA HISTORY for the complete ledger.</div>}
+                  </div>
+                ) : (
+                  <div className="bh-edit-v2-empty">NOT CLAIMED — No Sonya weapon claim is recorded for this player.</div>
+                )}
+
+                <button
+                  type="button"
+                  className="bh-edit-v2-link-btn purple"
+                  onClick={() => {
+                    setHistoryPlayer(editingPlayer);
+                    setHistoryPage(1);
+                    setHistorySearch("Sonya");
+                    setHistoryTab("rewards");
+                    setEditingPlayer(null);
+                  }}
+                >
+                  VIEW FULL SONYA HISTORY →
+                </button>
+              </section>
+
+              <section className="bh-edit-v2-section">
+                <div className="bh-edit-v2-section-title">
+                  <span>✦</span>
+                  <div><strong>ATTENDANCE &amp; POINTS</strong><small>Summary only. Use the existing individual points/attendance workflow to make changes.</small></div>
+                </div>
+                <div className="bh-edit-v2-attendance-grid">
+                  <div><small>CURRENT OVERALL POINTS</small><strong>{safeNumber(editingPlayerStats?.points, 0).toFixed(2)}</strong></div>
+                  <div><small>LAST ATTENDANCE</small><strong>{(() => {
+                    const rows = attendanceRows.filter((row) => String(row?.playerId ?? "") === String(editingPlayer.id));
+                    const latest = rows.map((row) => safeToDate(row?.spawnAt) || safeToDate(row?.updatedAt) || safeToDate(row?.createdAt)).filter(Boolean).sort((a, b) => b.getTime() - a.getTime())[0];
+                    return latest ? formatDateTime(latest, effectiveTimezone) : "—";
+                  })()}</strong></div>
+                  <div><small>LAST BOSS ATTENDED</small><strong>{(() => {
+                    const rows = attendanceRows.filter((row) => String(row?.playerId ?? "") === String(editingPlayer.id)).map((row) => ({ row, at: safeToDate(row?.spawnAt) || safeToDate(row?.updatedAt) || safeToDate(row?.createdAt) })).filter(x => x.at).sort((a, b) => b.at.getTime() - a.at.getTime());
+                    return rows[0] ? bossLabel(rows[0].row?.bossId ?? rows[0].row?.boss ?? rows[0].row?.bossName) : "—";
+                  })()}</strong></div>
+                </div>
+                <button
+                  type="button"
+                  className="bh-edit-v2-manage-btn"
+                  onClick={() => {
+                    const id = String(editingPlayer.id);
+                    setEditingPlayer(null);
+                    openBHMultiTools("points-override");
+                    setBulkToolsSelected([id]);
+                  }}
+                >
+                  MANAGE POINTS &amp; ATTENDANCE →
+                </button>
+                <div className="bh-edit-v2-help">This opens the existing individual points override tool with this IGN selected. It does not edit multiple players.</div>
+              </section>
+
+              <section className="bh-edit-v2-section">
+                <div className="bh-edit-v2-section-title">
+                  <span>◷</span>
+                  <div><strong>RECENT ACTIVITY</strong><small>Latest recorded activity for this individual player.</small></div>
+                </div>
+                {editingPlayerRecentActivity.length ? (
+                  <div className="bh-edit-v2-activity-table-wrap">
+                    <table className="bh-edit-v2-activity-table">
+                      <thead><tr><th>DATE &amp; TIME</th><th>TYPE</th><th>DETAILS</th><th>POINTS</th><th>BY</th></tr></thead>
+                      <tbody>
+                        {editingPlayerRecentActivity.map((row) => (
+                          <tr key={row.id}>
+                            <td>{formatDateTime(row.at, effectiveTimezone)}</td>
+                            <td><span className="bh-edit-v2-activity-badge">{row.type}</span></td>
+                            <td>{row.details}</td>
+                            <td className={String(row.points).startsWith("-") ? "danger" : "success"}>{row.points}</td>
+                            <td>{row.by}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="bh-edit-v2-empty">No recent activity recorded.</div>
+                )}
+                <button
+                  type="button"
+                  className="bh-edit-v2-link-btn"
+                  onClick={() => {
+                    setHistoryPlayer(editingPlayer);
+                    setHistoryPage(1);
+                    setHistorySearch("");
+                    setHistoryTab("all");
+                    setEditingPlayer(null);
+                  }}
+                >
+                  VIEW FULL HISTORY →
+                </button>
+              </section>
+
+              <section className="bh-edit-v2-danger">
+                <div><strong>DANGER ZONE</strong><small>Disable preserves the player's history. Delete is permanent.</small></div>
+                <div className="bh-edit-v2-danger-actions">
+                  <button
+                    type="button"
+                    className="bh-edit-v2-disable-btn"
+                    onClick={async () => {
+                      await togglePlayerActive(editingPlayer);
+                      setEditingPlayer((current) => current ? ({ ...current, active: current.active === false }) : current);
+                    }}
+                  >
+                    {editingPlayer.active === false ? "ENABLE PLAYER" : "DISABLE PLAYER"}
+                  </button>
+                  <button
+                    type="button"
+                    className="bh-edit-v2-delete-btn"
+                    onClick={() => {
+                      setDeletePlayerTarget(editingPlayer);
+                      setDeletePlayerPin("");
+                      setEditingPlayer(null);
+                    }}
+                  >
+                    DELETE PLAYER
+                  </button>
+                </div>
+              </section>
+
+              <div className="bh-edit-v2-info-strip">
                 <span>ADMIN ONLY</span>
-                <p>Changes are saved to the player roster immediately.</p>
+                <p>Profile changes below are saved to the roster. Attendance, points and reward claims remain in their dedicated audited workflows.</p>
               </div>
             </div>
 
             <div className="bh-edit-modal-footer">
-              <button
-                type="button"
-                className="bh-secondary-button"
-                onClick={() => setEditingPlayer(null)}
-              >
-                CANCEL
-              </button>
-              <button
-                type="button"
-                className="bh-primary-button bh-edit-save-button"
-                onClick={saveEditedPlayer}
-              >
-                ✓ SAVE PLAYER
-              </button>
+              <button type="button" className="bh-secondary-button" onClick={() => setEditingPlayer(null)}>CANCEL</button>
+              <button type="button" className="bh-primary-button bh-edit-save-button" onClick={saveEditedPlayer}>✓ SAVE PLAYER</button>
             </div>
           </div>
         </div>

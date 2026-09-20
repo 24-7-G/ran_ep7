@@ -21962,3 +21962,554 @@
         white-space: normal;
     }
 }
+
+
+/* =========================================================
+   EDIT PLAYER V2 — INDIVIDUAL PLAYER MANAGEMENT HUB
+   Append/import this file after BHPage.css.
+========================================================= */
+.bh-edit-player-modal-v2 {
+    width: min(1220px, calc(100vw - 48px)) !important;
+    max-width: 1220px !important;
+    max-height: calc(100vh - 48px) !important;
+    overflow: hidden !important;
+    background: #06131e !important;
+    border: 1px solid #1e526d !important;
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .72), 0 0 45px rgba(0, 174, 255, .08) !important;
+}
+
+.bh-edit-player-modal-v2 .bh-edit-modal-header {
+    padding: 22px 26px !important;
+    border-bottom: 1px solid #183c50 !important;
+    background: linear-gradient(180deg, rgba(9, 32, 47, .98), rgba(5, 20, 31, .98)) !important;
+}
+
+.bh-edit-v2-body {
+    padding: 18px 22px !important;
+    overflow-y: auto !important;
+    max-height: calc(100vh - 190px) !important;
+    display: grid;
+    gap: 14px;
+}
+
+.bh-edit-v2-section,
+.bh-edit-v2-profile-panel,
+.bh-edit-v2-danger {
+    border: 1px solid #1a4358;
+    border-radius: 11px;
+    background: linear-gradient(180deg, rgba(9, 29, 43, .96), rgba(5, 18, 28, .98));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .018);
+}
+
+.bh-edit-v2-profile-panel {
+    padding: 17px;
+}
+
+.bh-edit-v2-section {
+    padding: 16px;
+}
+
+.bh-edit-v2-section-title {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 13px;
+    color: #5edfff;
+}
+
+.bh-edit-v2-section-title>span {
+    width: 31px;
+    height: 31px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #007fae;
+    border-radius: 7px;
+    background: rgba(0, 185, 255, .06);
+    font-size: 15px;
+}
+
+.bh-edit-v2-section-title>div:not(.bh-edit-v2-section-stat) {
+    min-width: 0;
+}
+
+.bh-edit-v2-section-title strong {
+    display: block;
+    color: #dff7ff;
+    font-size: 13px;
+    letter-spacing: .08em;
+}
+
+.bh-edit-v2-section-title small {
+    display: block;
+    margin-top: 3px;
+    color: #7695a7;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.bh-edit-v2-section-stat {
+    margin-left: auto;
+    text-align: right;
+}
+
+.bh-edit-v2-section-stat strong {
+    color: #d46cff;
+    font-size: 22px;
+}
+
+.bh-edit-v2-profile-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr;
+    gap: 12px;
+}
+
+.bh-edit-v2-field-wide {
+    grid-column: span 1;
+}
+
+.bh-edit-v2-field label {
+    display: block;
+    margin: 0 0 7px;
+    color: #a9c7d6;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .13em;
+}
+
+.bh-edit-v2-field label small {
+    margin-left: 7px;
+    color: #5f7f91;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+.bh-edit-v2-field .bh-input {
+    min-height: 42px !important;
+}
+
+.bh-edit-v2-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 13px;
+    padding-top: 13px;
+    border-top: 1px solid rgba(50, 101, 126, .28);
+}
+
+.bh-edit-v2-player-mini {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.bh-edit-v2-player-mini img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+    padding: 6px;
+    border: 1px solid #1b5069;
+    border-radius: 9px;
+    background: #071925;
+}
+
+.bh-edit-v2-player-mini strong {
+    display: block;
+    color: #eefaff;
+    font-size: 14px;
+}
+
+.bh-edit-v2-player-mini span {
+    display: block;
+    margin-top: 3px;
+    color: #7695a7;
+    font-size: 10px;
+}
+
+.bh-edit-v2-status-box {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 11px;
+    border: 1px solid #214b60;
+    border-radius: 9px;
+    background: #071a27;
+}
+
+.bh-edit-v2-status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #2ee88d;
+    box-shadow: 0 0 12px rgba(46, 232, 141, .55);
+}
+
+.bh-edit-v2-status-dot.off {
+    background: #ff5c6c;
+    box-shadow: 0 0 12px rgba(255, 92, 108, .4);
+}
+
+.bh-edit-v2-status-box small {
+    display: block;
+    color: #6f8c9c;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .12em;
+}
+
+.bh-edit-v2-status-box strong {
+    display: block;
+    color: #e9f8ff;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.bh-edit-v2-status-btn {
+    margin-left: 8px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    border: 1px solid #49616e;
+    background: #091b27;
+    color: #d7ecf5;
+    font-size: 9px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.bh-edit-v2-status-btn.disable {
+    border-color: #a44a54;
+    color: #ff9da6;
+}
+
+.bh-edit-v2-status-btn.enable {
+    border-color: #2b8b67;
+    color: #6df2b0;
+}
+
+.bh-edit-v2-boss-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.bh-edit-v2-boss-card {
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #1a465d;
+    border-radius: 9px;
+    background: #071a27;
+    cursor: pointer;
+    text-align: left;
+}
+
+.bh-edit-v2-boss-card:hover {
+    border-color: #00bdf5;
+    transform: translateY(-1px);
+}
+
+.bh-edit-v2-boss-card img {
+    width: 100%;
+    height: 78px;
+    object-fit: cover;
+    display: block;
+    background: #06131d;
+}
+
+.bh-edit-v2-boss-card span {
+    display: block;
+    padding: 8px 9px 0;
+    color: #7fa8ba;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+.bh-edit-v2-boss-card strong {
+    display: block;
+    padding: 2px 9px 9px;
+    color: #43dcff;
+    font-size: 19px;
+}
+
+.bh-edit-v2-total-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 9px;
+    margin-top: 10px;
+}
+
+.bh-edit-v2-total-row>div,
+.bh-edit-v2-attendance-grid>div {
+    padding: 10px 12px;
+    border: 1px solid #1b4054;
+    border-radius: 8px;
+    background: #071925;
+}
+
+.bh-edit-v2-total-row small,
+.bh-edit-v2-attendance-grid small {
+    display: block;
+    color: #668596;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .08em;
+}
+
+.bh-edit-v2-total-row strong,
+.bh-edit-v2-attendance-grid strong {
+    display: block;
+    margin-top: 4px;
+    color: #eaf9ff;
+    font-size: 16px;
+}
+
+.bh-edit-v2-total-row strong.danger,
+.bh-edit-v2-activity-table .danger {
+    color: #ff6d86;
+}
+
+.bh-edit-v2-total-row strong.success,
+.bh-edit-v2-activity-table .success {
+    color: #55efac;
+}
+
+.bh-edit-v2-claim-table-wrap,
+.bh-edit-v2-activity-table-wrap {
+    overflow: auto;
+    border: 1px solid #173b4f;
+    border-radius: 8px;
+}
+
+.bh-edit-v2-claim-table,
+.bh-edit-v2-activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 680px;
+}
+
+.bh-edit-v2-claim-table th,
+.bh-edit-v2-claim-table td,
+.bh-edit-v2-activity-table th,
+.bh-edit-v2-activity-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(40, 82, 104, .38);
+    text-align: left;
+    font-size: 10px;
+}
+
+.bh-edit-v2-claim-table th,
+.bh-edit-v2-activity-table th {
+    color: #65c9e7;
+    background: #071c2a;
+    font-size: 8px;
+    letter-spacing: .1em;
+}
+
+.bh-edit-v2-claim-table td,
+.bh-edit-v2-activity-table td {
+    color: #bdd4df;
+}
+
+.bh-edit-v2-claim-table tr:last-child td,
+.bh-edit-v2-activity-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.bh-edit-v2-more-note {
+    padding: 8px 10px;
+    color: #6d8b9b;
+    font-size: 9px;
+}
+
+.bh-edit-v2-empty {
+    padding: 13px;
+    border: 1px dashed #285064;
+    border-radius: 8px;
+    color: #7897a8;
+    background: #061722;
+    font-size: 10px;
+}
+
+.bh-edit-v2-link-btn,
+.bh-edit-v2-manage-btn {
+    margin-top: 10px;
+    border: 1px solid #147fa6;
+    border-radius: 7px;
+    padding: 9px 12px;
+    background: #082337;
+    color: #62ddff;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    cursor: pointer;
+}
+
+.bh-edit-v2-link-btn:hover,
+.bh-edit-v2-manage-btn:hover {
+    border-color: #00c8ff;
+    background: #0a2e43;
+}
+
+.bh-edit-v2-link-btn.purple {
+    border-color: #8a4bc1;
+    color: #db9aff;
+    background: #1a1027;
+}
+
+.bh-edit-v2-attendance-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 9px;
+}
+
+.bh-edit-v2-help {
+    margin-top: 7px;
+    color: #638294;
+    font-size: 9px;
+    line-height: 1.4;
+}
+
+.bh-edit-v2-activity-badge {
+    display: inline-block;
+    padding: 4px 6px;
+    border: 1px solid #2c6d88;
+    border-radius: 5px;
+    color: #75dcff;
+    background: #092334;
+    font-size: 8px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.bh-edit-v2-danger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 14px 16px;
+    border-color: #66343c;
+    background: linear-gradient(180deg, rgba(38, 14, 20, .62), rgba(22, 9, 14, .72));
+}
+
+.bh-edit-v2-danger strong {
+    display: block;
+    color: #ff8b98;
+    font-size: 11px;
+    letter-spacing: .12em;
+}
+
+.bh-edit-v2-danger small {
+    display: block;
+    margin-top: 4px;
+    color: #916873;
+    font-size: 9px;
+}
+
+.bh-edit-v2-danger-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.bh-edit-v2-disable-btn,
+.bh-edit-v2-delete-btn {
+    padding: 9px 12px;
+    border-radius: 7px;
+    font-size: 9px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.bh-edit-v2-disable-btn {
+    border: 1px solid #9a7a30;
+    color: #f2d269;
+    background: #211a0a;
+}
+
+.bh-edit-v2-delete-btn {
+    border: 1px solid #a94550;
+    color: #ff8a96;
+    background: #250e13;
+}
+
+.bh-edit-v2-info-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #19455b;
+    border-radius: 8px;
+    background: #071b28;
+}
+
+.bh-edit-v2-info-strip span {
+    padding: 4px 6px;
+    border: 1px solid #008db9;
+    border-radius: 4px;
+    color: #52ddff;
+    font-size: 8px;
+    font-weight: 900;
+}
+
+.bh-edit-v2-info-strip p {
+    margin: 0;
+    color: #6e8b9d;
+    font-size: 9px;
+    line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+    .bh-edit-player-modal-v2 {
+        width: calc(100vw - 20px) !important;
+        max-height: calc(100vh - 20px) !important;
+    }
+
+    .bh-edit-v2-profile-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .bh-edit-v2-field-wide {
+        grid-column: 1 / -1;
+    }
+
+    .bh-edit-v2-boss-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bh-edit-v2-total-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .bh-edit-v2-status-row,
+    .bh-edit-v2-danger {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 620px) {
+
+    .bh-edit-v2-profile-grid,
+    .bh-edit-v2-attendance-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bh-edit-v2-boss-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .bh-edit-v2-total-row {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .bh-edit-v2-danger-actions {
+        width: 100%;
+    }
+
+    .bh-edit-v2-danger-actions button {
+        flex: 1;
+    }
+}
