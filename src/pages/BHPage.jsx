@@ -81,6 +81,7 @@ const DEFAULT_BOSS_LIST = BH_BOSSES?.length
     { id: "geomancer", name: "Geomancer", points: 0.2 },
     { id: "reflector", name: "Reflector", points: 0.2 },
     { id: "giant-hawk", name: "Giant Hawk", points: 0.2 },
+    { id: "override-boss", name: "override-boss", points: 0 },
   ];
 
 const CLASS_OPTIONS =
@@ -3724,10 +3725,21 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
           attendanceByBoss[bossId] += safeNumber(row.points, 0);
         });
 
-        const earned = Object.values(attendanceByBoss).reduce(
+        const calculatedEarned = Object.values(attendanceByBoss).reduce(
           (sum, points) => sum + safeNumber(points, 0),
           0
         );
+
+        // Admin overall-points override changes the lifetime TOTAL POINTS
+        // without rewriting individual attendance records. Sonya deductions
+        // are still applied after the override.
+        const hasOverallPointsOverride =
+          player?.bhOverallPointsOverrideActive === true &&
+          player?.bhOverallPointsOverride != null;
+
+        const earned = hasOverallPointsOverride
+          ? Math.max(0, safeNumber(player.bhOverallPointsOverride, calculatedEarned))
+          : calculatedEarned;
 
         const rewardById = new Map(
           rewards.map((reward) => [String(reward.id), reward])
@@ -3867,6 +3879,11 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
         return {
           ...player,
           points: earned,
+          calculatedPoints: calculatedEarned,
+          hasOverallPointsOverride,
+          overallPointsOverride: hasOverallPointsOverride
+            ? safeNumber(player.bhOverallPointsOverride, earned)
+            : null,
           claimed: sonyaDeducted,
           sonyaClaimsCount,
           sonyaDeducted,
@@ -4414,8 +4431,8 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
         const name = occurrence.bossName || bossLabel(occurrence.bossId);
         bossCounts.set(name, (bossCounts.get(name) || 0) + 1);
       });
-      const bossSummary = Array.from(bossCounts.entries()).map(([name, count]) => `${name}: ${count}`).join(", " );
-      const playerSummary = Array.from(new Set(pending.map(x => x.player.ign))).slice(0, 20).join(", " );
+      const bossSummary = Array.from(bossCounts.entries()).map(([name, count]) => `${name}: ${count}`).join(", ");
+      const playerSummary = Array.from(new Set(pending.map(x => x.player.ign))).slice(0, 20).join(", ");
 
       await createGuildNotice({
         title: "Boss Hunt Bulk Attendance Recorded",
@@ -6154,55 +6171,118 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
 
   const bulkBHRows = useMemo(() => {
     let rows;
-    if (["player-edit","player-disable","player-delete"].includes(bulkToolsMode)) {
-      rows = players.map(p => ({id:String(p.id),kind:"player",player:p,ign:clean(p.ign),className:clean(p.className||p.class),weapon:clean(p.weapon),dateKey:"",timeKey:"",sortAt:safeToDate(p.updatedAt||p.createdAt)?.getTime()||0,recordLabel:"PLAYER PROFILE",value:p.active===false?"DISABLED":"ACTIVE",status:p.active===false?"DISABLED":"ACTIVE"}));
-    } else if (["reward-edit","reward-delete"].includes(bulkToolsMode)) {
-      rows = rewards.map(r => { const at=safeToDate(r.updatedAt)||safeToDate(r.createdAt); return {id:String(r.id),kind:"reward",reward:r,ign:clean(r.playerName)||"UNASSIGNED",className:clean(r.weaponClass),weapon:clean(r.name),dateKey:at?dateKeyFromDate(at,effectiveTimezone):"",timeKey:at?timeKeyFromDate(at,effectiveTimezone):"",sortAt:at?.getTime()||0,recordLabel:`${bossLabel(r.bossId)} • ${clean(r.name)||"REWARD"}`,value:clean(r.status)||"available",status:(clean(r.status)||"available").toUpperCase()}; });
-    } else if (["claim-edit","claim-delete"].includes(bulkToolsMode)) {
-      rows = rewardClaims.filter(c=>lower(c.status)!=="cancelled").map(c=>{ const at=safeToDate(c.claimedAt)||safeToDate(c.updatedAt)||safeToDate(c.createdAt); const reward=rewards.find(r=>String(r.id)===String(c.rewardId||"")); return {id:String(c.id),kind:"claim",claim:c,reward,ign:clean(c.playerName),className:clean(c.weaponClass),weapon:clean(c.rewardName||reward?.name),dateKey:at?dateKeyFromDate(at,effectiveTimezone):"",timeKey:at?timeKeyFromDate(at,effectiveTimezone):"",sortAt:at?.getTime()||0,recordLabel:`${bossLabel(c.bossId||reward?.bossId)} • ${clean(c.rewardName||reward?.name)||"CLAIM"}`,value:`${safeNumber(c.points,0).toFixed(2)} pts`,status:(clean(c.status)||"claimed").toUpperCase()}; });
+    if (["player-edit", "player-disable", "player-delete", "points-override"].includes(bulkToolsMode)) {
+      rows = players.map(p => {
+        const stat = playerStats.find(s => String(s.id) === String(p.id));
+        const overallPoints = safeNumber(stat?.points, 0);
+        const overrideActive = stat?.hasOverallPointsOverride === true;
+        return {
+          id: String(p.id),
+          kind: "player",
+          player: p,
+          ign: clean(p.ign),
+          className: clean(p.className || p.class),
+          weapon: clean(p.weapon),
+          dateKey: "",
+          timeKey: "",
+          sortAt: safeToDate(p.updatedAt || p.createdAt)?.getTime() || 0,
+          recordLabel: bulkToolsMode === "points-override" ? "OVERALL POINTS" : "PLAYER PROFILE",
+          value: bulkToolsMode === "points-override"
+            ? `${overallPoints.toFixed(2)} pts${overrideActive ? " • OVERRIDE" : ""}`
+            : (p.active === false ? "DISABLED" : "ACTIVE"),
+          status: bulkToolsMode === "points-override"
+            ? (overrideActive ? "OVERRIDDEN" : "CALCULATED")
+            : (p.active === false ? "DISABLED" : "ACTIVE"),
+          overallPoints,
+          overrideActive,
+        };
+      });
+    } else if (["reward-edit", "reward-delete"].includes(bulkToolsMode)) {
+      rows = rewards.map(r => { const at = safeToDate(r.updatedAt) || safeToDate(r.createdAt); return { id: String(r.id), kind: "reward", reward: r, ign: clean(r.playerName) || "UNASSIGNED", className: clean(r.weaponClass), weapon: clean(r.name), dateKey: at ? dateKeyFromDate(at, effectiveTimezone) : "", timeKey: at ? timeKeyFromDate(at, effectiveTimezone) : "", sortAt: at?.getTime() || 0, recordLabel: `${bossLabel(r.bossId)} • ${clean(r.name) || "REWARD"}`, value: clean(r.status) || "available", status: (clean(r.status) || "available").toUpperCase() }; });
+    } else if (["claim-edit", "claim-delete"].includes(bulkToolsMode)) {
+      rows = rewardClaims.filter(c => lower(c.status) !== "cancelled").map(c => { const at = safeToDate(c.claimedAt) || safeToDate(c.updatedAt) || safeToDate(c.createdAt); const reward = rewards.find(r => String(r.id) === String(c.rewardId || "")); return { id: String(c.id), kind: "claim", claim: c, reward, ign: clean(c.playerName), className: clean(c.weaponClass), weapon: clean(c.rewardName || reward?.name), dateKey: at ? dateKeyFromDate(at, effectiveTimezone) : "", timeKey: at ? timeKeyFromDate(at, effectiveTimezone) : "", sortAt: at?.getTime() || 0, recordLabel: `${bossLabel(c.bossId || reward?.bossId)} • ${clean(c.rewardName || reward?.name) || "CLAIM"}`, value: `${safeNumber(c.points, 0).toFixed(2)} pts`, status: (clean(c.status) || "claimed").toUpperCase() }; });
     } else {
-      rows = attendanceRows.map(r=>{ const at=safeToDate(r.spawnAt)||safeToDate(r.updatedAt)||safeToDate(r.createdAt); const p=players.find(x=>String(x.id)===String(r.playerId)); return {id:String(r.id),kind:"attendance",row:r,player:p,ign:clean(r.playerName||p?.ign),className:clean(p?.className||p?.class),weapon:clean(r.bossName||bossLabel(r.bossId)),dateKey:attendanceDate(r,effectiveTimezone),timeKey:clean(r.timeKey)||(at?timeKeyFromDate(at,effectiveTimezone):""),sortAt:at?.getTime()||0,recordLabel:`${bossLabel(r.bossId)} • ${r.manualOverride?"CORRECTION":"SCHEDULED"}`,value:`+${safeNumber(r.points,0).toFixed(2)} pts`,status:r.attended===false?"DID NOT ATTEND":"ATTENDED"}; });
+      rows = attendanceRows.map(r => { const at = safeToDate(r.spawnAt) || safeToDate(r.updatedAt) || safeToDate(r.createdAt); const p = players.find(x => String(x.id) === String(r.playerId)); return { id: String(r.id), kind: "attendance", row: r, player: p, ign: clean(r.playerName || p?.ign), className: clean(p?.className || p?.class), weapon: clean(r.bossName || bossLabel(r.bossId)), dateKey: attendanceDate(r, effectiveTimezone), timeKey: clean(r.timeKey) || (at ? timeKeyFromDate(at, effectiveTimezone) : ""), sortAt: at?.getTime() || 0, recordLabel: `${bossLabel(r.bossId)} • ${r.manualOverride ? "CORRECTION" : "SCHEDULED"}`, value: `+${safeNumber(r.points, 0).toFixed(2)} pts`, status: r.attended === false ? "DID NOT ATTEND" : "ATTENDED" }; });
     }
-    return rows.sort((a,b)=>(b.sortAt||0)-(a.sortAt||0)||lower(a.ign).localeCompare(lower(b.ign),undefined,{numeric:true,sensitivity:"base"}));
-  },[bulkToolsMode,players,attendanceRows,rewards,rewardClaims,effectiveTimezone]);
+    return rows.sort((a, b) => (b.sortAt || 0) - (a.sortAt || 0) || lower(a.ign).localeCompare(lower(b.ign), undefined, { numeric: true, sensitivity: "base" }));
+  }, [bulkToolsMode, players, playerStats, attendanceRows, rewards, rewardClaims, effectiveTimezone]);
 
-  const filteredBHMultiRows = useMemo(()=>{ const q=lower(bulkToolsSearch); return bulkBHRows.filter(x=>{ if(bulkToolsFrom&&x.dateKey&&x.dateKey<bulkToolsFrom)return false; if(bulkToolsTo&&x.dateKey&&x.dateKey>bulkToolsTo)return false; return !q||[x.ign,x.className,x.weapon,x.dateKey,x.timeKey,x.recordLabel,x.value,x.status].some(v=>lower(v).includes(q)); }); },[bulkBHRows,bulkToolsFrom,bulkToolsTo,bulkToolsSearch]);
-  const bulkBHPageCount=Math.max(1,Math.ceil(filteredBHMultiRows.length/5));
-  const bulkBHSafePage=Math.min(Math.max(1,bulkToolsPage),bulkBHPageCount);
-  const bulkBHVisibleRows=filteredBHMultiRows.slice((bulkBHSafePage-1)*5,bulkBHSafePage*5);
-  const toggleBHMultiSelection=id=>setBulkToolsSelected(cur=>cur.includes(String(id))?cur.filter(x=>x!==String(id)):[...cur,String(id)]);
-  const toggleBHMultiPage=()=>{const ids=bulkBHVisibleRows.map(x=>String(x.id));setBulkToolsSelected(cur=>ids.length&&ids.every(id=>cur.includes(id))?cur.filter(id=>!ids.includes(id)):Array.from(new Set([...cur,...ids])))};
-  const bulkSelectedBHRows=bulkBHRows.filter(x=>bulkToolsSelected.includes(String(x.id)));
+  const filteredBHMultiRows = useMemo(() => { const q = lower(bulkToolsSearch); return bulkBHRows.filter(x => { if (bulkToolsFrom && x.dateKey && x.dateKey < bulkToolsFrom) return false; if (bulkToolsTo && x.dateKey && x.dateKey > bulkToolsTo) return false; return !q || [x.ign, x.className, x.weapon, x.dateKey, x.timeKey, x.recordLabel, x.value, x.status].some(v => lower(v).includes(q)); }); }, [bulkBHRows, bulkToolsFrom, bulkToolsTo, bulkToolsSearch]);
+  const bulkBHPageCount = Math.max(1, Math.ceil(filteredBHMultiRows.length / 5));
+  const bulkBHSafePage = Math.min(Math.max(1, bulkToolsPage), bulkBHPageCount);
+  const bulkBHVisibleRows = filteredBHMultiRows.slice((bulkBHSafePage - 1) * 5, bulkBHSafePage * 5);
+  const toggleBHMultiSelection = id => setBulkToolsSelected(cur => cur.includes(String(id)) ? cur.filter(x => x !== String(id)) : [...cur, String(id)]);
+  const toggleBHMultiPage = () => { const ids = bulkBHVisibleRows.map(x => String(x.id)); setBulkToolsSelected(cur => ids.length && ids.every(id => cur.includes(id)) ? cur.filter(id => !ids.includes(id)) : Array.from(new Set([...cur, ...ids]))) };
+  const bulkSelectedBHRows = bulkBHRows.filter(x => bulkToolsSelected.includes(String(x.id)));
 
-  const saveBHMultiChange=async()=>{
-    if(!isAdmin||bulkToolsSaving)return;
-    if(!bulkSelectedBHRows.length){setBulkToolsError("Select one or more EXISTING records from the table.");return;}
-    if(!clean(bulkToolsComment)){setBulkToolsError("Admin comment is required for every bulk modification.");return;}
-    if(bulkToolsMode==="player-delete"&&bulkToolsPin!=="12345"){setBulkToolsError("Incorrect delete PIN.");return;}
-    if(bulkToolsMode==="attendance-edit"&&bulkToolsPoints!==""&&safeNumber(bulkToolsPoints,-1)<0){setBulkToolsError("Attendance points cannot be negative.");return;}
-    if(bulkToolsMode==="player-edit"&&!clean(bulkToolsClass)&&bulkToolsWeapon===""){setBulkToolsError("Choose at least one player field to change.");return;}
-    setBulkToolsSaving(true);setBulkToolsError("");
-    try{
-      for(let start=0;start<bulkSelectedBHRows.length;start+=400){
-        const batch=writeBatch(db); const rows=bulkSelectedBHRows.slice(start,start+400);
-        for(const x of rows){
-          if(bulkToolsMode==="attendance-edit"){ if(!x.row)throw new Error(`${x.ign}: saved attendance record is missing.`); batch.update(doc(db,"bhAttendance",x.row.id),{...(bulkToolsPoints!==""?{points:safeNumber(bulkToolsPoints,0)}:{}),comment:clean(bulkToolsComment),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null}); }
-          else if(bulkToolsMode==="attendance-delete"||bulkToolsMode==="attendance-redo"){if(!x.row)throw new Error(`${x.ign}: saved attendance record is missing.`);batch.delete(doc(db,"bhAttendance",x.row.id));}
-          else if(bulkToolsMode==="player-edit"){const p=x.player;const cls=clean(bulkToolsClass)||clean(p.className||p.class);batch.update(doc(db,"players",p.id),{...(cls?{class:cls,className:cls}:{}),...(bulkToolsWeapon!==""?{weapon:clean(bulkToolsWeapon)}:{}),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
-          else if(bulkToolsMode==="player-disable"){batch.update(doc(db,"players",x.player.id),{active:false,status:"disabled",updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
-          else if(bulkToolsMode==="player-delete"){batch.delete(doc(db,"players",x.player.id));}
-          else if(bulkToolsMode==="reward-edit"){batch.update(doc(db,"bhRewards",x.reward.id),{status:clean(bulkToolsStatus)||clean(x.reward.status)||"available",notes:bulkToolsNotes!==""?clean(bulkToolsNotes):clean(x.reward.notes),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName()});}
-          else if(bulkToolsMode==="reward-delete"){if(rewardClaims.some(c=>String(c.rewardId||"")===String(x.reward.id)))throw new Error(`${x.weapon}: has claim history and cannot be deleted. Disable it instead.`);batch.delete(doc(db,"bhRewards",x.reward.id));}
-          else if(bulkToolsMode==="claim-edit"){batch.update(doc(db,"bhRewardClaims",x.claim.id),{notes:bulkToolsNotes!==""?clean(bulkToolsNotes):clean(x.claim.notes),updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}
-          else if(bulkToolsMode==="claim-delete"){batch.delete(doc(db,"bhRewardClaims",x.claim.id));if(x.claim.rewardId){const reward=rewards.find(r=>String(r.id)===String(x.claim.rewardId));if(reward)batch.update(doc(db,"bhRewards",reward.id),{status:"available",updatedAt:serverTimestamp(),updatedBy:getCurrentUpdaterName(),updatedByUid:currentUser?.uid||null});}}
+  const saveBHMultiChange = async () => {
+    if (!isAdmin || bulkToolsSaving) return;
+    if (!bulkSelectedBHRows.length) { setBulkToolsError("Select one or more EXISTING records from the table."); return; }
+    if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for every bulk modification."); return; }
+    if (bulkToolsMode === "player-delete" && bulkToolsPin !== "12345") { setBulkToolsError("Incorrect delete PIN."); return; }
+    if (bulkToolsMode === "attendance-edit" && bulkToolsPoints !== "" && safeNumber(bulkToolsPoints, -1) < 0) { setBulkToolsError("Attendance points cannot be negative."); return; }
+    if (bulkToolsMode === "points-override" && (bulkToolsPoints === "" || !Number.isFinite(safeNumber(bulkToolsPoints, NaN)) || safeNumber(bulkToolsPoints, -1) < 0)) { setBulkToolsError("Overall points must be a valid number greater than or equal to 0."); return; }
+    if (bulkToolsMode === "player-edit" && !clean(bulkToolsClass) && bulkToolsWeapon === "") { setBulkToolsError("Choose at least one player field to change."); return; }
+    setBulkToolsSaving(true); setBulkToolsError("");
+    try {
+      for (let start = 0; start < bulkSelectedBHRows.length; start += 400) {
+        const batch = writeBatch(db); const rows = bulkSelectedBHRows.slice(start, start + 400);
+        for (const x of rows) {
+          if (bulkToolsMode === "attendance-edit") { if (!x.row) throw new Error(`${x.ign}: saved attendance record is missing.`); batch.update(doc(db, "bhAttendance", x.row.id), { ...(bulkToolsPoints !== "" ? { points: safeNumber(bulkToolsPoints, 0) } : {}), comment: clean(bulkToolsComment), updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null }); }
+          else if (bulkToolsMode === "points-override") {
+            const newOverallPoints = safeNumber(bulkToolsPoints, 0);
+            batch.update(doc(db, "players", x.player.id), {
+              bhOverallPointsOverride: newOverallPoints,
+              bhOverallPointsOverrideActive: true,
+              bhOverallPointsOverrideAt: serverTimestamp(),
+              bhOverallPointsOverrideBy: getCurrentUpdaterName(),
+              bhOverallPointsOverrideByUid: currentUser?.uid || null,
+              bhOverallPointsOverrideComment: clean(bulkToolsComment),
+              updatedAt: serverTimestamp(),
+              updatedBy: getCurrentUpdaterName(),
+              updatedByUid: currentUser?.uid || null
+            });
+          }
+          else if (bulkToolsMode === "attendance-delete" || bulkToolsMode === "attendance-redo") { if (!x.row) throw new Error(`${x.ign}: saved attendance record is missing.`); batch.delete(doc(db, "bhAttendance", x.row.id)); }
+          else if (bulkToolsMode === "player-edit") { const p = x.player; const cls = clean(bulkToolsClass) || clean(p.className || p.class); batch.update(doc(db, "players", p.id), { ...(cls ? { class: cls, className: cls } : {}), ...(bulkToolsWeapon !== "" ? { weapon: clean(bulkToolsWeapon) } : {}), updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null }); }
+          else if (bulkToolsMode === "player-disable") { batch.update(doc(db, "players", x.player.id), { active: false, status: "disabled", updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null }); }
+          else if (bulkToolsMode === "player-delete") { batch.delete(doc(db, "players", x.player.id)); }
+          else if (bulkToolsMode === "reward-edit") { batch.update(doc(db, "bhRewards", x.reward.id), { status: clean(bulkToolsStatus) || clean(x.reward.status) || "available", notes: bulkToolsNotes !== "" ? clean(bulkToolsNotes) : clean(x.reward.notes), updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName() }); }
+          else if (bulkToolsMode === "reward-delete") { if (rewardClaims.some(c => String(c.rewardId || "") === String(x.reward.id))) throw new Error(`${x.weapon}: has claim history and cannot be deleted. Disable it instead.`); batch.delete(doc(db, "bhRewards", x.reward.id)); }
+          else if (bulkToolsMode === "claim-edit") { batch.update(doc(db, "bhRewardClaims", x.claim.id), { notes: bulkToolsNotes !== "" ? clean(bulkToolsNotes) : clean(x.claim.notes), updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null }); }
+          else if (bulkToolsMode === "claim-delete") { batch.delete(doc(db, "bhRewardClaims", x.claim.id)); if (x.claim.rewardId) { const reward = rewards.find(r => String(r.id) === String(x.claim.rewardId)); if (reward) batch.update(doc(db, "bhRewards", reward.id), { status: "available", updatedAt: serverTimestamp(), updatedBy: getCurrentUpdaterName(), updatedByUid: currentUser?.uid || null }); } }
         }
         await batch.commit();
       }
-      const labels={"attendance-edit":"attendance records corrected","attendance-delete":"attendance records deleted","attendance-redo":"attendance records removed for redo","player-edit":"player profiles updated","player-disable":"players disabled","player-delete":"player profiles deleted","reward-edit":"rewards updated","reward-delete":"rewards deleted","claim-edit":"reward claims updated","claim-delete":"reward claims deleted and linked rewards restored"};
-      const title=`BH BULK ${bulkToolsMode.replaceAll("-"," ").toUpperCase()}`;
-      await createGuildNotice({title,message:`${bulkSelectedBHRows.length} existing ${labels[bulkToolsMode]||"records"}.`,type:bulkToolsMode.includes("delete")?"warning":"info",module:"bh-attendance",action:title,entityType:"bh-bulk-management",entityId:bulkSelectedBHRows.map(x=>x.id).join(","),details:[`Records changed: ${bulkSelectedBHRows.length}`,`Exact record IDs: ${bulkSelectedBHRows.map(x=>x.id).join(", ")}`,`Dates targeted: ${Array.from(new Set(bulkSelectedBHRows.map(x=>x.dateKey).filter(Boolean))).join(", ")||"record-specific saved dates only"}`,`Admin comment: ${clean(bulkToolsComment)}`,`Changed by: ${getCurrentUpdaterName()}`]});
-      setBulkToolsModal(null);setSuccess(`${bulkSelectedBHRows.length} existing record${bulkSelectedBHRows.length===1?"":"s"} processed. No new record was created.`);await loadAllData();await reloadGuildNotices();
-    }catch(err){console.error(err);setBulkToolsError(err?.message||"Bulk change failed.");}finally{setBulkToolsSaving(false);}
+      const labels = { "attendance-edit": "attendance records corrected", "attendance-delete": "attendance records deleted", "attendance-redo": "attendance records removed for redo", "player-edit": "player profiles updated", "player-disable": "players disabled", "player-delete": "player profiles deleted", "points-override": "players given an overall points override", "reward-edit": "rewards updated", "reward-delete": "rewards deleted", "claim-edit": "reward claims updated", "claim-delete": "reward claims deleted and linked rewards restored" };
+      const title = `BH BULK ${bulkToolsMode.replaceAll("-", " ").toUpperCase()}`;
+      const isPointsOverride = bulkToolsMode === "points-override";
+      const overridePointsValue = isPointsOverride ? safeNumber(bulkToolsPoints, 0) : null;
+      await createGuildNotice({
+        title,
+        message: isPointsOverride
+          ? `${bulkSelectedBHRows.length} player overall point balance${bulkSelectedBHRows.length === 1 ? "" : "s"} overridden to ${overridePointsValue.toFixed(2)} points.`
+          : `${bulkSelectedBHRows.length} existing ${labels[bulkToolsMode] || "records"}.`,
+        type: bulkToolsMode.includes("delete") ? "warning" : "info",
+        module: isPointsOverride ? "bh-scoring" : "bh-attendance",
+        action: title,
+        entityType: isPointsOverride ? "bh-points-override" : "bh-bulk-management",
+        entityId: bulkSelectedBHRows.map(x => x.id).join(","),
+        points: isPointsOverride ? overridePointsValue : null,
+        details: [
+          `Records changed: ${bulkSelectedBHRows.length}`,
+          ...(isPointsOverride ? bulkSelectedBHRows.map(x => `${x.ign}: ${safeNumber(x.overallPoints, 0).toFixed(2)} → ${overridePointsValue.toFixed(2)} overall points`) : []),
+          `Exact record IDs: ${bulkSelectedBHRows.map(x => x.id).join(", ")}`,
+          `Dates targeted: ${Array.from(new Set(bulkSelectedBHRows.map(x => x.dateKey).filter(Boolean))).join(", ") || "player-level overall point override"}`,
+          `Admin comment: ${clean(bulkToolsComment)}`,
+          `Changed by: ${getCurrentUpdaterName()}`
+        ],
+        changes: isPointsOverride
+          ? bulkSelectedBHRows.map(x => `${x.ign}: overall points ${safeNumber(x.overallPoints, 0).toFixed(2)} → ${overridePointsValue.toFixed(2)}`)
+          : undefined
+      });
+      setBulkToolsModal(null); setSuccess(`${bulkSelectedBHRows.length} existing record${bulkSelectedBHRows.length === 1 ? "" : "s"} processed. No new record was created.`); await loadAllData(); await reloadGuildNotices();
+    } catch (err) { console.error(err); setBulkToolsError(err?.message || "Bulk change failed."); } finally { setBulkToolsSaving(false); }
   };
 
   /* =========================================================
@@ -7824,6 +7904,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
 
                         <td className="bh-v6-total-cell">
                           <strong>{safeNumber(player.points, 0).toFixed(2)}</strong>
+                          {player.hasOverallPointsOverride && <small title="Admin overall points override is active" style={{ display: "block", marginTop: 3, color: "#62e6ff", fontSize: 9, fontWeight: 800, letterSpacing: ".08em" }}>OVERRIDE</small>}
                         </td>
 
                         <td className="bh-v6-sonya-count-cell">
@@ -7848,6 +7929,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
                               <div className="bh-balance-status-card">
                                 <strong>{balance.toFixed(2)}</strong>
                                 <span>{eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</span>
+                                {player.hasOverallPointsOverride && <small style={{ display: "block", marginTop: 2, color: "#62e6ff", fontWeight: 800, fontSize: 9 }}>POINT OVERRIDE</small>}
                               </div>
                             </td>
                           );
@@ -9536,7 +9618,7 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
       )}
 
       {bulkAttendanceOpen && isAdmin && (
-        <div className="bh-modal-backdrop bh-bulk-attendance-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setBulkAttendanceOpen(false)}}>
+        <div className="bh-modal-backdrop bh-bulk-attendance-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setBulkAttendanceOpen(false) }}>
           <div className="bh-modal bh-bulk-attendance-modal" role="dialog" aria-modal="true" aria-labelledby="bh-bulk-attendance-title">
             <div className="bh-modal-header bh-bulk-attendance-header">
               <div>
@@ -9544,81 +9626,86 @@ export default function BHPage({ user: appUser, isAdmin: appIsAdmin }) {
                 <h2 id="bh-bulk-attendance-title">Bulk Add Attendance</h2>
                 <p className="bh-modal-subtitle">Select saved scheduled boss spawns and multiple existing roster players. Each player is checked per boss; already-recorded combinations are shown and skipped.</p>
               </div>
-              <button type="button" className="bh-modal-close" onClick={()=>setBulkAttendanceOpen(false)}>×</button>
+              <button type="button" className="bh-modal-close" onClick={() => setBulkAttendanceOpen(false)}>×</button>
             </div>
             <div className="bh-bulk-attendance-body">
               <section className="bh-bulk-attendance-card">
                 <div className="bh-bulk-attendance-card-head"><div><span>1 • SCHEDULED DATE</span><small>Only dates that already have scheduled boss spawns can be selected.</small></div><b>{bulkAttendanceDateOccurrences.length} SPAWNS</b></div>
-                <select value={bulkAttendanceDate} onChange={e=>{const d=e.target.value;setBulkAttendanceDate(d);setBulkAttendanceSpawns(scheduleOccurrences.filter(o=>o.dateKey===d).map(o=>o.occurrenceKey));setBulkAttendancePage(1)}}>
-                  {bulkAttendanceDateOptions.map(d=><option key={d} value={d}>{d}</option>)}
+                <select value={bulkAttendanceDate} onChange={e => { const d = e.target.value; setBulkAttendanceDate(d); setBulkAttendanceSpawns(scheduleOccurrences.filter(o => o.dateKey === d).map(o => o.occurrenceKey)); setBulkAttendancePage(1) }}>
+                  {bulkAttendanceDateOptions.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </section>
 
               <section className="bh-bulk-attendance-card">
                 <div className="bh-bulk-attendance-card-head"><div><span>2 • BOSS SPAWNS</span><small>Click a saved spawn to include it. Existing player records will be marked ATTENDED and not duplicated.</small></div><b>{bulkAttendanceSpawns.length} SELECTED</b></div>
                 <div className="bh-bulk-spawn-grid">
-                  {bulkAttendanceDateOccurrences.map(o=>{const checked=bulkAttendanceSpawns.includes(o.occurrenceKey);return <button type="button" key={o.occurrenceKey} className={`bh-bulk-spawn-chip ${checked?"is-selected":""}`} onClick={()=>setBulkAttendanceSpawns(cur=>cur.includes(o.occurrenceKey)?cur.filter(x=>x!==o.occurrenceKey):[...cur,o.occurrenceKey])}>
-                    <strong>{o.bossName || bossLabel(o.bossId)}</strong><span>{o.timeKey || "—"}</span><small>+{safeNumber(o.points,0).toFixed(2)} pts</small><i>{checked?"✓ SELECTED":"SELECT"}</i>
-                  </button>})}
-                  {!bulkAttendanceDateOccurrences.length&&<div className="bh-bulk-empty">No saved scheduled spawns exist for this date. No attendance record can be created from this date.</div>}
+                  {bulkAttendanceDateOccurrences.map(o => {
+                    const checked = bulkAttendanceSpawns.includes(o.occurrenceKey); return <button type="button" key={o.occurrenceKey} className={`bh-bulk-spawn-chip ${checked ? "is-selected" : ""}`} onClick={() => setBulkAttendanceSpawns(cur => cur.includes(o.occurrenceKey) ? cur.filter(x => x !== o.occurrenceKey) : [...cur, o.occurrenceKey])}>
+                      <strong>{o.bossName || bossLabel(o.bossId)}</strong><span>{o.timeKey || "—"}</span><small>+{safeNumber(o.points, 0).toFixed(2)} pts</small><i>{checked ? "✓ SELECTED" : "SELECT"}</i>
+                    </button>
+                  })}
+                  {!bulkAttendanceDateOccurrences.length && <div className="bh-bulk-empty">No saved scheduled spawns exist for this date. No attendance record can be created from this date.</div>}
                 </div>
               </section>
 
               <section className="bh-bulk-attendance-card">
                 <div className="bh-bulk-attendance-card-head"><div><span>3 • PLAYERS</span><small>Select existing active roster players. Attendance status is shown separately for every selected boss.</small></div><b>{bulkAttendancePlayers.length} SELECTED</b></div>
-                <div className="bh-bulk-player-toolbar"><input value={bulkAttendanceSearch} onChange={e=>{setBulkAttendanceSearch(e.target.value);setBulkAttendancePage(1)}} placeholder="Search IGN, class, preferred weapon..."/><select value={bulkAttendanceClassFilter} onChange={e=>{setBulkAttendanceClassFilter(e.target.value);setBulkAttendancePage(1)}}><option value="all">ALL CLASSES</option>{Array.from(new Set(players.filter(p=>p.active!==false).map(p=>clean(p.class||p.className)).filter(Boolean))).sort().map(c=><option key={c} value={c}>{c}</option>)}</select><select value={bulkAttendanceStatusFilter} onChange={e=>{setBulkAttendanceStatusFilter(e.target.value);setBulkAttendancePage(1)}}><option value="all">ALL ATTENDANCE</option><option value="not-attended">NOT ATTENDED</option><option value="attended">ALREADY ATTENDED</option><option value="partial">PARTIALLY ATTENDED</option></select><button type="button" onClick={toggleBHBulkPlayerPage}>{bulkAttendancePageRows.length&&bulkAttendancePageRows.every(p=>bulkAttendancePlayers.includes(String(p.id)))?"CLEAR PAGE":"SELECT PAGE"}</button><button type="button" onClick={()=>setBulkAttendancePlayers([])}>CLEAR</button></div>
-                <div className="bh-bulk-player-table-wrap"><table className="bh-bulk-player-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS</th>{bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o=><th key={o.occurrenceKey}>{o.bossName || bossLabel(o.bossId)}<small>{o.timeKey}</small></th>)}</tr></thead><tbody>
-                  {bulkAttendancePageRows.map(p=><tr key={p.id} className={bulkAttendancePlayers.includes(String(p.id))?"is-selected":""}><td><input type="checkbox" checked={bulkAttendancePlayers.includes(String(p.id))} onChange={()=>toggleBHBulkPlayer(p.id)}/></td><td><strong>{p.ign}</strong><small>{clean(p.weapon)||"Preferred weapon —"}</small></td><td>{clean(p.class||p.className)||"—"}</td>{bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o=>{const attended=hasBHAttendanceForOccurrence(p.id,o);return <td key={o.occurrenceKey}><span className={`bh-bulk-boss-status ${attended?"is-attended":"is-ready"}`}>{attended?"✓ ATTENDED":"READY"}</span></td>})}</tr>)}
-                  {!bulkAttendancePageRows.length&&<tr><td colSpan={3+bulkAttendanceSpawns.length} className="bh-bulk-empty">No active players match the filter.</td></tr>}
+                <div className="bh-bulk-player-toolbar"><input value={bulkAttendanceSearch} onChange={e => { setBulkAttendanceSearch(e.target.value); setBulkAttendancePage(1) }} placeholder="Search IGN, class, preferred weapon..." /><select value={bulkAttendanceClassFilter} onChange={e => { setBulkAttendanceClassFilter(e.target.value); setBulkAttendancePage(1) }}><option value="all">ALL CLASSES</option>{Array.from(new Set(players.filter(p => p.active !== false).map(p => clean(p.class || p.className)).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}</select><select value={bulkAttendanceStatusFilter} onChange={e => { setBulkAttendanceStatusFilter(e.target.value); setBulkAttendancePage(1) }}><option value="all">ALL ATTENDANCE</option><option value="not-attended">NOT ATTENDED</option><option value="attended">ALREADY ATTENDED</option><option value="partial">PARTIALLY ATTENDED</option></select><button type="button" onClick={toggleBHBulkPlayerPage}>{bulkAttendancePageRows.length && bulkAttendancePageRows.every(p => bulkAttendancePlayers.includes(String(p.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button><button type="button" onClick={() => setBulkAttendancePlayers([])}>CLEAR</button></div>
+                <div className="bh-bulk-player-table-wrap"><table className="bh-bulk-player-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS</th>{bulkAttendanceDateOccurrences.filter(o => bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o => <th key={o.occurrenceKey}>{o.bossName || bossLabel(o.bossId)}<small>{o.timeKey}</small></th>)}</tr></thead><tbody>
+                  {bulkAttendancePageRows.map(p => <tr key={p.id} className={bulkAttendancePlayers.includes(String(p.id)) ? "is-selected" : ""}><td><input type="checkbox" checked={bulkAttendancePlayers.includes(String(p.id))} onChange={() => toggleBHBulkPlayer(p.id)} /></td><td><strong>{p.ign}</strong><small>{clean(p.weapon) || "Preferred weapon —"}</small></td><td>{clean(p.class || p.className) || "—"}</td>{bulkAttendanceDateOccurrences.filter(o => bulkAttendanceSpawns.includes(o.occurrenceKey)).map(o => { const attended = hasBHAttendanceForOccurrence(p.id, o); return <td key={o.occurrenceKey}><span className={`bh-bulk-boss-status ${attended ? "is-attended" : "is-ready"}`}>{attended ? "✓ ATTENDED" : "READY"}</span></td> })}</tr>)}
+                  {!bulkAttendancePageRows.length && <tr><td colSpan={3 + bulkAttendanceSpawns.length} className="bh-bulk-empty">No active players match the filter.</td></tr>}
                 </tbody></table></div>
-                <div className="bh-bulk-pagination"><span>PAGE {bulkAttendanceSafePage} OF {bulkAttendancePageCount} • 5 PER PAGE • {bulkAttendanceVisiblePlayers.length} PLAYERS</span><div><button disabled={bulkAttendanceSafePage<=1} onClick={()=>setBulkAttendancePage(v=>Math.max(1,v-1))}>‹</button><button disabled={bulkAttendanceSafePage>=bulkAttendancePageCount} onClick={()=>setBulkAttendancePage(v=>Math.min(bulkAttendancePageCount,v+1))}>›</button></div></div>
+                <div className="bh-bulk-pagination"><span>PAGE {bulkAttendanceSafePage} OF {bulkAttendancePageCount} • 5 PER PAGE • {bulkAttendanceVisiblePlayers.length} PLAYERS</span><div><button disabled={bulkAttendanceSafePage <= 1} onClick={() => setBulkAttendancePage(v => Math.max(1, v - 1))}>‹</button><button disabled={bulkAttendanceSafePage >= bulkAttendancePageCount} onClick={() => setBulkAttendancePage(v => Math.min(bulkAttendancePageCount, v + 1))}>›</button></div></div>
               </section>
 
-              <div className="bh-bulk-attendance-summary"><div><strong>{bulkAttendancePlayers.length}</strong><span>PLAYERS SELECTED</span></div><div><strong>{bulkAttendanceSpawns.length}</strong><span>BOSSES SELECTED</span></div><div><strong>{bulkAttendancePlayers.length * bulkAttendanceSpawns.length}</strong><span>COMBINATIONS CHECKED</span></div><div><strong>{bulkAttendancePlayers.filter(id=>bulkAttendanceDateOccurrences.filter(o=>bulkAttendanceSpawns.includes(o.occurrenceKey)).every(o=>hasBHAttendanceForOccurrence(id,o))).length}</strong><span>ALREADY COMPLETE</span></div></div>
-              <label className="bh-bulk-attendance-comment">ADMIN COMMENT *<textarea value={bulkAttendanceComment} onChange={e=>setBulkAttendanceComment(e.target.value)} placeholder="Required. Explain why this bulk attendance is being recorded."/></label>
-              {bulkAttendanceError&&<div className="bh-bulk-error">{bulkAttendanceError}</div>}
+              <div className="bh-bulk-attendance-summary"><div><strong>{bulkAttendancePlayers.length}</strong><span>PLAYERS SELECTED</span></div><div><strong>{bulkAttendanceSpawns.length}</strong><span>BOSSES SELECTED</span></div><div><strong>{bulkAttendancePlayers.length * bulkAttendanceSpawns.length}</strong><span>COMBINATIONS CHECKED</span></div><div><strong>{bulkAttendancePlayers.filter(id => bulkAttendanceDateOccurrences.filter(o => bulkAttendanceSpawns.includes(o.occurrenceKey)).every(o => hasBHAttendanceForOccurrence(id, o))).length}</strong><span>ALREADY COMPLETE</span></div></div>
+              <label className="bh-bulk-attendance-comment">ADMIN COMMENT *<textarea value={bulkAttendanceComment} onChange={e => setBulkAttendanceComment(e.target.value)} placeholder="Required. Explain why this bulk attendance is being recorded." /></label>
+              {bulkAttendanceError && <div className="bh-bulk-error">{bulkAttendanceError}</div>}
             </div>
-            <div className="bh-modal-actions"><button type="button" className="bh-secondary-button" onClick={()=>setBulkAttendanceOpen(false)}>CANCEL</button><button type="button" className="bh-primary-button" disabled={bulkAttendanceSaving||!bulkAttendancePlayers.length||!bulkAttendanceSpawns.length||!bulkAttendanceDateOccurrences.length} onClick={saveBHBulkAttendance}>{bulkAttendanceSaving?"SAVING...":"✓ SAVE BULK ATTENDANCE"}</button></div>
+            <div className="bh-modal-actions"><button type="button" className="bh-secondary-button" onClick={() => setBulkAttendanceOpen(false)}>CANCEL</button><button type="button" className="bh-primary-button" disabled={bulkAttendanceSaving || !bulkAttendancePlayers.length || !bulkAttendanceSpawns.length || !bulkAttendanceDateOccurrences.length} onClick={saveBHBulkAttendance}>{bulkAttendanceSaving ? "SAVING..." : "✓ SAVE BULK ATTENDANCE"}</button></div>
           </div>
         </div>
       )}
 
       {bulkToolsModal && isAdmin && (
-        <div className="bh-modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setBulkToolsModal(null)}}>
+        <div className="bh-modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setBulkToolsModal(null) }}>
           <style>{`.bh-bulk-tools-modal{width:min(1180px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}.bh-bulk-tools-body{padding:18px 20px;overflow:auto}.bh-bulk-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.bh-bulk-menu button{display:flex;gap:14px;align-items:flex-start;text-align:left;padding:15px;border:1px solid rgba(0,183,255,.25);background:#061b28;color:#e9f7ff;border-radius:9px;cursor:pointer}.bh-bulk-menu button:hover{border-color:#00b7ff}.bh-bulk-menu b{font-size:20px;color:#00c8ff;min-width:26px}.bh-bulk-menu strong{display:block;font-size:11px;letter-spacing:.08em}.bh-bulk-menu small{display:block;margin-top:5px;color:#82a9bc;line-height:1.4}.bh-bulk-toolbar{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(130px,.5fr)) auto;gap:8px;align-items:end;margin-bottom:10px}.bh-bulk-toolbar label,.bh-bulk-form label{display:flex;flex-direction:column;gap:5px;font-size:9px;font-weight:800;letter-spacing:.08em;color:#8bb5c9}.bh-bulk-toolbar input,.bh-bulk-form input,.bh-bulk-form select,.bh-bulk-form textarea{box-sizing:border-box;width:100%;border:1px solid #0a5575;background:#041923;color:#e9f7ff;border-radius:6px;padding:9px}.bh-bulk-toolbar button{padding:9px 11px;border:1px solid #0b668c;background:#062535;color:#aee8ff;border-radius:6px;cursor:pointer}.bh-bulk-table-wrap{border:1px solid rgba(0,183,255,.22);border-radius:8px;overflow:auto}.bh-bulk-table{width:100%;border-collapse:collapse;min-width:760px}.bh-bulk-table th,.bh-bulk-table td{padding:8px 9px;border-bottom:1px solid rgba(74,138,162,.15);text-align:left;font-size:10px}.bh-bulk-table th{color:#70cfff;font-size:8px;letter-spacing:.09em;background:#061d2b}.bh-bulk-table tr.is-selected{background:rgba(0,183,255,.09)}.bh-bulk-table td small{display:block;color:#7199aa;margin-top:2px}.bh-bulk-status{font-size:8px;font-weight:900;color:#66f3b0}.bh-bulk-footer{display:flex;justify-content:space-between;align-items:center;padding:8px 0;color:#6e9aae;font-size:9px}.bh-bulk-footer button{border:1px solid #0b5572;background:#061f2d;color:#a9d9ea;padding:6px 9px;border-radius:5px}.bh-bulk-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.bh-bulk-form .full{grid-column:1/-1}.bh-bulk-form textarea{min-height:70px;resize:vertical}.bh-bulk-warning,.bh-bulk-error{margin-top:10px;padding:10px 12px;border-radius:7px;font-size:10px}.bh-bulk-warning{border:1px solid rgba(255,82,105,.35);background:rgba(92,12,24,.2);color:#ff9eac}.bh-bulk-error{border:1px solid rgba(255,82,105,.5);background:rgba(92,12,24,.28);color:#ffb3bd}@media(max-width:800px){.bh-bulk-menu{grid-template-columns:1fr}.bh-bulk-toolbar{grid-template-columns:1fr 1fr}.bh-bulk-toolbar label:first-child{grid-column:1/-1}.bh-bulk-form{grid-template-columns:1fr}.bh-bulk-form .full{grid-column:auto}}`}</style>
           <div className="bh-modal bh-bulk-tools-modal" role="dialog" aria-modal="true">
-            <div className="bh-modal-header"><div><div className="bh-section-kicker">BOSS HUNT • ADMIN TOOLS</div><h2>{bulkToolsMode==="menu"?"Bulk Tools":`Bulk ${bulkToolsMode.replaceAll("-"," ")}`}</h2><p className="bh-modal-subtitle">Every modification can target multiple EXISTING records. FROM/TO filters records only — they never create a new record.</p></div><button type="button" className="bh-modal-close" onClick={()=>setBulkToolsModal(null)}>×</button></div>
+            <div className="bh-modal-header"><div><div className="bh-section-kicker">BOSS HUNT • ADMIN TOOLS</div><h2>{bulkToolsMode === "menu" ? "Bulk Tools" : `Bulk ${bulkToolsMode.replaceAll("-", " ")}`}</h2><p className="bh-modal-subtitle">Every modification can target multiple EXISTING records. FROM/TO filters records only — they never create a new record.</p></div><button type="button" className="bh-modal-close" onClick={() => setBulkToolsModal(null)}>×</button></div>
             <div className="bh-bulk-tools-body">
-              {bulkToolsMode==="menu" ? <div className="bh-bulk-menu">
+              {bulkToolsMode === "menu" ? <div className="bh-bulk-menu">
                 <button className="bh-bulk-add-card" onClick={openBHBulkAttendance}><b>＋</b><span><strong>BULK ADD ATTENDANCE</strong><small>Mark multiple existing roster players against multiple existing scheduled boss spawns.</small></span></button>
-                <button onClick={()=>openBHMultiTools("attendance-edit")}><b>✎</b><span><strong>BULK EDIT ATTENDANCE</strong><small>Correct points/comment on multiple saved BH attendance records.</small></span></button>
-                <button onClick={()=>openBHMultiTools("attendance-redo")}><b>↻</b><span><strong>BULK REDO ATTENDANCE</strong><small>Remove multiple saved attendance records so they can be recorded again.</small></span></button>
-                <button onClick={()=>openBHMultiTools("attendance-delete")}><b>×</b><span><strong>BULK DELETE ATTENDANCE</strong><small>Delete multiple existing attendance records only.</small></span></button>
-                <button onClick={()=>openBHMultiTools("player-edit")}><b>♟</b><span><strong>BULK EDIT PLAYERS</strong><small>Apply class and/or preferred weapon changes to multiple players.</small></span></button>
-                <button onClick={()=>openBHMultiTools("player-disable")}><b>⊘</b><span><strong>BULK DISABLE PLAYERS</strong><small>Disable multiple players while preserving history.</small></span></button>
-                <button onClick={()=>openBHMultiTools("player-delete")}><b>⌫</b><span><strong>BULK DELETE PLAYERS</strong><small>Delete multiple roster profiles.</small></span></button>
-                <button onClick={()=>openBHMultiTools("reward-edit")}><b>◆</b><span><strong>BULK EDIT REWARDS</strong><small>Update multiple existing rewards.</small></span></button>
-                <button onClick={()=>openBHMultiTools("reward-delete")}><b>×</b><span><strong>BULK DELETE REWARDS</strong><small>Delete multiple unclaimed rewards; claimed rewards are protected.</small></span></button>
-                <button onClick={()=>openBHMultiTools("claim-edit")}><b>✎</b><span><strong>BULK EDIT CLAIMS</strong><small>Correct notes on multiple existing reward claims.</small></span></button>
-                <button onClick={()=>openBHMultiTools("claim-delete")}><b>×</b><span><strong>BULK DELETE CLAIMS</strong><small>Remove multiple claims and restore linked rewards.</small></span></button>
+                <button onClick={() => openBHMultiTools("attendance-edit")}><b>✎</b><span><strong>BULK EDIT ATTENDANCE</strong><small>Correct points/comment on multiple saved BH attendance records.</small></span></button>
+                <button onClick={() => openBHMultiTools("attendance-redo")}><b>↻</b><span><strong>BULK REDO ATTENDANCE</strong><small>Remove multiple saved attendance records so they can be recorded again.</small></span></button>
+                <button onClick={() => openBHMultiTools("attendance-delete")}><b>×</b><span><strong>BULK DELETE ATTENDANCE</strong><small>Delete multiple existing attendance records only.</small></span></button>
+                <button onClick={() => openBHMultiTools("player-edit")}><b>♟</b><span><strong>BULK EDIT PLAYERS</strong><small>Apply class and/or preferred weapon changes to multiple players.</small></span></button>
+                <button onClick={() => openBHMultiTools("points-override")}><b>Σ</b><span><strong>BULK OVERRIDE OVERALL POINTS</strong><small>Set the TOTAL POINTS for multiple players without rewriting individual attendance records.</small></span></button>
+                <button onClick={() => openBHMultiTools("player-disable")}><b>⊘</b><span><strong>BULK DISABLE PLAYERS</strong><small>Disable multiple players while preserving history.</small></span></button>
+                <button onClick={() => openBHMultiTools("player-delete")}><b>⌫</b><span><strong>BULK DELETE PLAYERS</strong><small>Delete multiple roster profiles.</small></span></button>
+                <button onClick={() => openBHMultiTools("reward-edit")}><b>◆</b><span><strong>BULK EDIT REWARDS</strong><small>Update multiple existing rewards.</small></span></button>
+                <button onClick={() => openBHMultiTools("reward-delete")}><b>×</b><span><strong>BULK DELETE REWARDS</strong><small>Delete multiple unclaimed rewards; claimed rewards are protected.</small></span></button>
+                <button onClick={() => openBHMultiTools("claim-edit")}><b>✎</b><span><strong>BULK EDIT CLAIMS</strong><small>Correct notes on multiple existing reward claims.</small></span></button>
+                <button onClick={() => openBHMultiTools("claim-delete")}><b>×</b><span><strong>BULK DELETE CLAIMS</strong><small>Remove multiple claims and restore linked rewards.</small></span></button>
               </div> : <>
-                <div className="bh-bulk-toolbar"><label>SEARCH<input value={bulkToolsSearch} onChange={e=>{setBulkToolsSearch(e.target.value);setBulkToolsPage(1)}} placeholder="IGN, boss, reward, date, status..."/></label><label>FROM<input type="date" value={bulkToolsFrom} onChange={e=>{setBulkToolsFrom(e.target.value);setBulkToolsPage(1)}}/></label><label>TO<input type="date" value={bulkToolsTo} onChange={e=>{setBulkToolsTo(e.target.value);setBulkToolsPage(1)}}/></label><div><button type="button" onClick={toggleBHMultiPage}>{bulkBHVisibleRows.length&&bulkBHVisibleRows.every(x=>bulkToolsSelected.includes(String(x.id)))?"CLEAR PAGE":"SELECT PAGE"}</button> <button type="button" onClick={()=>setBulkToolsSelected([])}>CLEAR</button></div></div>
-                <div className="bh-bulk-table-wrap"><table className="bh-bulk-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / TYPE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>{bulkBHVisibleRows.map(x=><tr key={`${x.kind}-${x.id}`} className={bulkToolsSelected.includes(String(x.id))?"is-selected":""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={()=>toggleBHMultiSelection(x.id)}/></td><td><strong>{x.ign||"—"}</strong></td><td>{x.className||"—"}<small>{x.weapon||"—"}</small></td><td><strong>{x.recordLabel}</strong></td><td>{x.dateKey||"—"}<small>{x.timeKey||"—"}</small></td><td>{x.value||"—"}</td><td><span className="bh-bulk-status">{x.status}</span></td></tr>)}{!bulkBHVisibleRows.length&&<tr><td colSpan="7">No EXISTING records match the filters.</td></tr>}</tbody></table></div>
-                <div className="bh-bulk-footer"><span>PAGE {bulkBHSafePage} OF {bulkBHPageCount} • 5 PER PAGE • {filteredBHMultiRows.length} MATCHES • {bulkToolsSelected.length} SELECTED</span><div><button disabled={bulkBHSafePage<=1} onClick={()=>setBulkToolsPage(v=>Math.max(1,v-1))}>‹</button> <button disabled={bulkBHSafePage>=bulkBHPageCount} onClick={()=>setBulkToolsPage(v=>Math.min(bulkBHPageCount,v+1))}>›</button></div></div>
+                <div className="bh-bulk-toolbar"><label>SEARCH<input value={bulkToolsSearch} onChange={e => { setBulkToolsSearch(e.target.value); setBulkToolsPage(1) }} placeholder="IGN, boss, reward, date, status..." /></label><label>FROM<input type="date" value={bulkToolsFrom} onChange={e => { setBulkToolsFrom(e.target.value); setBulkToolsPage(1) }} /></label><label>TO<input type="date" value={bulkToolsTo} onChange={e => { setBulkToolsTo(e.target.value); setBulkToolsPage(1) }} /></label><div><button type="button" onClick={toggleBHMultiPage}>{bulkBHVisibleRows.length && bulkBHVisibleRows.every(x => bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button> <button type="button" onClick={() => setBulkToolsSelected([])}>CLEAR</button></div></div>
+                <div className="bh-bulk-table-wrap"><table className="bh-bulk-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / TYPE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>{bulkBHVisibleRows.map(x => <tr key={`${x.kind}-${x.id}`} className={bulkToolsSelected.includes(String(x.id)) ? "is-selected" : ""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={() => toggleBHMultiSelection(x.id)} /></td><td><strong>{x.ign || "—"}</strong></td><td>{x.className || "—"}<small>{x.weapon || "—"}</small></td><td><strong>{x.recordLabel}</strong></td><td>{x.dateKey || "—"}<small>{x.timeKey || "—"}</small></td><td>{x.value || "—"}</td><td><span className="bh-bulk-status">{x.status}</span></td></tr>)}{!bulkBHVisibleRows.length && <tr><td colSpan="7">No EXISTING records match the filters.</td></tr>}</tbody></table></div>
+                <div className="bh-bulk-footer"><span>PAGE {bulkBHSafePage} OF {bulkBHPageCount} • 5 PER PAGE • {filteredBHMultiRows.length} MATCHES • {bulkToolsSelected.length} SELECTED</span><div><button disabled={bulkBHSafePage <= 1} onClick={() => setBulkToolsPage(v => Math.max(1, v - 1))}>‹</button> <button disabled={bulkBHSafePage >= bulkBHPageCount} onClick={() => setBulkToolsPage(v => Math.min(bulkBHPageCount, v + 1))}>›</button></div></div>
                 <div className="bh-bulk-form">
-                  {bulkToolsMode==="attendance-edit"&&<label>NEW POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e=>setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g,""))} placeholder="Leave blank to keep each record"/></label>}
-                  {bulkToolsMode==="player-edit"&&<label>CLASS / NEW CLASS<TypeSelect id="bh-bulk-class" className="bh-input" value={bulkToolsClass} onChange={setBulkToolsClass} options={CLASS_OPTIONS} placeholder="Type or select class" /></label>}
-                  {bulkToolsMode==="player-edit"&&<label>PREFERRED WEAPON<TypeSelect id="bh-bulk-weapon" className="bh-input" value={bulkToolsWeapon} onChange={setBulkToolsWeapon} options={Array.from(new Set([...players.map(p => clean(p.weapon)), ...rewards.map(r => clean(r.weaponClass)), ...rewardClaims.map(c => clean(c.weaponClass))].filter(Boolean)))} placeholder="Type or select weapon • blank keeps current" /></label>}
-                  {bulkToolsMode==="reward-edit"&&<label>STATUS<select value={bulkToolsStatus} onChange={e=>setBulkToolsStatus(e.target.value)}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></label>}
-                  {(bulkToolsMode==="reward-edit"||bulkToolsMode==="claim-edit")&&<label className="full">NOTES<textarea value={bulkToolsNotes} onChange={e=>setBulkToolsNotes(e.target.value)} placeholder="Leave blank to keep each record's notes"/></label>}
-                  {["attendance-delete","attendance-redo","reward-delete","claim-delete","player-disable","player-delete"].includes(bulkToolsMode)&&<div className="bh-bulk-warning full">EXACT SAVED RECORDS ONLY. The date filters only narrow the table. Selecting a date with no record cannot create a record.</div>}
-                  {bulkToolsMode==="player-delete"&&<label>DELETE PIN *<input inputMode="numeric" value={bulkToolsPin} onChange={e=>setBulkToolsPin(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="5-digit PIN"/></label>}
-                  <label className="full">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e=>setBulkToolsComment(e.target.value)} placeholder="Required. Explain why these existing records are being changed."/></label>
+                  {bulkToolsMode === "points-override" && <label>NEW OVERALL POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e => setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Example: 10.00" /></label>}
+                  {bulkToolsMode === "attendance-edit" && <label>NEW POINTS<input inputMode="decimal" value={bulkToolsPoints} onChange={e => setBulkToolsPoints(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Leave blank to keep each record" /></label>}
+                  {bulkToolsMode === "player-edit" && <label>CLASS / NEW CLASS<TypeSelect id="bh-bulk-class" className="bh-input" value={bulkToolsClass} onChange={setBulkToolsClass} options={CLASS_OPTIONS} placeholder="Type or select class" /></label>}
+                  {bulkToolsMode === "player-edit" && <label>PREFERRED WEAPON<TypeSelect id="bh-bulk-weapon" className="bh-input" value={bulkToolsWeapon} onChange={setBulkToolsWeapon} options={Array.from(new Set([...players.map(p => clean(p.weapon)), ...rewards.map(r => clean(r.weaponClass)), ...rewardClaims.map(c => clean(c.weaponClass))].filter(Boolean)))} placeholder="Type or select weapon • blank keeps current" /></label>}
+                  {bulkToolsMode === "reward-edit" && <label>STATUS<select value={bulkToolsStatus} onChange={e => setBulkToolsStatus(e.target.value)}><option value="available">Available</option><option value="disabled">Disabled</option><option value="claimed">Claimed</option></select></label>}
+                  {(bulkToolsMode === "reward-edit" || bulkToolsMode === "claim-edit") && <label className="full">NOTES<textarea value={bulkToolsNotes} onChange={e => setBulkToolsNotes(e.target.value)} placeholder="Leave blank to keep each record's notes" /></label>}
+                  {bulkToolsMode === "points-override" && <div className="bh-bulk-warning full">OVERALL POINTS OVERRIDE changes the player's lifetime TOTAL POINTS used for reward balance calculations. Individual attendance records and their per-boss history remain unchanged. Sonya claim deductions are still applied after the override.</div>}
+                  {["attendance-delete", "attendance-redo", "reward-delete", "claim-delete", "player-disable", "player-delete"].includes(bulkToolsMode) && <div className="bh-bulk-warning full">EXACT SAVED RECORDS ONLY. The date filters only narrow the table. Selecting a date with no record cannot create a record.</div>}
+                  {bulkToolsMode === "player-delete" && <label>DELETE PIN *<input inputMode="numeric" value={bulkToolsPin} onChange={e => setBulkToolsPin(e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="5-digit PIN" /></label>}
+                  <label className="full">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e => setBulkToolsComment(e.target.value)} placeholder="Required. Explain why these existing records are being changed." /></label>
                 </div>
-                {bulkToolsError&&<div className="bh-bulk-error">{bulkToolsError}</div>}
+                {bulkToolsError && <div className="bh-bulk-error">{bulkToolsError}</div>}
               </>}
             </div>
-            <div className="bh-modal-actions">{bulkToolsMode==="menu"?<button type="button" className="bh-secondary-button" onClick={()=>setBulkToolsModal(null)}>CLOSE</button>:<><button type="button" className="bh-secondary-button" onClick={()=>setBulkToolsMode("menu")}>BACK</button><button type="button" className="bh-primary-button" disabled={bulkToolsSaving||!bulkSelectedBHRows.length} onClick={saveBHMultiChange}>{bulkToolsSaving?"PROCESSING...":"SAVE BULK CHANGE"}</button></>}</div>
+            <div className="bh-modal-actions">{bulkToolsMode === "menu" ? <button type="button" className="bh-secondary-button" onClick={() => setBulkToolsModal(null)}>CLOSE</button> : <><button type="button" className="bh-secondary-button" onClick={() => setBulkToolsMode("menu")}>BACK</button><button type="button" className="bh-primary-button" disabled={bulkToolsSaving || !bulkSelectedBHRows.length} onClick={saveBHMultiChange}>{bulkToolsSaving ? "PROCESSING..." : "SAVE BULK CHANGE"}</button></>}</div>
           </div>
         </div>
       )}

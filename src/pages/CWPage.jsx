@@ -885,18 +885,18 @@ export default function CWPage({ user, isAdmin }) {
     if (["player-edit", "player-disable", "player-delete", "item-assign"].includes(bulkToolsModal)) {
       rows = players.map(p => ({ id: String(p.id), type: "player", p, ign: clean(p.ign), className: clean(p.className || p.class), role: clean(p.role), dateKey: "", timeKey: "", sortAt: playerLatestUpdateMs(p), status: p.active === false ? "DISABLED" : "ACTIVE" }));
     } else if (["item-edit", "item-delete"].includes(bulkToolsModal)) {
-      rows = itemAssignments.map(a => { const p = players.find(x => String(x.id) === String(a.playerId)); return { id: String(a.id), type: "item", assignment: a, p, ign: clean(a.playerName || p?.ign), className: clean(p?.className || p?.class), role: clean(p?.role), itemName: clean(a.itemName), quantity: Math.max(0, Math.floor(num(a.quantity,0))), dateKey: clean(a.dateKey), timeKey: clean(a.scheduledTime || (safeDate(a.scheduledAt) ? formatDateTime(a.scheduledAt, resolvedTimezone) : "")), sortAt: updatedTimeMs(a, "scheduledAt", "createdAt"), status: "ASSIGNED" }; });
+      rows = itemAssignments.map(a => { const p = players.find(x => String(x.id) === String(a.playerId)); return { id: String(a.id), type: "item", assignment: a, p, ign: clean(a.playerName || p?.ign), className: clean(p?.className || p?.class), role: clean(p?.role), itemName: clean(a.itemName), quantity: Math.max(0, Math.floor(num(a.quantity, 0))), dateKey: clean(a.dateKey), timeKey: clean(a.scheduledTime || (safeDate(a.scheduledAt) ? formatDateTime(a.scheduledAt, resolvedTimezone) : "")), sortAt: updatedTimeMs(a, "scheduledAt", "createdAt"), status: "ASSIGNED" }; });
     } else {
-      rows = attendance.map(r => { const p = players.find(x => String(x.id) === String(r.playerId)); return { id: String(r.id), type: "attendance", row: r, p, ign: clean(r.ign || p?.ign), className: clean(r.className || p?.className || p?.class), role: clean(r.role || p?.role), dateKey: clean(r.dateKey), timeKey: clean(r.scheduledTime || (safeDate(r.scheduledAt) ? formatDateTime(r.scheduledAt, resolvedTimezone) : "")), salary: num(r.salaryGold,0), itemCost: num(r.itemCostGold,0), sortAt: updatedTimeMs(r, "scheduledAt", "createdAt"), status: r.attended === false ? "DID NOT ATTEND" : "ATTENDED" }; });
+      rows = attendance.map(r => { const p = players.find(x => String(x.id) === String(r.playerId)); return { id: String(r.id), type: "attendance", row: r, p, ign: clean(r.ign || p?.ign), className: clean(r.className || p?.className || p?.class), role: clean(r.role || p?.role), dateKey: clean(r.dateKey), timeKey: clean(r.scheduledTime || (safeDate(r.scheduledAt) ? formatDateTime(r.scheduledAt, resolvedTimezone) : "")), salary: num(r.salaryGold, 0), itemCost: num(r.itemCostGold, 0), sortAt: updatedTimeMs(r, "scheduledAt", "createdAt"), status: r.attended === false ? "DID NOT ATTEND" : "ATTENDED" }; });
     }
     return rows.sort((a, b) => b.sortAt - a.sortAt || clean(a.ign).localeCompare(clean(b.ign), undefined, { numeric: true, sensitivity: "base" }));
   }, [bulkToolsModal, players, attendance, itemAssignments, resolvedTimezone]);
-  const bulkFilteredRows = useMemo(() => { const q=clean(bulkToolsSearch).toLowerCase(); return bulkSelectionRows.filter(x => (!bulkToolsFrom || !x.dateKey || x.dateKey >= bulkToolsFrom) && (!bulkToolsTo || !x.dateKey || x.dateKey <= bulkToolsTo) && (!q || [x.ign,x.className,x.role,x.itemName,x.dateKey,x.timeKey,x.status].some(v=>clean(v).toLowerCase().includes(q)))); }, [bulkSelectionRows, bulkToolsFrom, bulkToolsTo, bulkToolsSearch]);
+  const bulkFilteredRows = useMemo(() => { const q = clean(bulkToolsSearch).toLowerCase(); return bulkSelectionRows.filter(x => (!bulkToolsFrom || !x.dateKey || x.dateKey >= bulkToolsFrom) && (!bulkToolsTo || !x.dateKey || x.dateKey <= bulkToolsTo) && (!q || [x.ign, x.className, x.role, x.itemName, x.dateKey, x.timeKey, x.status].some(v => clean(v).toLowerCase().includes(q)))); }, [bulkSelectionRows, bulkToolsFrom, bulkToolsTo, bulkToolsSearch]);
   const bulkPageCount = Math.max(1, Math.ceil(bulkFilteredRows.length / 5));
   const bulkSafePage = Math.min(Math.max(1, bulkToolsPage), bulkPageCount);
-  const bulkVisibleRows = bulkFilteredRows.slice((bulkSafePage-1)*5, bulkSafePage*5);
-  const toggleBulkSelection = (id) => setBulkToolsSelected(current => current.includes(String(id)) ? current.filter(x=>x!==String(id)) : [...current,String(id)]);
-  const toggleBulkPage = () => { const ids=bulkVisibleRows.map(x=>String(x.id)); setBulkToolsSelected(current => ids.every(id=>current.includes(id)) ? current.filter(id=>!ids.includes(id)) : Array.from(new Set([...current,...ids]))); };
+  const bulkVisibleRows = bulkFilteredRows.slice((bulkSafePage - 1) * 5, bulkSafePage * 5);
+  const toggleBulkSelection = (id) => setBulkToolsSelected(current => current.includes(String(id)) ? current.filter(x => x !== String(id)) : [...current, String(id)]);
+  const toggleBulkPage = () => { const ids = bulkVisibleRows.map(x => String(x.id)); setBulkToolsSelected(current => ids.every(id => current.includes(id)) ? current.filter(id => !ids.includes(id)) : Array.from(new Set([...current, ...ids]))); };
 
   async function saveBulkSalaryChange() {
     if (!isAdmin) return;
@@ -906,7 +906,7 @@ export default function CWPage({ user, isAdmin }) {
     if (salary < 0) { setBulkToolsError("Salary cannot be negative."); return; }
     if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk salary changes."); return; }
     const rows = [], errors = [];
-    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({ p:x.p, row:x.row }); });
+    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({ p: x.p, row: x.row }); });
     if (errors.length) { setBulkToolsError(errors.slice(0, 20).join(" • ")); return; }
     setBulkToolsSaving(true); setBulkToolsError("");
     try {
@@ -922,7 +922,7 @@ export default function CWPage({ user, isAdmin }) {
         batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
       }
       await batch.commit();
-      await audit({ category: "SALARY", module: "cw-attendance", title: "CW BULK SALARY UPDATED", message: `${rows.length} CW salary record${rows.length === 1 ? "" : "s"} updated from the selected existing records.`, entityType: "cw-salary-bulk", details: rows.map(({ p, row }) => `${p.ign}: ₲ ${money(row.salaryGold)} → ₲ ${money(salary)}`).concat([`CW dates: ${Array.from(new Set(rows.map(({row}) => clean(row.dateKey)).filter(Boolean))).join(", ") || date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
+      await audit({ category: "SALARY", module: "cw-attendance", title: "CW BULK SALARY UPDATED", message: `${rows.length} CW salary record${rows.length === 1 ? "" : "s"} updated from the selected existing records.`, entityType: "cw-salary-bulk", details: rows.map(({ p, row }) => `${p.ign}: ₲ ${money(row.salaryGold)} → ₲ ${money(salary)}`).concat([`CW dates: ${Array.from(new Set(rows.map(({ row }) => clean(row.dateKey)).filter(Boolean))).join(", ") || date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
       setBulkToolsModal(null); setMessage(`${rows.length} CW salary record${rows.length === 1 ? "" : "s"} updated. Treasury synchronized.`);
     } catch (e) { console.error(e); setBulkToolsError(e?.message || "Unable to update bulk salaries. Nothing was saved."); } finally { setBulkToolsSaving(false); }
   }
@@ -935,7 +935,7 @@ export default function CWPage({ user, isAdmin }) {
     if (!selectedRows.length && action === "assign") { setBulkToolsError("Select at least one roster player from the table."); return; }
     if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk item changes."); return; }
     let rows = [], errors = [];
-    selectedRows.forEach(x => { const p=x.p || x.player; if (!p) errors.push(`${x.ign || "Record"}: NOT FOUND`); else if (p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push(p); });
+    selectedRows.forEach(x => { const p = x.p || x.player; if (!p) errors.push(`${x.ign || "Record"}: NOT FOUND`); else if (p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push(p); });
     if (action === "assign" && (!item || item.active === false)) errors.push("Select an active inventory item.");
     const targetOccurrence = occurrences.find(o => clean(o.key) === date) || null;
     if (action === "assign" && !targetOccurrence) errors.push("Select a scheduled CW occurrence. An arbitrary date cannot create an item assignment.");
@@ -1003,12 +1003,12 @@ export default function CWPage({ user, isAdmin }) {
     if ((salary !== null && salary < 0) || (itemCost !== null && itemCost < 0)) { setBulkToolsError("Salary and item cost cannot be negative."); return; }
     if (!clean(bulkToolsComment)) { setBulkToolsError("Admin comment is required for bulk attendance edits."); return; }
     const rows = [], errors = [];
-    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({p:x.p,row:x.row}); });
+    selectedRows.forEach(x => { if (!x.p || !x.row) errors.push(`${x.ign || "Record"}: PLAYER/ATTENDANCE MAPPING MISSING`); else if (x.p.active === false) errors.push(`${x.ign}: DISABLED`); else rows.push({ p: x.p, row: x.row }); });
     if (errors.length) { setBulkToolsError(errors.slice(0, 30).join(" • ")); return; }
     setBulkToolsSaving(true); setBulkToolsError("");
     try {
       const batch = writeBatch(db);
-      rows.forEach(({p,row}) => {
+      rows.forEach(({ p, row }) => {
         batch.update(doc(db, "cwAttendance", row.id), {
           ...(salary !== null ? { salaryGold: salary } : {}),
           ...(itemCost !== null ? { itemCostGold: itemCost } : {}),
@@ -1023,7 +1023,7 @@ export default function CWPage({ user, isAdmin }) {
           const data = { type: type === "salary" ? "cw-salary" : "item-purchase", ledgerType: type, direction: "out", amount: -Math.abs(amount), playerId: String(p.id), playerName: clean(p.ign), dateKey: clean(row.dateKey) || date, description, item: clean(item), sourceAttendanceId: String(row.id), sourceModule: "cw-attendance", transactionAt: safeDate(row.scheduledAt) || new Date(), updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null, adminComment: clean(bulkToolsComment) };
           if (amount > 0) {
             if (old) batch.update(doc(db, "treasuryEntries", old.id), data);
-            else batch.set(doc(collection(db, "treasuryEntries")), {...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null});
+            else batch.set(doc(collection(db, "treasuryEntries")), { ...data, createdAt: serverTimestamp(), createdBy: actor(user), createdByUid: user?.uid || null });
           } else if (old) batch.delete(doc(db, "treasuryEntries", old.id));
         };
         const effectiveSalary = salary === null ? num(row.salaryGold, 0) : salary;
@@ -1034,9 +1034,9 @@ export default function CWPage({ user, isAdmin }) {
         batch.update(doc(db, "cwPlayers", p.id), { updatedAt: serverTimestamp(), updatedBy: actor(user), updatedByUid: user?.uid || null });
       });
       await batch.commit();
-      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: "CW BULK ATTENDANCE UPDATED", message: `${rows.length} selected CW attendance record${rows.length===1?"":"s"} were corrected.`, entityType: "cw-attendance-bulk-management", relatedModules: ["cw-attendance","cw-treasury","cw-item"], details: rows.map(({p,row}) => `${p.ign}: salary ₲ ${money(row.salaryGold)} → ₲ ${money(salary === null ? row.salaryGold : salary)} • item cost ₲ ${money(row.itemCostGold)} → ₲ ${money(itemCost === null ? row.itemCostGold : itemCost)}`).concat([`Date: ${date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
-      setBulkToolsModal(null); setMessage(`${rows.length} CW attendance record${rows.length===1?"":"s"} updated and Treasury synchronized.`);
-    } catch(e) { console.error(e); setBulkToolsError(e?.message || "Unable to bulk edit attendance. Nothing was saved."); } finally { setBulkToolsSaving(false); }
+      await audit({ category: "ATTENDANCE", module: "cw-attendance", title: "CW BULK ATTENDANCE UPDATED", message: `${rows.length} selected CW attendance record${rows.length === 1 ? "" : "s"} were corrected.`, entityType: "cw-attendance-bulk-management", relatedModules: ["cw-attendance", "cw-treasury", "cw-item"], details: rows.map(({ p, row }) => `${p.ign}: salary ₲ ${money(row.salaryGold)} → ₲ ${money(salary === null ? row.salaryGold : salary)} • item cost ₲ ${money(row.itemCostGold)} → ₲ ${money(itemCost === null ? row.itemCostGold : itemCost)}`).concat([`Date: ${date}`, `Admin comment: ${clean(bulkToolsComment)}`, `Changed by: ${actor(user)}`]) });
+      setBulkToolsModal(null); setMessage(`${rows.length} CW attendance record${rows.length === 1 ? "" : "s"} updated and Treasury synchronized.`);
+    } catch (e) { console.error(e); setBulkToolsError(e?.message || "Unable to bulk edit attendance. Nothing was saved."); } finally { setBulkToolsSaving(false); }
   }
 
   async function saveBulkAttendanceTool(action = "delete") {
@@ -2024,6 +2024,64 @@ export default function CWPage({ user, isAdmin }) {
   const treasurySalaryOut = Math.max(0, -treasurySalaryNet);
   const treasuryItemOut = Math.max(0, -treasuryItemNet);
   const treasuryIncome = treasuryEntries.filter(e => e.type === "cw-war-income" || e.type === "guild-income").reduce((sum, e) => sum + Math.max(0, num(e.amount)), 0);
+
+  // =========================================================
+  // CW DASHBOARD SUMMARY TILES
+  // - Active player count
+  // - Current live guild inventory quantity
+  // - Items given during the most recently recorded CW
+  // - Current guild gold balance
+  // - Salary paid during the most recently recorded CW
+  // =========================================================
+  const lastCwDateKey = useMemo(() => {
+    const candidates = [
+      ...attendance
+        .filter(r => r.attended !== false && clean(r.dateKey))
+        .map(r => clean(r.dateKey)),
+      ...itemAssignments
+        .filter(r => clean(r.dateKey))
+        .map(r => clean(r.dateKey)),
+      ...treasuryEntries
+        .filter(e => (e.type === "cw-salary" || e.type === "cw-war-income" || e.type === "guild-income") && clean(e.dateKey))
+        .map(e => clean(e.dateKey)),
+      ...inventoryTransactions
+        .filter(t => (clean(t.source) === "clan-war-reward" || clean(t.source) === "cw-attendance") && clean(t.dateKey))
+        .map(t => clean(t.dateKey)),
+    ].filter(Boolean);
+
+    return candidates.sort((a, b) => b.localeCompare(a))[0] || "";
+  }, [attendance, itemAssignments, treasuryEntries, inventoryTransactions]);
+
+  const dashboardActivePlayerCount = players.filter(p => p.active !== false).length;
+
+  const dashboardCurrentItemCount = useMemo(
+    () => cwItems.reduce((sum, item) => sum + Math.max(0, Math.floor(num(stockForItem(item.id).available, 0))), 0),
+    [cwItems, inventoryStock]
+  );
+
+  const dashboardItemsGivenLastCw = useMemo(() => {
+    if (!lastCwDateKey) return 0;
+
+    const assigned = itemAssignments
+      .filter(r => clean(r.dateKey) === lastCwDateKey)
+      .reduce((sum, r) => sum + Math.max(0, Math.floor(num(r.quantity, 0))), 0);
+
+    // Preserve legacy attendance item records that predate cwItemAssignments.
+    const legacy = attendance
+      .filter(r => clean(r.dateKey) === lastCwDateKey && clean(r.receivedItem))
+      .reduce((sum, r) => sum + Math.max(1, Math.floor(num(r.itemQuantity, 1))), 0);
+
+    return assigned + legacy;
+  }, [itemAssignments, attendance, lastCwDateKey]);
+
+  const dashboardSalaryLastCw = useMemo(
+    () => lastCwDateKey
+      ? attendance
+        .filter(r => clean(r.dateKey) === lastCwDateKey)
+        .reduce((sum, r) => sum + Math.max(0, num(r.salaryGold, 0)), 0)
+      : 0,
+    [attendance, lastCwDateKey]
+  );
   const latestTreasuryIncome = treasuryEntries.filter(e => e.type === "cw-war-income" || e.type === "guild-income").slice().sort((a, b) => (safeDate(b.transactionAt || b.createdAt)?.getTime() || 0) - (safeDate(a.transactionAt || a.createdAt)?.getTime() || 0))[0];
   const treasuryOverrides = treasuryEntries.filter(e => e.type === "balance-override").reduce((sum, e) => sum + num(e.amount), 0);
   const filteredTreasuryEntries = useMemo(() => {
@@ -2441,6 +2499,53 @@ export default function CWPage({ user, isAdmin }) {
 
     {message && <div className="cw-message">{message}<button onClick={() => setMessage("")}>×</button></div>}
 
+    <section className="cw-dashboard-stats" aria-label="Clan War summary">
+      <div className="cw-dashboard-stat">
+        <span className="cw-dashboard-stat-icon">♟</span>
+        <div>
+          <small>ACTIVE PLAYERS</small>
+          <strong>{dashboardActivePlayerCount}</strong>
+          <em>Current active roster</em>
+        </div>
+      </div>
+
+      <div className="cw-dashboard-stat">
+        <span className="cw-dashboard-stat-icon">◇</span>
+        <div>
+          <small>CURRENT ITEMS</small>
+          <strong>{count(dashboardCurrentItemCount)}</strong>
+          <em>Live available guild stock</em>
+        </div>
+      </div>
+
+      <div className="cw-dashboard-stat">
+        <span className="cw-dashboard-stat-icon">↗</span>
+        <div>
+          <small>ITEMS GIVEN • LAST CW</small>
+          <strong>{count(dashboardItemsGivenLastCw)}</strong>
+          <em>{lastCwDateKey ? formatDate(lastCwDateKey + "T12:00:00", resolvedTimezone) : "No CW recorded yet"}</em>
+        </div>
+      </div>
+
+      <div className="cw-dashboard-stat cw-dashboard-stat-gold">
+        <span className="cw-dashboard-stat-icon">₲</span>
+        <div>
+          <small>CURRENT GOLD</small>
+          <strong>₲ {money(treasuryBalance)}</strong>
+          <em>Live Guild Treasury balance</em>
+        </div>
+      </div>
+
+      <div className="cw-dashboard-stat cw-dashboard-stat-salary">
+        <span className="cw-dashboard-stat-icon">₲</span>
+        <div>
+          <small>SALARY • LAST CW</small>
+          <strong>₲ {money(dashboardSalaryLastCw)}</strong>
+          <em>{lastCwDateKey ? formatDate(lastCwDateKey + "T12:00:00", resolvedTimezone) : "No CW recorded yet"}</em>
+        </div>
+      </div>
+    </section>
+
     <nav className="cw-tabs cw-primary-nav" aria-label="Clan War sections">
       <button type="button" className={`cw-tab ${activePanel === "attendance" ? "active" : ""}`} onClick={() => setActivePanel("attendance")} aria-selected={activePanel === "attendance"}>
         <span className="cw-tab-icon cw-tab-icon-schedule" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 9h17M7 13h3M14 13h3M7 16.5h3" /></svg></span>
@@ -2732,29 +2837,29 @@ export default function CWPage({ user, isAdmin }) {
         <div className="cw-bulk-tools-selection">
           <div className="cw-bulk-selection-toolbar"><div><strong>SELECT EXISTING RECORDS</strong><small>Edits, deletes and redo actions target only the saved record IDs shown below. A date with no record cannot create one.</small></div><b>{bulkToolsSelected.length} SELECTED</b></div>
           <div className="cw-bulk-filter-grid">
-            <label>SEARCH <input value={bulkToolsSearch} onChange={e=>{setBulkToolsSearch(e.target.value);setBulkToolsPage(1)}} placeholder="IGN, class, role, item, date..." /></label>
-            <label>FROM <input type="date" value={bulkToolsFrom} onChange={e=>{setBulkToolsFrom(e.target.value);setBulkToolsPage(1)}} /></label>
-            <label>TO <input type="date" value={bulkToolsTo} onChange={e=>{setBulkToolsTo(e.target.value);setBulkToolsPage(1)}} /></label>
-            <div className="cw-bulk-selection-actions"><button type="button" onClick={toggleBulkPage}>{bulkVisibleRows.length && bulkVisibleRows.every(x=>bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button><button type="button" onClick={()=>setBulkToolsSelected([])}>CLEAR</button></div>
+            <label>SEARCH <input value={bulkToolsSearch} onChange={e => { setBulkToolsSearch(e.target.value); setBulkToolsPage(1) }} placeholder="IGN, class, role, item, date..." /></label>
+            <label>FROM <input type="date" value={bulkToolsFrom} onChange={e => { setBulkToolsFrom(e.target.value); setBulkToolsPage(1) }} /></label>
+            <label>TO <input type="date" value={bulkToolsTo} onChange={e => { setBulkToolsTo(e.target.value); setBulkToolsPage(1) }} /></label>
+            <div className="cw-bulk-selection-actions"><button type="button" onClick={toggleBulkPage}>{bulkVisibleRows.length && bulkVisibleRows.every(x => bulkToolsSelected.includes(String(x.id))) ? "CLEAR PAGE" : "SELECT PAGE"}</button><button type="button" onClick={() => setBulkToolsSelected([])}>CLEAR</button></div>
           </div>
           <div className="cw-bulk-selection-table-wrap"><table className="cw-bulk-selection-table"><thead><tr><th></th><th>PLAYER</th><th>CLASS / ROLE</th><th>RECORD</th><th>DATE / TIME</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>
-          {bulkVisibleRows.map(x=><tr key={x.id} className={bulkToolsSelected.includes(String(x.id))?"is-selected":""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={()=>toggleBulkSelection(x.id)} /></td><td><strong>{x.ign}</strong></td><td><span>{x.className||"—"}</span><small>{x.role||"—"}</small></td><td>{x.type==="item" ? <><strong>{x.itemName}</strong><small>Qty {x.quantity}</small></> : x.type==="attendance" ? <><strong>CW ATTENDANCE</strong><small>Salary ₲ {money(x.salary)}</small></> : <strong>PLAYER PROFILE</strong>}</td><td>{x.dateKey ? <><strong>{x.dateKey}</strong><small>{x.timeKey||"—"}</small></> : "—"}</td><td>{x.type==="item" ? `₲ ${money(x.assignment?.totalCost)}` : x.type==="attendance" ? `₲ ${money(x.salary)}` : "—"}</td><td><span className={`cw-bulk-selection-status ${x.status==="DISABLED"?"is-danger":""}`}>{x.status}</span></td></tr>)}
-          {!bulkVisibleRows.length&&<tr><td colSpan="7" className="cw-bulk-selection-empty">No existing records match the current filters.</td></tr>}</tbody></table></div>
-          <div className="cw-bulk-selection-footer"><span>PAGE {bulkSafePage} OF {bulkPageCount} • 5 PER PAGE • {bulkFilteredRows.length} MATCHES</span><div><button type="button" disabled={bulkSafePage<=1} onClick={()=>setBulkToolsPage(p=>Math.max(1,p-1))}>‹</button><button type="button" disabled={bulkSafePage>=bulkPageCount} onClick={()=>setBulkToolsPage(p=>Math.min(bulkPageCount,p+1))}>›</button></div></div>
+            {bulkVisibleRows.map(x => <tr key={x.id} className={bulkToolsSelected.includes(String(x.id)) ? "is-selected" : ""}><td><input type="checkbox" checked={bulkToolsSelected.includes(String(x.id))} onChange={() => toggleBulkSelection(x.id)} /></td><td><strong>{x.ign}</strong></td><td><span>{x.className || "—"}</span><small>{x.role || "—"}</small></td><td>{x.type === "item" ? <><strong>{x.itemName}</strong><small>Qty {x.quantity}</small></> : x.type === "attendance" ? <><strong>CW ATTENDANCE</strong><small>Salary ₲ {money(x.salary)}</small></> : <strong>PLAYER PROFILE</strong>}</td><td>{x.dateKey ? <><strong>{x.dateKey}</strong><small>{x.timeKey || "—"}</small></> : "—"}</td><td>{x.type === "item" ? `₲ ${money(x.assignment?.totalCost)}` : x.type === "attendance" ? `₲ ${money(x.salary)}` : "—"}</td><td><span className={`cw-bulk-selection-status ${x.status === "DISABLED" ? "is-danger" : ""}`}>{x.status}</span></td></tr>)}
+            {!bulkVisibleRows.length && <tr><td colSpan="7" className="cw-bulk-selection-empty">No existing records match the current filters.</td></tr>}</tbody></table></div>
+          <div className="cw-bulk-selection-footer"><span>PAGE {bulkSafePage} OF {bulkPageCount} • 5 PER PAGE • {bulkFilteredRows.length} MATCHES</span><div><button type="button" disabled={bulkSafePage <= 1} onClick={() => setBulkToolsPage(p => Math.max(1, p - 1))}>‹</button><button type="button" disabled={bulkSafePage >= bulkPageCount} onClick={() => setBulkToolsPage(p => Math.min(bulkPageCount, p + 1))}>›</button></div></div>
         </div>
         <div className="cw-bulk-tools-form">
-          {bulkToolsModal === "item-assign" && <label className="cw-span-2">CW OCCURRENCE DATE <select value={bulkToolsDate} onChange={e=>setBulkToolsDate(e.target.value)}><option value="">SELECT A SCHEDULED CW DATE...</option>{occurrences.filter(o=>o?.key).slice().sort((a,b)=>String(b.key).localeCompare(String(a.key))).map(o=><option key={`${o.key}-${o.time}`} value={o.key}>{o.key} • {o.time} • {baseTz}</option>)}</select><small>Only a scheduled CW occurrence can be used. Arbitrary dates are not accepted.</small></label>}
-          {bulkToolsModal === "salary" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e=>setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="0" /></label>}
-          {bulkToolsModal === "attendance-edit" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e=>setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
-          {bulkToolsModal === "attendance-edit" && <label>ITEM COST <input inputMode="decimal" value={bulkAttendanceEditItemCost} onChange={e=>setBulkAttendanceEditItemCost(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
-          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">ITEM RECEIVED<textarea value={bulkAttendanceEditReceivedItem} onChange={e=>setBulkAttendanceEditReceivedItem(e.target.value)} placeholder="Leave blank to keep current" /></label>}
-          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">NOTES<textarea value={bulkAttendanceEditNotes} onChange={e=>setBulkAttendanceEditNotes(e.target.value)} placeholder="Leave blank to keep current" /></label>}
-          {bulkToolsModal === "item-assign" && <label>ITEM <select value={bulkToolsItemId} onChange={e=>setBulkToolsItemId(e.target.value)}><option value="">SELECT ITEM...</option>{cwItems.map(i=><option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)}{i.active===false?" • DISABLED":""}</option>)}</select></label>}
-          {bulkToolsModal === "item-edit" && <label>NEW QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e=>setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g,""))} /></label>}
-          {bulkToolsModal === "item-assign" && <label>QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e=>setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g,""))} /></label>}
+          {bulkToolsModal === "item-assign" && <label className="cw-span-2">CW OCCURRENCE DATE <select value={bulkToolsDate} onChange={e => setBulkToolsDate(e.target.value)}><option value="">SELECT A SCHEDULED CW DATE...</option>{occurrences.filter(o => o?.key).slice().sort((a, b) => String(b.key).localeCompare(String(a.key))).map(o => <option key={`${o.key}-${o.time}`} value={o.key}>{o.key} • {o.time} • {baseTz}</option>)}</select><small>Only a scheduled CW occurrence can be used. Arbitrary dates are not accepted.</small></label>}
+          {bulkToolsModal === "salary" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e => setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="0" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label>NEW SALARY <input inputMode="decimal" value={bulkToolsSalary} onChange={e => setBulkToolsSalary(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label>ITEM COST <input inputMode="decimal" value={bulkAttendanceEditItemCost} onChange={e => setBulkAttendanceEditItemCost(formatMoneyInput(e.target.value))} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">ITEM RECEIVED<textarea value={bulkAttendanceEditReceivedItem} onChange={e => setBulkAttendanceEditReceivedItem(e.target.value)} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "attendance-edit" && <label className="cw-span-2">NOTES<textarea value={bulkAttendanceEditNotes} onChange={e => setBulkAttendanceEditNotes(e.target.value)} placeholder="Leave blank to keep current" /></label>}
+          {bulkToolsModal === "item-assign" && <label>ITEM <select value={bulkToolsItemId} onChange={e => setBulkToolsItemId(e.target.value)}><option value="">SELECT ITEM...</option>{cwItems.map(i => <option key={i.id} value={i.id}>{i.name} • ₲ {money(i.unitCost)}{i.active === false ? " • DISABLED" : ""}</option>)}</select></label>}
+          {bulkToolsModal === "item-edit" && <label>NEW QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e => setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g, ""))} /></label>}
+          {bulkToolsModal === "item-assign" && <label>QUANTITY <input inputMode="numeric" value={bulkToolsQuantity} onChange={e => setBulkToolsQuantity(formatMoneyInput(e.target.value).replace(/\./g, ""))} /></label>}
           {bulkToolsModal === "player-edit" && <><label>CLASS / NEW CLASS<TypeSelect id="cw-bulk-edit-class" className="cw-input" value={bulkPlayerEditClass} onChange={setBulkPlayerEditClass} options={classes} placeholder="Type or select • blank keeps current" /></label><label>ROLE / NEW ROLE<TypeSelect id="cw-bulk-edit-role" className="cw-input" value={bulkPlayerEditRole} onChange={setBulkPlayerEditRole} options={roles} placeholder="Type or select • blank keeps current" /></label><label className="cw-span-2">PREFERRED WEAPON<TypeSelect id="cw-bulk-edit-weapon" className="cw-input" value={bulkPlayerEditWeapon} onChange={setBulkPlayerEditWeapon} options={Array.from(new Set(players.map(p => clean(p.weapon)).filter(Boolean)))} placeholder="Type or select • blank keeps current" /></label></>}
-          {bulkToolsModal === "player-delete" && <label>DELETE PIN *<input inputMode="numeric" value={bulkToolsText} onChange={e=>setBulkToolsText(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="5-digit PIN" /></label>}
-          <label className="cw-span-2">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e=>setBulkToolsComment(e.target.value)} placeholder="Required. Explain exactly why these existing records are being changed." /></label>
+          {bulkToolsModal === "player-delete" && <label>DELETE PIN *<input inputMode="numeric" value={bulkToolsText} onChange={e => setBulkToolsText(e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="5-digit PIN" /></label>}
+          <label className="cw-span-2">ADMIN COMMENT *<textarea value={bulkToolsComment} onChange={e => setBulkToolsComment(e.target.value)} placeholder="Required. Explain exactly why these existing records are being changed." /></label>
         </div>
         {bulkToolsError && <div className="cw-bulk-error">{bulkToolsError}</div>}
         <div className="cw-helper"><b>VALIDATION:</b> unknown or disabled players are rejected. Existing attendance/item records are checked before changes. Treasury-linked changes remain auditable.</div>
