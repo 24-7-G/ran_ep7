@@ -9,10 +9,12 @@ import {
 import {
   collection,
   doc,
+  deleteDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
+  Timestamp,
   setDoc,
   updateDoc,
   addDoc,
@@ -132,6 +134,20 @@ export default function AdminPage({ user, isAdmin }) {
   const [bhHistoryPage, setBhHistoryPage] = useState(1);
   const [bhHistoryView, setBhHistoryView] = useState(null);
 
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: "",
+    type: "EVENT",
+    message: "",
+    startAt: "",
+    endAt: "",
+    active: true,
+    pinned: false,
+  });
+  const [announcementEditingId, setAnnouncementEditingId] = useState("");
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+  const [announcementPage, setAnnouncementPage] = useState(1);
+
   const [auditPage, setAuditPage] = useState(1);
   const [auditRows, setAuditRows] = useState([]);
   const [auditTotal, setAuditTotal] = useState(0);
@@ -242,6 +258,35 @@ export default function AdminPage({ user, isAdmin }) {
     loadBhScoring();
     return () => { active = false; };
   }, [isAdmin, message]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const unsubscribe = onSnapshot(
+      collection(db, "announcements"),
+      (snap) => {
+        const rows = snap.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => {
+            const aTime = toDate(a.updatedAt || a.createdAt)?.getTime() || 0;
+            const bTime = toDate(b.updatedAt || b.createdAt)?.getTime() || 0;
+            return bTime - aTime;
+          });
+        setAnnouncements(rows);
+      },
+      (err) => setError(err?.message || "Unable to load announcements.")
+    );
+    return unsubscribe;
+  }, [isAdmin]);
+
+  const announcementPages = Math.max(1, Math.ceil(announcements.length / PAGE_SIZE));
+  const visibleAnnouncements = announcements.slice(
+    (announcementPage - 1) * PAGE_SIZE,
+    announcementPage * PAGE_SIZE
+  );
+
+  useEffect(() => {
+    if (announcementPage > announcementPages) setAnnouncementPage(announcementPages);
+  }, [announcementPage, announcementPages]);
 
   const filteredBhScoringHistory = useMemo(() => {
     const search = clean(bhHistorySearch).toLowerCase();
@@ -391,6 +436,184 @@ export default function AdminPage({ user, isAdmin }) {
   );
   const auditPages = Math.max(1, Math.ceil(auditTotal / PAGE_SIZE));
   const activeAdmins = admins.filter((admin) => admin.active !== false);
+
+  function resetAnnouncementForm() {
+    setAnnouncementEditingId("");
+    setAnnouncementForm({
+      title: "",
+      type: "EVENT",
+      message: "",
+      startAt: "",
+      endAt: "",
+      active: true,
+      pinned: false,
+    });
+  }
+
+  function dateInputValue(value) {
+    const date = toDate(value);
+    if (!date) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function beginEditAnnouncement(item) {
+    setAnnouncementEditingId(item.id);
+    setAnnouncementForm({
+      title: clean(item.title),
+      type: clean(item.type).toUpperCase() || "GENERAL",
+      message: clean(item.message),
+      startAt: dateInputValue(item.startAt),
+      endAt: dateInputValue(item.endAt),
+      active: item.active !== false,
+      pinned: Boolean(item.pinned),
+    });
+    setTab("announcements");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function saveAnnouncement(event) {
+    event.preventDefault();
+    if (!isAdmin || announcementSaving) return;
+    setAnnouncementSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const title = clean(announcementForm.title);
+      const messageText = clean(announcementForm.message);
+      if (!title) throw new Error("Announcement title is required.");
+      if (!messageText) throw new Error("Announcement message is required.");
+      if (!announcementForm.startAt) throw new Error("Start date/time is required.");
+
+      const startDate = new Date(announcementForm.startAt);
+      const endDate = announcementForm.endAt ? new Date(announcementForm.endAt) : null;
+      if (Number.isNaN(startDate.getTime())) throw new Error("Start date/time is invalid.");
+      if (endDate && Number.isNaN(endDate.getTime())) throw new Error("End date/time is invalid.");
+      if (endDate && endDate.getTime() <= startDate.getTime()) throw new Error("End date/time must be after the start date/time.");
+
+      const base = {
+        title,
+        type: clean(announcementForm.type).toUpperCase() || "GENERAL",
+        message: messageText,
+        startAt: Timestamp.fromDate(startDate),
+        endAt: endDate ? Timestamp.fromDate(endDate) : null,
+        active: Boolean(announcementForm.active),
+        pinned: Boolean(announcementForm.pinned),
+      };
+
+      let announcementId = announcementEditingId;
+      if (announcementEditingId) {
+        await updateDoc(doc(db, "announcements", announcementEditingId), {
+          ...base,
+          updatedAt: serverTimestamp(),
+          updatedByUid: user.uid,
+          updatedBy: actorName(user),
+        });
+      } else {
+        const created = await addDoc(collection(db, "announcements"), {
+          ...base,
+          createdAt: serverTimestamp(),
+          createdByUid: user.uid,
+          createdBy: actorName(user),
+          updatedAt: serverTimestamp(),
+          updatedByUid: user.uid,
+          updatedBy: actorName(user),
+        });
+        announcementId = created.id;
+      }
+
+      await addDoc(collection(db, "guildNotices"), {
+        module: "announcements",
+        entityType: "announcement",
+        action: announcementEditingId ? "announcement-updated" : "announcement-created",
+        title: announcementEditingId ? "Announcement updated" : "Announcement created",
+        message: title,
+        details: [
+          `Title: ${title}`,
+          `Type: ${base.type}`,
+          `Start: ${startDate.toLocaleString()}`,
+          `End: ${endDate ? endDate.toLocaleString() : "No end date"}`,
+          `Active: ${base.active ? "Yes" : "No"}`,
+          `Pinned: ${base.pinned ? "Yes" : "No"}`,
+        ],
+        changes: [announcementEditingId ? `Announcement ${announcementId} updated` : `Announcement ${announcementId} created`],
+        entityId: announcementId,
+        createdAt: serverTimestamp(),
+        createdByUid: user.uid,
+        createdBy: actorName(user),
+      });
+
+      resetAnnouncementForm();
+      setAnnouncementPage(1);
+      setMessage(announcementEditingId ? "Announcement updated and recorded in activity history." : "Announcement created and recorded in activity history.");
+    } catch (err) {
+      setError(err?.message || "Announcement could not be saved.");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  }
+
+  async function toggleAnnouncement(item) {
+    if (!isAdmin || announcementSaving) return;
+    setAnnouncementSaving(true);
+    setError("");
+    try {
+      const active = item.active === false;
+      await updateDoc(doc(db, "announcements", item.id), {
+        active,
+        updatedAt: serverTimestamp(),
+        updatedByUid: user.uid,
+        updatedBy: actorName(user),
+      });
+      await addDoc(collection(db, "guildNotices"), {
+        module: "announcements",
+        entityType: "announcement",
+        action: active ? "announcement-activated" : "announcement-deactivated",
+        title: active ? "Announcement activated" : "Announcement deactivated",
+        message: clean(item.title) || "Guild announcement",
+        details: [`Announcement: ${clean(item.title)}`, `Status: ${active ? "ACTIVE" : "INACTIVE"}`],
+        changes: [`Active: ${item.active === false ? "No" : "Yes"} → ${active ? "Yes" : "No"}`],
+        entityId: item.id,
+        createdAt: serverTimestamp(),
+        createdByUid: user.uid,
+        createdBy: actorName(user),
+      });
+      setMessage(active ? "Announcement activated." : "Announcement deactivated.");
+    } catch (err) {
+      setError(err?.message || "Announcement status could not be changed.");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  }
+
+  async function deleteAnnouncement(item) {
+    if (!isAdmin || announcementSaving) return;
+    if (!window.confirm(`Delete announcement \"${clean(item.title) || "Guild Announcement"}\"? This cannot be undone.`)) return;
+    setAnnouncementSaving(true);
+    setError("");
+    try {
+      await deleteDoc(doc(db, "announcements", item.id));
+      await addDoc(collection(db, "guildNotices"), {
+        module: "announcements",
+        entityType: "announcement",
+        action: "announcement-deleted",
+        title: "Announcement deleted",
+        message: clean(item.title) || "Guild announcement",
+        details: [`Announcement: ${clean(item.title)}`, `Type: ${clean(item.type) || "GENERAL"}`],
+        changes: [`Deleted announcement ${item.id}`],
+        entityId: item.id,
+        createdAt: serverTimestamp(),
+        createdByUid: user.uid,
+        createdBy: actorName(user),
+      });
+      if (announcementEditingId === item.id) resetAnnouncementForm();
+      setMessage("Announcement deleted and recorded in activity history.");
+    } catch (err) {
+      setError(err?.message || "Announcement could not be deleted.");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  }
 
   async function saveProfile(event) {
     event.preventDefault();
@@ -701,7 +924,7 @@ export default function AdminPage({ user, isAdmin }) {
       const configuredHash = settings.factoryResetPinHash || await hashPin(DEFAULT_PIN);
       if (await hashPin(resetPin) !== configuredHash) throw new Error("Incorrect factory reset PIN. No data was changed.");
 
-      const operational = BACKUP_COLLECTIONS.filter((name) => !["adminUsers", "adminSettings", "adminRequests"].includes(name));
+      const operational = BACKUP_COLLECTIONS.filter((name) => !["adminUsers", "adminSettings", "adminRequests", "announcements"].includes(name));
       const archive = await archiveCollections(db, {
         collections: operational,
         actorUid: user.uid,
@@ -826,6 +1049,7 @@ export default function AdminPage({ user, isAdmin }) {
           ["profile", "MY PROFILE"],
           ["admins", "ADMIN ACCESS"],
           ["bh-points", "BH POINT SYSTEM"],
+          ["announcements", "ANNOUNCEMENTS"],
           ["backup", "BACKUP / RESTORE"],
           ["health", "DATA STATUS"],
           ["maintenance", "MAINTENANCE"],
@@ -1013,6 +1237,68 @@ export default function AdminPage({ user, isAdmin }) {
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {tab === "announcements" && (
+        <section className="admin-stack">
+          <article className="admin-card admin-card-wide announcement-admin-card">
+            <div className="admin-card-kicker">GUILD COMMUNICATION • ADMIN ONLY</div>
+            <div className="announcement-admin-heading">
+              <div>
+                <h2>{announcementEditingId ? "Edit Announcement" : "Create Announcement"}</h2>
+                <p>Active announcements appear below the main navigation for all users. If no end date is supplied, the announcement stays visible until an administrator disables it.</p>
+              </div>
+              {announcementEditingId && <button type="button" className="admin-btn" onClick={resetAnnouncementForm}>CANCEL EDIT</button>}
+            </div>
+
+            <form className="announcement-admin-form" onSubmit={saveAnnouncement}>
+              <label>TITLE<input value={announcementForm.title} onChange={(e) => setAnnouncementForm((v) => ({ ...v, title: e.target.value }))} maxLength={120} placeholder="Guild Event — Double Points Weekend" required /></label>
+              <label>TYPE<select value={announcementForm.type} onChange={(e) => setAnnouncementForm((v) => ({ ...v, type: e.target.value }))}>
+                <option value="EVENT">EVENT</option><option value="IMPORTANT">IMPORTANT</option><option value="GENERAL">GENERAL</option><option value="MAINTENANCE">MAINTENANCE</option><option value="UPDATE">UPDATE</option>
+              </select></label>
+              <label>START DATE / TIME<input type="datetime-local" value={announcementForm.startAt} onChange={(e) => setAnnouncementForm((v) => ({ ...v, startAt: e.target.value }))} required /></label>
+              <label>END DATE / TIME <span className="announcement-optional">OPTIONAL</span><input type="datetime-local" value={announcementForm.endAt} onChange={(e) => setAnnouncementForm((v) => ({ ...v, endAt: e.target.value }))} /></label>
+              <label className="announcement-admin-message">MESSAGE<textarea value={announcementForm.message} onChange={(e) => setAnnouncementForm((v) => ({ ...v, message: e.target.value }))} rows={5} maxLength={2000} placeholder="Write the announcement users should see..." required /></label>
+              <div className="announcement-admin-options">
+                <label className="announcement-check"><input type="checkbox" checked={announcementForm.active} onChange={(e) => setAnnouncementForm((v) => ({ ...v, active: e.target.checked }))} /> ACTIVE</label>
+                <label className="announcement-check"><input type="checkbox" checked={announcementForm.pinned} onChange={(e) => setAnnouncementForm((v) => ({ ...v, pinned: e.target.checked }))} /> PIN TO TOP</label>
+              </div>
+              <div className="admin-form-actions">
+                <button className="admin-btn primary" type="submit" disabled={announcementSaving}>{announcementSaving ? "SAVING..." : announcementEditingId ? "SAVE ANNOUNCEMENT" : "CREATE ANNOUNCEMENT"}</button>
+                <button className="admin-btn" type="button" onClick={resetAnnouncementForm} disabled={announcementSaving}>CLEAR FORM</button>
+              </div>
+            </form>
+          </article>
+
+          <article className="admin-card admin-card-wide announcement-admin-card">
+            <div className="admin-card-kicker">ANNOUNCEMENT MANAGEMENT</div>
+            <div className="maintenance-heading"><div><h2>All Announcements</h2><p>Newest UPDATED AT first. User-facing visibility is controlled automatically by start/end dates and the ACTIVE switch.</p></div></div>
+            <div className="announcement-admin-table-wrap">
+              <div className="announcement-admin-table">
+                <div className="announcement-admin-head"><span>TITLE / TYPE</span><span>START</span><span>END</span><span>STATUS</span><span>PINNED</span><span>UPDATED AT</span><span>ACTIONS</span></div>
+                {visibleAnnouncements.map((item) => {
+                  const start = toDate(item.startAt);
+                  const end = toDate(item.endAt);
+                  const now = Date.now();
+                  const status = item.active === false ? "INACTIVE" : start && now < start.getTime() ? "SCHEDULED" : end && now >= end.getTime() ? "EXPIRED" : "ACTIVE";
+                  return (
+                    <div className="announcement-admin-row" key={item.id}>
+                      <div><strong>{item.title || "Guild Announcement"}</strong><small>{item.type || "GENERAL"} • {String(item.message || "").slice(0, 95)}{String(item.message || "").length > 95 ? "…" : ""}</small></div>
+                      <span>{dateText(start)}</span>
+                      <span>{end ? dateText(end) : "NO END DATE"}</span>
+                      <span><b className={`announcement-status ${status.toLowerCase()}`}>{status}</b></span>
+                      <span className={item.pinned ? "announcement-star pinned" : "announcement-star"}>{item.pinned ? "★" : "☆"}</span>
+                      <span>{dateText(item.updatedAt || item.createdAt)}</span>
+                      <div className="admin-actions announcement-actions"><button className="admin-btn" disabled={announcementSaving} onClick={() => beginEditAnnouncement(item)}>EDIT</button><button className="admin-btn" disabled={announcementSaving} onClick={() => toggleAnnouncement(item)}>{item.active === false ? "ACTIVATE" : "DISABLE"}</button><button className="admin-btn danger" disabled={announcementSaving} onClick={() => deleteAnnouncement(item)}>DELETE</button></div>
+                    </div>
+                  );
+                })}
+                {!visibleAnnouncements.length && <div className="admin-empty">No announcements have been created yet.</div>}
+              </div>
+            </div>
+            <div className="pager"><button disabled={announcementPage <= 1} onClick={() => setAnnouncementPage((p) => p - 1)}>PREVIOUS</button><span>PAGE {announcementPage} / {announcementPages} • {announcements.length} ANNOUNCEMENTS</span><button disabled={announcementPage >= announcementPages} onClick={() => setAnnouncementPage((p) => p + 1)}>NEXT</button></div>
+          </article>
         </section>
       )}
 

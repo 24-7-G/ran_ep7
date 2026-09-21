@@ -13,6 +13,7 @@ import { collection, doc, getDoc, onSnapshot, setDoc, updateDoc, serverTimestamp
 import Header from "./components/common/Header";
 import Modal from "./components/common/Modal";
 import GuideManual from "./components/GuideManual";
+import Announcements from "./components/Announcements";
 import RaidPage from "./pages/RaidPage";
 import BHPage from "./pages/BHPage";
 import CWPage from "./pages/CWPage";
@@ -353,6 +354,8 @@ export default function App() {
         onAdmin={() => setPage("admin")}
         onGuide={() => openGuide()}
       />
+
+      <Announcements />
 
       <main className="app-main">
         {page === "raid" && <RaidPage user={user} isAdmin={isAdmin} />}

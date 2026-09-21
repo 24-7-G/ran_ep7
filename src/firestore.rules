@@ -222,6 +222,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // SITE-WIDE ANNOUNCEMENTS
+    // Everyone can read active/inactive announcement records so the public
+    // board can calculate start/end visibility locally. Only administrators
+    // can create, edit, activate/deactivate, or delete announcements.
+    match /announcements/{id} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
     match /guildNotices/{id} {
       allow read: if true;
       // Raid schedule edits are public by design, and their audit entries
